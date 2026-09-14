@@ -437,7 +437,7 @@ function savePersonal() {
 export function addPick(item: BrowseItem) {
 	const added = pl.addPick(personal, item);
 	savePersonal();
-	toast.success(added ? 'Added to shortcuts' : 'Already in shortcuts');
+	toast.success(t(added ? 'toasts.added_to_shortcuts' : 'toasts.already_in_shortcuts'));
 }
 
 /** Drop landed: move (or add) a tile so it sits before `beforeId` — null appends. No toast: the
@@ -830,11 +830,10 @@ export function cycleRepeat(): Promise<void> {
 	return api.setRepeat(r === 'off' ? 'all' : r === 'all' ? 'one' : 'off');
 }
 
-const RATED: Record<Rating, string> = {
-	like: 'Added to liked songs',
-	dislike: 'Disliked',
-	indifferent: 'Rating removed'
-};
+// A function, not a const map: a map built at module load freezes whatever language was active
+// then, and the language can be changed without a reload.
+const rated = (r: Rating) =>
+	t(r === 'like' ? 'toasts.liked' : r === 'dislike' ? 'toasts.disliked' : 'toasts.rating_removed');
 
 /** Optimistic rating change, reverted if YouTube rejects it. `msg` overrides the toast, for the
  *  callers that clear a like by another name (out of Library ▸ Songs, which is that same list). */
@@ -854,7 +853,7 @@ async function rate(song: SongItem, next: Rating, msg?: string) {
 		// Library ▸ Songs *is* the liked-videos browse, and its tab paints from the cache without
 		// revalidating, so a like from anywhere else has to drop it or the row is missing for 5 min.
 		invalidateCached(LIBRARY_SONGS_KEY);
-		toast.success(msg ?? RATED[next]);
+		toast.success(msg ?? rated(next));
 		if (next === 'dislike') dropDisliked(song.video_id, isNow);
 	} catch (e) {
 		ratings[song.video_id] = prev;
@@ -999,8 +998,12 @@ export async function enqueue(
 	}
 	if (lt.role === 'guest') return;
 	const n = items.length;
-	if (next) toast.success(n === 1 ? 'Playing next' : `${n} songs play next`);
-	else toast.success(n === 1 ? 'Added to queue' : `Added ${n} songs to the queue`);
+	if (next)
+		toast.success(n === 1 ? t('toasts.playing_next_one') : t('toasts.playing_next', { count: n }));
+	else
+		toast.success(
+			n === 1 ? t('toasts.added_to_queue_one') : t('toasts.added_to_queue', { count: n })
+		);
 }
 
 /**

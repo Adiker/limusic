@@ -60,7 +60,9 @@
 		"filter_library": "Filter your library…",
 		"command_description": "Search songs, albums, artists and playlists",
 		"shuffle_all": "Shuffle all",
-		"play_all": "Play all"
+		"play_all": "Play all",
+		"top_result": "Top result",
+		"all_results_for": "All results for “{query}”"
 	},
 	"nav": {
 		"home": "Home",
@@ -82,7 +84,8 @@
 		"remove_account_title": "Remove from Limusic?",
 		"remove_account_desc": "{name} is only removed from this list. The Google account itself is not affected, and you can sign in with it again whenever you like.",
 		"saved_accounts_hint": "Pick a saved account to switch to it.",
-		"history": "History"
+		"history": "History",
+		"no_channels": "YouTube did not return any selectable channels."
 	},
 	"player": {
 		"play": "Play",
@@ -154,7 +157,8 @@
 		"show_section": "Show {title} on home",
 		"hide_section": "Hide {title} from home",
 		"feed_empty": "Your home feed came back empty this time.",
-		"signed_out_hint": "Sign in and home fills up with mixes and playlists built from what you listen to."
+		"signed_out_hint": "Sign in and home fills up with mixes and playlists built from what you listen to.",
+		"add_to_end": "Add to the end"
 	},
 	"history": {
 		"title": "History",
@@ -205,7 +209,15 @@
 		"every_upload": "Every track you’ve uploaded to YouTube Music",
 		"no_uploads": "Nothing uploaded yet. Songs you upload at music.youtube.com show up here.",
 		"no_upload_albums": "No uploaded albums yet. Albums you upload at music.youtube.com show up here.",
-		"uploads_signed_out": "Sign in to see the music you’ve uploaded to YouTube Music."
+		"uploads_signed_out": "Sign in to see the music you’ve uploaded to YouTube Music.",
+		"songs_signed_out": "Sign in to see the songs saved in your YouTube Music library. Music on this machine is in the Local tab.",
+		"no_library_songs": "No songs in your library yet. Hit the ⋯ on a song and save it, or like it, and it lands here.",
+		"empty_signed_out": "Nothing saved yet. Open a playlist or album and hit Save to library, or sign in for the one on your account.",
+		"empty": "Your library is empty.",
+		"no_saved_playlists": "No playlists yet. Open one and hit Save to library to keep it here.",
+		"no_saved_albums": "No saved albums yet. Open an album and hit Save to library.",
+		"no_saved_artists": "No artists yet. Save one from its page to keep it here.",
+		"no_artists": "No artists yet. They show up once you save their songs or albums."
 	},
 	"local": {
 		"scanning": "Scanning folder...",
@@ -215,7 +227,11 @@
 		"artists_count": "Artists ({count})",
 		"songs_count": "Songs ({count})",
 		"add_folder": "Add folder",
-		"pick_folder_dialog": "Add a music folder"
+		"pick_folder_dialog": "Add a music folder",
+		"folders": "Folders",
+		"folders_hint": "Music in these folders plays without an internet connection.",
+		"no_folders": "No folders yet. Add the one your music sits in and it shows up here.",
+		"nothing_playable": "Nothing playable found in those folders yet. Looking for mp3, flac, m4a, aac, ogg, opus, wav, wma, aiff, ape, wv and mka files."
 	},
 	"settings": {
 		"title": "Settings",
@@ -594,6 +610,19 @@
 		"app_icon_set": "App icon changed",
 		"blocked_copied": "Copied {count} blocked artists as JSON",
 		"blocked_artist": "Blocked {name}",
-		"unblocked_artist": "Unblocked {name}"
+		"unblocked_artist": "Unblocked {name}",
+		"added_to_shortcuts": "Added to shortcuts",
+		"already_in_shortcuts": "Already in shortcuts",
+		"playing_next_one": "Playing next",
+		"playing_next": "{count} songs play next",
+		"added_to_queue_one": "Added to queue",
+		"added_to_queue": "Added {count} songs to the queue",
+		"liked": "Added to liked songs",
+		"disliked": "Disliked",
+		"rating_removed": "Rating removed",
+		"subscribed": "Subscribed to {name}",
+		"unsubscribed": "Unsubscribed",
+		"signed_in_as": "Signed in as {name}",
+		"switched_to": "Switched to {name}"
 	}
 }
