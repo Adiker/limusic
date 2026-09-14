@@ -217,7 +217,10 @@
 		"no_saved_playlists": "No playlists yet. Open one and hit Save to library to keep it here.",
 		"no_saved_albums": "No saved albums yet. Open an album and hit Save to library.",
 		"no_saved_artists": "No artists yet. Save one from its page to keep it here.",
-		"no_artists": "No artists yet. They show up once you save their songs or albums."
+		"no_artists": "No artists yet. They show up once you save their songs or albums.",
+		"on_repeat": "On Repeat",
+		"on_repeat_subtitle": "{count} songs you've played most this month",
+		"songs_count": "{count} songs"
 	},
 	"local": {
 		"scanning": "Scanning folder...",
