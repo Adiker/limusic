@@ -11,7 +11,7 @@
 // through — the customization is a set of overrides, not a rival theme to maintain.
 
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { hexToHsv, isLight, nearestHue } from './color';
+import { hexToHsv, isLight } from './color';
 import { artworkAccent, toAccent, warmAccent } from './artcolor';
 import { allowFontFile } from './api';
 
@@ -62,9 +62,9 @@ const KEY = 'primary-theme';
 const CUSTOM_KEY = 'custom-theme';
 const APPEARANCE_KEY = 'appearance';
 const PALETTE_CLASSES = THEMES.filter((t) => t.kind === 'palette').map((t) => `theme-${t.id}`);
-const ACCENT_VARS = ['--primary', '--primary-foreground', '--accent', '--accent-foreground'];
-/** Set on <html> while the artwork tint is live; the surface rules in layout.css hang off it. */
+/** Set on <html> while the artwork tint is live; the fill rules in layout.css hang off it. */
 const TINT_CLASS = 'art-tint';
+const ACCENT_VARS = ['--primary', '--primary-foreground', '--accent', '--accent-foreground'];
 const CUSTOM_VARS = ['--hue', '--radius', '--font-sans', '--font-heading'];
 // Same two neutrals the preset accent themes pick between.
 const ON_DARK = 'oklch(0.985 0 0)';
@@ -327,19 +327,16 @@ export function fontAvailable(name: string): boolean {
 // playing, and the next track overwrites it.
 //
 // Two things come out of one colour: the accent quartet (inline vars, as everywhere else) and
-// --art-h, the hue every surface in the `.art-tint` rules is derived from (layout.css).
+// --art-h, the hue the fill rules in layout.css are derived from.
 //
-// The crossfade between tracks is CSS, not JS: `--primary` and `--accent` are registered with
-// @property in layout.css, so setting them once starts an interpolation the engine owns. This used
-// to be a requestAnimationFrame loop, which meant ~36 style invalidations of the whole document,
-// driven from the main thread, landing exactly on the frames the track change was already paying
-// for. All that is left here is picking the target and keeping the hue continuous.
+// Only fills are tinted. Tinting text and borders too is what made the app unusable after a night
+// of playback (#217): a root custom property invalidates every element that inherits it, and
+// repainting every text run in a new colour cost ~20 MB per track change that WebKitGTK never gave
+// back. Measurements are in the `--- Artwork tint ---` comment in layout.css.
 //
-// --art-h is set the same way but is NOT transitioned: every surface is derived from it, so
-// animating it restyled the whole document once a frame and WebKitGTK kept ~26 MB of that per
-// track change, permanently. The numbers are in the `html.art-tint` comment in layout.css.
-// `nearestHue` stays because the value written here is unwrapped either way, and a future
-// crossfade would need it again.
+// The accent changes in one step. It used to crossfade (first a requestAnimationFrame loop, then a
+// CSS transition over @property-registered vars), and both spent whole-document restyles on a
+// decoration: see the comment where those registrations used to be in layout.css.
 
 let art: { h: number; hex: string } | null = null;
 let wanted = '';
@@ -399,13 +396,7 @@ export function applyArtworkAccent(url: string | undefined | null): void {
 		if (art?.hex === hex) return; // same colour (a repeat, or the queue moved under us)
 		const hsv = hexToHsv(hex);
 		if (!hsv) return;
-		// Continuous, never rewrapped: the CSS transition on --art-h is a plain number lerp, so the
-		// short way round the wheel has to be baked into the value it lands on. The first track has
-		// no previous target, so it starts from whatever --art-h currently resolves to.
-		const from =
-			art?.h ??
-			(parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--art-h')) || 0);
-		art = { h: nearestHue(from, hsv.h), hex };
+		art = { h: hsv.h, hex };
 		restyle(); // through the normal path, so `effective` and the pickers agree
 	});
 }
