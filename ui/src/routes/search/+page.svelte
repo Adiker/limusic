@@ -16,13 +16,16 @@
 	import MediaCardSkeleton from '$lib/components/MediaCardSkeleton.svelte';
 	import SearchSuggest from '$lib/components/SearchSuggest.svelte';
 	import TrackRow from '$lib/components/TrackRow.svelte';
+	import TrackSelectionBar from '$lib/components/TrackSelectionBar.svelte';
+	import TrackSelectButton from '$lib/components/TrackSelectButton.svelte';
+	import { trackSelection } from '$lib/selection.svelte';
 	import TrackRowSkeleton from '$lib/components/TrackRowSkeleton.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import Shelf from '$lib/components/Shelf.svelte';
 	import * as api from '$lib/api';
 	import type { SearchResults, SongItem } from '$lib/api';
 	import { getCached, putCached } from '$lib/pagecache';
-	import { openAddToPlaylist, playSong } from '$lib/player.svelte';
+	import { auth, openAddToPlaylist, playSong } from '$lib/player.svelte';
 	import { asSong } from '$lib/browse';
 	import { t } from '$lib/i18n.svelte';
 
@@ -100,6 +103,8 @@
 	});
 
 	const songRows = $derived(songs.length ? songs : (res?.songs ?? []).map(asSong));
+	const previewSongs = $derived(songRows.slice(0, 6));
+	const selection = trackSelection(() => previewSongs, () => previewSongs, () => `${auth.epoch}:${searched}`);
 
 	// Sections are horizontal card rows, except Songs which is a vertical list. `top` has no "show more".
 	const sections = $derived(
@@ -167,19 +172,27 @@
 					<section>
 						<div class="mb-3 flex items-center justify-between">
 							<h2 class="font-heading text-xl font-bold">{sec.label}</h2>
-							{#if sec.more}
-								<button
-									class="cursor-pointer text-xs font-semibold uppercase text-muted-foreground hover:text-foreground"
-									onclick={() => showMore(sec.key as 'songs' | 'albums' | 'artists' | 'playlists')}
-								>
-									{t('common.show_more')}
-								</button>
-							{/if}
+							<div class="flex items-center gap-1">
+								{#if sec.list}
+									<TrackSelectButton {selection} />
+								{/if}
+								{#if sec.more}
+									<button
+										class="cursor-pointer text-xs font-semibold uppercase text-muted-foreground hover:text-foreground"
+										onclick={() => showMore(sec.key as 'songs' | 'albums' | 'artists' | 'playlists')}
+									>
+										{t('common.show_more')}
+									</button>
+								{/if}
+							</div>
 						</div>
 						{#if sec.list}
-							{#each songRows.slice(0, sec.max) as song (song.video_id)}
+							<TrackSelectionBar {selection} />
+							{#each previewSongs as song, i (JSON.stringify([song.video_id, i]))}
 								<TrackRow
 									{song}
+									{selection}
+									selectionKey={selection.visibleKeys[i]}
 									showPlayCount
 									onplay={() => playSong(song)}
 									onAdd={() => openAddToPlaylist(song)}

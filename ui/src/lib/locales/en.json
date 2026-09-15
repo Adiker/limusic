@@ -1,4 +1,24 @@
 {
+	"selection": {
+		"actions": "Selected track actions",
+		"count": "{count} selected",
+		"selected": "Selected",
+		"not_selected": "Not selected",
+		"hidden": "{count} hidden",
+		"enter": "Select tracks",
+		"exit": "Leave select mode",
+		"hint": "Pick tracks to act on them",
+		"select_all": "Select all ({count})",
+		"clear": "Clear",
+		"track": "{title}. Space to select, Enter to play.",
+		"track_guest": "{title}. Space to select, Enter to add to the session queue.",
+		"select_track": "Select {title}",
+		"lost": "{count} selected tracks are no longer in this list.",
+		"pending": "Finding {count} selected tracks in the pages still loading.",
+		"local_playlist": "Local files cannot be added to a YouTube playlist.",
+		"account_changed": "Stopped adding songs because the account changed.",
+		"playlist_partial": "Added {added} to {playlist}; {duplicates} already there; {remaining} unconfirmed. {error}"
+	},
 	"common": {
 		"loading": "Loading...",
 		"retry": "Retry",
