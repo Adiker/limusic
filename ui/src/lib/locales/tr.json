@@ -60,7 +60,9 @@
 		"filter_library": "Kitaplığı filtrele…",
 		"command_description": "Şarkı, albüm, sanatçı ve çalma listesi ara",
 		"shuffle_all": "Hepsini karıştır",
-		"play_all": "Hepsini oynat"
+		"play_all": "Hepsini oynat",
+		"top_result": "En iyi sonuç",
+		"all_results_for": "\"{query}\" sorgusu için bütün sonuçlar"
 	},
 	"nav": {
 		"home": "Ana Sayfa",
@@ -82,7 +84,8 @@
 		"remove_account": "Hesap sil",
 		"remove_account_title": "Limusic'ten sil?",
 		"remove_account_desc": "{name} yalnızca bu listeden kaldırıldı. Google hesabınız bu eylemden etkilenmedi ve istediğiniz zaman onunla giriş yapabilirsiniz.",
-		"saved_accounts_hint": "Geçmek için kaydedilmiş bir hesabı seçin."
+		"saved_accounts_hint": "Geçmek için kaydedilmiş bir hesabı seçin.",
+		"no_channels": "YouTube seçilebilir bir kanal döndürmedi."
 	},
 	"player": {
 		"play": "Oynat",
@@ -154,7 +157,8 @@
 		"show_section": "{title} bölümünü göster",
 		"hide_section": "{title} bölümünü gizle",
 		"feed_empty": "Ana sayfanız bu sefer boş döndü.",
-		"signed_out_hint": "Giriş yapın ve ana sayfanız dinlediklerinizle oluşturulan miksler ve çalma listeleriyle dolsun."
+		"signed_out_hint": "Giriş yapın ve ana sayfanız dinlediklerinizle oluşturulan miksler ve çalma listeleriyle dolsun.",
+		"add_to_end": "En sona ekle"
 	},
 	"artist": {
 		"subscribe": "Abone ol",
@@ -196,7 +200,18 @@
 		"every_upload": "YouTube Music’a yüklediğin bütün parçalar",
 		"no_uploads": "Henüz bir şey yüklemedin. music.youtube.com üzerinden yüklediğin şarkılar burada görünür.",
 		"uploads_signed_out": "YouTube Music’a yüklediğin müzikleri görmek için giriş yap.",
-		"no_upload_albums": "Henüz yüklenmiş bir albüm yok. music.youtube.com üzerinde yüklediğiniz albümler burada belirecek."
+		"no_upload_albums": "Henüz yüklenmiş bir albüm yok. music.youtube.com üzerinde yüklediğiniz albümler burada belirecek.",
+		"songs_signed_out": "YouTube Music kitaplığınızda kayıtlı şarkıları görmek için oturum açın. Bu cihazdaki müzikler Yerel sekmesinde.",
+		"no_library_songs": "Kitaplığınızda henüz şarkı yok. Bir şarkının ⋯ simgesine dokunun, kaydedin ya da beğenin; buraya gelsin.",
+		"empty_signed_out": "Henüz kaydedilmiş bir şey yok. Bir çalma listesi veya albüm açıp \"Kitaplığa kaydet\"e dokunun, ya da hesabınızdakini görmek için oturum açın.",
+		"empty": "Kütüphaneniz boş.",
+		"no_saved_playlists": "Henüz çalma listesi yok. Bir listeyi açıp burada tutmak için \"Kitaplığa kaydet\"e dokunun.",
+		"no_saved_albums": "Henüz kaydedilmiş albüm yok. Bir albüm açıp \"Kitaplığa kaydet\"e dokunun.",
+		"no_saved_artists": "Henüz sanatçı yok. Burada tutmak için bir sanatçıyı kendi sayfasından kaydedin.",
+		"no_artists": "Henüz sanatçı yok. Şarkılarını veya albümlerini kaydettiğinizde burada görünürler.",
+		"on_repeat": "Sürekli Çalınanlar",
+		"on_repeat_subtitle": "Bu ay en çok dinlediğiniz {count} şarkı",
+		"songs_count": "{count} şarkı"
 	},
 	"local": {
 		"scanning": "Klasör taranıyor...",
@@ -206,7 +221,11 @@
 		"artists_count": "Sanatçılar ({count})",
 		"songs_count": "Şarkılar ({count})",
 		"add_folder": "Klasör ekle",
-		"pick_folder_dialog": "Müzik klasörünü seç"
+		"pick_folder_dialog": "Müzik klasörünü seç",
+		"folders": "Klasörler",
+		"folders_hint": "Bu klasörlerdeki müzikler internet bağlantısı olmadan da çalınabilir.",
+		"no_folders": "Henüz klasör yok. Müziklerinizin bulunduğu klasörü ekleyin, burada görünsün.",
+		"nothing_playable": "Bu klasörlerde henüz çalınabilir bir dosya bulunamadı. Aranan dosya türleri: mp3, flac, m4a, aac, ogg, opus, wav, wma, aiff, ape, wv ve mka."
 	},
 	"settings": {
 		"title": "Ayarlar",
@@ -585,7 +604,20 @@
 		"app_icon_set": "Uygulama simgesi değişti",
 		"blocked_copied": "{count} sayıda engellenmiş sanatçı JSON olarak kopyalandı",
 		"blocked_artist": "{name} engellendi",
-		"unblocked_artist": "{name} isimli sanatçının engeli kaldırıldı"
+		"unblocked_artist": "{name} isimli sanatçının engeli kaldırıldı",
+		"added_to_shortcuts": "Kısa yollara eklendi",
+		"already_in_shortcuts": "Zaten kısayollarınızda",
+		"playing_next_one": "Sıradaki çalınıyor",
+		"playing_next": "{count} şarkı sırada çalınacak",
+		"added_to_queue_one": "Kuyruğa eklendi",
+		"added_to_queue": "{count} şarkı kuyruğa eklendi",
+		"liked": "Beğenilen şarkılara eklendi",
+		"disliked": "Beğenilmedi",
+		"rating_removed": "Değerlendirme kaldırıldı",
+		"subscribed": "{name} isimli sanatçıya abone olundu",
+		"unsubscribed": "Abonelikten çıkıldı",
+		"signed_in_as": "{name} olarak giriş yapıldı",
+		"switched_to": "{name} hesabına geçildi"
 	},
 	"history": {
 		"title": "Geçmiş",
@@ -595,5 +627,25 @@
 		"songs_count": "{count} şarkı",
 		"empty": "Burada henüz bir şey yok. Giriş yaptıktan sonra dinledikleriniz bu sayfada belirecek.",
 		"signed_out": "YouTube Music dinleme geçmişinizi görmek için giriş yapın."
+	},
+	"selection": {
+		"actions": "Seçili parça için eylemler",
+		"count": "{count} seçildi",
+		"selected": "Seçili",
+		"not_selected": "Seçili değil",
+		"hidden": "{count} gizli",
+		"enter": "Parçaları seç",
+		"exit": "Seçim kipinden çık",
+		"hint": "İşlem yapmak için parça seçin",
+		"select_all": "Hepsini seç ({count})",
+		"clear": "Temizle",
+		"track": "{title}. Seçmek için Space, oynatmak için Enter.",
+		"track_guest": "{title}. Seçmek için Space, oturum kuyruğuna eklemek için Enter.",
+		"select_track": "{title} parçasını seç",
+		"lost": "{count} seçili parça artık bu listede değil.",
+		"pending": "{count} seçili parça, hâlâ yüklenmekte olan sayfalarda aranıyor.",
+		"local_playlist": "Yerel dosyalar YouTube çalma listesine eklenemez.",
+		"account_changed": "Hesap değiştiği için şarkı ekleme işlemi durduruldu.",
+		"playlist_partial": "{playlist} listesine {added} eklendi; {duplicates} zaten listede vardı; {remaining} onaylanmadı. {error}"
 	}
 }
