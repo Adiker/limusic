@@ -21,7 +21,7 @@
 		"songs": "Músicas",
 		"albums": "Álbuns",
 		"artists": "Artistas",
-		"playlists": "Playlists",
+		"playlists": "Listas de reprodução",
 		"song_singular": "Música",
 		"album_singular": "Álbum",
 		"artist_singular": "Artista",
@@ -597,7 +597,7 @@
 		"signed_out": "Faça login para ver seu histórico de reprodução do YouTube Music."
 	},
 	"selection": {
-		"actions": "Ações da faixa selecionada",
+		"actions": "Ações da faixa selecionadas",
 		"count": "{count} selecionado(s)",
 		"selected": "Selecionado",
 		"not_selected": "Não selecionado",
@@ -614,6 +614,6 @@
 		"pending": "Localizando {count} faixas selecionadas nas páginas ainda carregando.",
 		"local_playlist": "Arquivos locais não podem ser adicionados a uma playlist do YouTube.",
 		"account_changed": "Interrompida a adição de músicas porque a conta foi alterada.",
-		"playlist_partial": "Adicionado {added} a {playlist}; {duplicates} já estava(m) lá; {remaining} não confirmado(s). {error}"
+		"playlist_partial": "Total adicionado à {playlist}: {added}; Total de duplicatas: {duplicates}; Total não confirmado: {remaining}. {error}"
 	}
 }
