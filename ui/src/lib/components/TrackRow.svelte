@@ -257,7 +257,10 @@
 			<div class="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
 				<ArtistLine runs={song.artist_runs} text={song.artists} />
 				{#if compact && duration}
-					<span class="shrink-0">· {duration}</span>
+					<!-- No leading dot with nothing before it: a search row can come back artist-less
+					     (YouTube drops the name when the query is the artist), leaving the length alone
+					     on the line. -->
+					<span class="shrink-0">{song.artists.trim() ? '· ' : ''}{duration}</span>
 				{/if}
 			</div>
 		</div>

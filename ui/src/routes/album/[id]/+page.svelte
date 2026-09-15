@@ -169,7 +169,7 @@
         const next = !inLibrary;
         if (!auth.account?.signedIn || !a.playlistId) {
             toggleSaved(asItem());
-            toast.success(next ? "Saved to library" : "Removed from library");
+            toast.success(next ? t('library.saved_to_library') : t('toasts.removed_from_library'));
             return;
         }
         // Signed in: YouTube owns it from here. The local row is kept in step rather than dropped,
@@ -177,7 +177,7 @@
         // offline); `noteLibrary` flags it synced, so nothing offers a local-only removal.
         if (a.inLibrary === next) {
             noteLibrary(asItem(), next);
-            toast.success(next ? "Saved to library" : "Removed from library");
+            toast.success(next ? t('library.saved_to_library') : t('toasts.removed_from_library'));
             return; // YouTube already agrees; only the local row had to move
         }
         a.inLibrary = next;
@@ -185,7 +185,7 @@
         try {
             await api.setAlbumSaved(a.playlistId, next);
             noteLibrary(asItem(), next);
-            toast.success(next ? "Saved to library" : "Removed from library");
+            toast.success(next ? t('library.saved_to_library') : t('toasts.removed_from_library'));
         } catch (e) {
             a.inLibrary = !next;
             toast.error(String(e));
