@@ -67,7 +67,10 @@
 	// A part is only drawn as a link when the switch is on *and* this track actually has something
 	// to point at: an autoplayed track with no linked artist can't have a clickable artist line, and
 	// showing one here would promise a link Discord never receives.
-	const link1 = $derived(cfg.link_line1 && !!cardLink(cfg.line1, track));
+	// Line 1 falls back to the title when its slot is empty, so the link follows the fallback —
+	// the same rule as `push_card` in discord.rs.
+	const line1Slot = $derived(cardText(cfg.line1, track) === null ? 'title' : cfg.line1);
+	const link1 = $derived(cfg.link_line1 && !!cardLink(line1Slot, track));
 	const link2 = $derived(cfg.link_line2 && !!cardLink(cfg.line2, track));
 	const linkCover = $derived(
 		cfg.link_cover && !!(cardLink('album', track) ?? cardLink('title', track))
@@ -174,7 +177,8 @@
 
 	{#if buttons.length && !cfg.hide_details}
 		<div class="mt-2.5 flex flex-col gap-1.5">
-			{#each buttons as kind (kind)}
+			<!-- Unkeyed: both slots can hold the same choice, and two identical keys throw. -->
+			{#each buttons as kind}
 				<div
 					class="cursor-pointer rounded-[3px] bg-[#4e5058] px-3 py-1.5 text-center text-[13px] leading-4 font-medium text-white transition-colors hover:bg-[#6d6f78]"
 				>

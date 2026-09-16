@@ -45,7 +45,9 @@
 		const json = JSON.stringify(cfg);
 		settings.discord_rpc_config = json;
 		clearTimeout(saveTimer);
-		saveTimer = setTimeout(() => api.setSetting('discord_rpc_config', json), 250);
+		saveTimer = setTimeout(() => {
+			api.setSetting('discord_rpc_config', json).catch((e) => toast.error(String(e)));
+		}, 250);
 	}
 
 	function set(patch: Partial<DiscordConfig>) {
