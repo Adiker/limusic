@@ -190,13 +190,14 @@ pub async fn get_queue(state: St<'_>) -> Result<serde_json::Value, String> {
 /// `visitor_data`) and internal blobs (`queue_json`, `queue_index`, `queue_position`) never cross
 /// into the webview: they'd otherwise ship the login credential to the renderer on every open, and
 /// the webview can't overwrite them either.
-const UI_SETTINGS: [&str; 16] = [
+const UI_SETTINGS: [&str; 17] = [
     "volume",
     "proxy",
     "quality",
     "enable_history",
     "disabled_stream_clients",
     "discord_rpc",
+    "discord_rpc_config",
     "close_to_tray",
     "autostart",
     "autoplay",
@@ -291,6 +292,11 @@ pub async fn set_setting(
     // to see it take effect.
     if key == "discord_rpc" {
         state.set_discord_enabled(value == "true");
+    }
+    // Same reasoning for the card layout: the settings tab previews it live, so the real card has
+    // to follow without waiting for the next track.
+    if key == "discord_rpc_config" {
+        state.set_discord_config(&value);
     }
     // Applies to what's fetched from here on: the live queue keeps whatever is already in it.
     if key == "hide_videos" {

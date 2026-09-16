@@ -2090,6 +2090,14 @@ impl AppState {
         }
     }
 
+    /// Apply the card layout from the settings tab (the `discord_rpc_config` blob). The presence
+    /// thread re-pushes at once, so the tab's preview and the real card stay in step.
+    pub fn set_discord_config(&self, json: &str) {
+        if let Some(d) = &self.discord {
+            d.set_config(crate::discord::RpcConfig::parse(Some(json)));
+        }
+    }
+
     /// Latest mpv position (secs) — for OS scrubber updates + relative media-key seeks.
     pub fn current_position(&self) -> f64 {
         f64::from_bits(self.latest_position.load(Ordering::SeqCst))

@@ -12,7 +12,8 @@
 		KeyboardIcon,
 		Cancel01Icon as RemoveIcon,
 		Copy01Icon,
-		Coffee02Icon
+		Coffee02Icon,
+		DiscordIcon
 	} from '@hugeicons/core-free-icons';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -28,6 +29,7 @@
 	import { win } from '$lib/win.svelte';
 	import ColorPicker from '$lib/components/ColorPicker.svelte';
 	import Changelog from '$lib/components/Changelog.svelte';
+	import DiscordSettings from '$lib/components/DiscordSettings.svelte';
 	import {
 		THEMES,
 		FONTS,
@@ -61,11 +63,12 @@
 	import { t, setLocale, currentLocale, LOCALES, type LocaleId } from '$lib/i18n.svelte';
 	import { appIcon, chooseAppIcon } from '$lib/appicon.svelte';
 
-	type TabId = 'general' | 'themes' | 'playback' | 'data' | 'about';
+	type TabId = 'general' | 'themes' | 'playback' | 'discord' | 'data' | 'about';
 	const TABS = $derived<{ id: TabId; label: string; hint: string; icon: typeof Settings02Icon }[]>([
 		{ id: 'general', label: t('settings.tabs.general'), hint: t('settings.tabs.general_hint'), icon: Settings02Icon },
 		{ id: 'themes', label: t('settings.tabs.themes'), hint: t('settings.tabs.themes_hint'), icon: PaintBoardIcon },
 		{ id: 'playback', label: t('settings.tabs.playback'), hint: t('settings.tabs.playback_hint'), icon: PlayCircleIcon },
+		{ id: 'discord', label: t('settings.tabs.discord'), hint: t('settings.tabs.discord_hint'), icon: DiscordIcon },
 		{ id: 'data', label: t('settings.tabs.data'), hint: t('settings.tabs.data_hint'), icon: Database02Icon },
 		{ id: 'about', label: t('settings.tabs.about'), hint: t('settings.tabs.about_hint'), icon: InformationCircleIcon }
 	]);
@@ -300,7 +303,6 @@
 	// Off by default: shuffle applies to the queue it was turned on for (issue #117).
 	const stickyShuffleOn = $derived(settings.sticky_shuffle === 'true');
 	const updateBannerOn = $derived(settings.update_banner !== 'false');
-	const discordOn = $derived(settings.discord_rpc === 'true');
 	const trayOn = $derived(settings.close_to_tray !== 'false');
 	const autostartOn = $derived(settings.autostart === 'true');
 	// `native_chrome` is read-only and platform-derived (commands.rs). `overlay` is macOS, where the
@@ -371,11 +373,6 @@
 	async function setUpdateBanner(on: boolean) {
 		settings.update_banner = on ? 'true' : 'false';
 		await api.setSetting('update_banner', settings.update_banner);
-	}
-
-	async function setDiscord(on: boolean) {
-		settings.discord_rpc = on ? 'true' : 'false';
-		await api.setSetting('discord_rpc', settings.discord_rpc);
 	}
 
 	async function setTray(on: boolean) {
@@ -471,10 +468,16 @@
 {/snippet}
 
 <Dialog.Root bind:open={ui.settingsOpen}>
-	<Dialog.Content class="gap-0 overflow-hidden p-0 sm:max-w-3xl">
+	<!-- The Discord tab puts its live preview *beside* the controls rather than under them, so it
+	     needs the extra width; every other tab reads better narrow. Deliberately not animated:
+	     transitioning the width relayouts the whole modal every frame, and WebKitGTK is the webview
+	     that would pay for it. -->
+	<Dialog.Content
+		class="gap-0 overflow-hidden p-0 {tab === 'discord' ? 'sm:max-w-5xl' : 'sm:max-w-3xl'}"
+	>
 		<Dialog.Description class="sr-only">{t('settings.title')}</Dialog.Description>
 
-		<div class="flex h-[min(34rem,72vh)]">
+		<div class="flex h-[min(38rem,80vh)]">
 			<!-- Tab rail -->
 			<nav class="flex w-52 shrink-0 flex-col border-r bg-muted/40 p-3">
 				<Dialog.Title class="px-3 pt-1 pb-4 font-heading text-base font-semibold">
@@ -514,6 +517,9 @@
 					<p class="truncate text-xs text-muted-foreground">{currentTab.hint}</p>
 				</header>
 
+				{#if loaded && tab === 'discord'}
+					<DiscordSettings {settings} />
+				{:else}
 				<div class="min-w-0 flex-1 overflow-y-auto px-6 py-5">
 					{#if !loaded}
 						<p class="text-sm text-muted-foreground">{t('common.loading')}</p>
@@ -551,11 +557,6 @@
 									title: t('player.history'),
 									desc: t('settings.playback.play_history_hint'),
 									control: historySwitch
-								})}
-								{@render row({
-									title: t('settings.general.discord_rpc'),
-									desc: t('settings.general.discord_rpc_hint'),
-									control: discordSwitch
 								})}
 							</div>
 						</section>
@@ -857,6 +858,7 @@
 						</section>
 					{/if}
 				</div>
+				{/if}
 			</div>
 		</div>
 	</Dialog.Content>
@@ -883,7 +885,6 @@
 {/snippet}
 
 {#snippet historySwitch()}<Switch checked={historyOn} onCheckedChange={setHistory} />{/snippet}
-{#snippet discordSwitch()}<Switch checked={discordOn} onCheckedChange={setDiscord} />{/snippet}
 {#snippet traySwitch()}<Switch checked={trayOn} onCheckedChange={setTray} />{/snippet}
 {#snippet autostartSwitch()}<Switch checked={autostartOn} onCheckedChange={setAutostart} />{/snippet}
 {#snippet systemTitlebarSwitch()}<Switch
