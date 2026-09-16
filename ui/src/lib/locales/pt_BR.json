@@ -60,7 +60,9 @@
 		"filter_library": "Filtrar sua biblioteca…",
 		"command_description": "Buscar músicas, álbuns, artistas e playlists",
 		"shuffle_all": "Tocar tudo aleatoriamente",
-		"play_all": "Tocar tudo"
+		"play_all": "Tocar tudo",
+		"top_result": "Melhor resultado",
+		"all_results_for": "Todos os resultados para “{query}”"
 	},
 	"nav": {
 		"home": "Início",
@@ -82,7 +84,8 @@
 		"remove_account": "Remover conta",
 		"remove_account_title": "Remover do Limusic?",
 		"remove_account_desc": "{name} é removida apenas desta lista. A conta do Google em si não é afetada, e você pode fazer login com ela novamente quando quiser.",
-		"saved_accounts_hint": "Selecione uma conta salva para alternar."
+		"saved_accounts_hint": "Selecione uma conta salva para alternar.",
+		"no_channels": "O YouTube não retornou nenhum canal selecionável."
 	},
 	"player": {
 		"play": "Tocar",
@@ -154,7 +157,8 @@
 		"show_section": "Mostrar {title} no início",
 		"hide_section": "Ocultar {title} do início",
 		"feed_empty": "Seu feed inicial veio vazio desta vez.",
-		"signed_out_hint": "Entre e o início se enche de mixes e playlists feitos a partir do que você ouve."
+		"signed_out_hint": "Entre e o início se enche de mixes e playlists feitos a partir do que você ouve.",
+		"add_to_end": "Adicionar ao final"
 	},
 	"artist": {
 		"subscribe": "Inscrever-se",
@@ -196,7 +200,16 @@
 		"every_upload": "Todas as faixas que você enviou para o YouTube Music",
 		"no_uploads": "Nada enviado ainda. Músicas que você envia em music.youtube.com aparecem aqui.",
 		"uploads_signed_out": "Entre para ver as músicas que você enviou para o YouTube Music.",
-		"no_upload_albums": "Nenhum álbum enviado ainda. Os álbuns que você enviar em music.youtube.com aparecerão aqui."
+		"no_upload_albums": "Nenhum álbum enviado ainda. Os álbuns que você enviar em music.youtube.com aparecerão aqui.",
+		"songs_signed_out": "Faça login para ver as músicas salvas na sua biblioteca do YouTube Music. As músicas neste dispositivo estão na aba Local.",
+		"no_library_songs": "Ainda não há músicas na sua biblioteca. Toque no ⋯ de uma música e salve ou curta. Ela aparecerá aqui.",
+		"empty_signed_out": "Ainda não há nada salvo. Abra uma playlist ou um álbum e toque em Salvar na biblioteca, ou faça login para acessar a biblioteca da sua conta.",
+		"empty": "Sua biblioteca está vazia.",
+		"no_saved_playlists": "Ainda não há playlists. Abra uma e toque em Salvar na biblioteca para mantê-la aqui.",
+		"no_saved_albums": "Ainda não há álbuns salvos. Abra um álbum e toque em Salvar na biblioteca.",
+		"no_saved_artists": "Ainda não há artistas. Salve um na página dele para mantê-lo aqui.",
+		"no_artists": "Ainda não há artistas. Eles aparecem aqui assim que você salva músicas ou álbuns deles.",
+		"on_repeat": "Em Repetição"
 	},
 	"local": {
 		"scanning": "Verificando pasta...",
