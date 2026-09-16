@@ -93,11 +93,22 @@ impl Player {
         mpv.set_property("demuxer-cache-dir", cache_dir)?;
         // The demuxer runs at mpv's browser-sized defaults otherwise: 150 MiB forward and 50 MiB
         // back, per open file, and the gapless lookahead keeps two open across every transition.
-        // This is audio only (`vid=no` above), so a whole 5-minute Opus track is about 4 MB and
-        // those ceilings only ever reserve headroom nothing uses. 32 MiB forward is several tracks
-        // of read-ahead; 8 MiB back is minutes of backward-seek without a refetch.
+        //
+        // Note what these bound. `cache-on-disk` is on above, and mpv's manual is explicit that in
+        // that mode the payload lives in the cache file and these limits apply to *packet
+        // metadata* only, "typically 50 MB per hour of media". So 32 MiB is not "several tracks of
+        // audio bytes", it is roughly 40 minutes of media before mpv starts pruning metadata. Fine
+        // for songs, and the ceiling an hour-long mix runs into.
         mpv.set_property("demuxer-max-bytes", 32 * 1024 * 1024_i64)?;
         mpv.set_property("demuxer-max-back-bytes", 8 * 1024 * 1024_i64)?;
+        // ffmpeg's HTTP reader retries nothing by default: one dropped connection, one transient
+        // error, and the track dies outright (mpv reports end-file with an error, which the app
+        // turns into a skip). Seeking in a long stream is where that bites, because a seek past
+        // the cached range opens a *fresh* request and gets no second chance. Issue #188.
+        mpv.set_property(
+            "stream-lavf-o",
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
+        )?;
         let mpv = Arc::new(mpv);
 
         let (tx, rx) = unbounded_channel();
@@ -425,6 +436,14 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let p = Player::new(dir.to_str().unwrap()).expect("libmpv");
         let af = || p.mpv.get_property::<String>("af").unwrap();
+
+        // `stream-lavf-o` is the one option here mpv could reject outright (it isn't a plain
+        // flag), and `new` is infallible-by-expect at the call site, so a rejection would be a
+        // panic on launch. Read it back: the reconnect settings are what keeps a seek in a long
+        // stream from killing the track.
+        let lavf = p.mpv.get_property::<String>("stream-lavf-o").unwrap();
+        assert!(lavf.contains("reconnect=1"), "reconnect options missing: {lavf}");
+        assert!(lavf.contains("reconnect_on_network_error=1"), "{lavf}");
 
         // 1. Loudness normalization, then a pitch round trip. The gain has to survive both steps.
         p.set_gain(Some(-7.7)).unwrap();
