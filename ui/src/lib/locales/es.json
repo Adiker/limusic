@@ -60,7 +60,9 @@
 		"filter_library": "Filtrar tu biblioteca…",
 		"command_description": "Buscar canciones, álbumes, artistas y listas de reproducción",
 		"shuffle_all": "Aleatorio todo",
-		"play_all": "Reproducir todo"
+		"play_all": "Reproducir todo",
+		"top_result": "Resultado principal",
+		"all_results_for": "Todos los resultados de \"{query}\""
 	},
 	"nav": {
 		"home": "Inicio",
@@ -82,7 +84,8 @@
 		"remove_account": "Quitar cuenta",
 		"remove_account_title": "¿Quitar de Limusic?",
 		"remove_account_desc": "{name} solo se quita de la lista. La cuenta de Google en sí no se ve afectada y puedes iniciar sesión con esta cuando quieras.",
-		"saved_accounts_hint": "Elige una cuenta guardada para cambiar a esta."
+		"saved_accounts_hint": "Elige una cuenta guardada para cambiar a esta.",
+		"no_channels": "YouTube no devolvió ningún canal seleccionable."
 	},
 	"player": {
 		"play": "Reproducir",
@@ -154,7 +157,8 @@
 		"show_section": "Mostrar {title} en el inicio",
 		"hide_section": "Ocultar {title} del inicio",
 		"feed_empty": "Tu feed de inicio volvió vacío esta vez.",
-		"signed_out_hint": "Inicia sesión y el inicio se llena de mixes y listas de reproducción creadas con lo que escuchas."
+		"signed_out_hint": "Inicia sesión y el inicio se llena de mixes y listas de reproducción creadas con lo que escuchas.",
+		"add_to_end": "Añadir al final"
 	},
 	"artist": {
 		"subscribe": "Suscribirse",
@@ -196,7 +200,18 @@
 		"every_upload": "Todas las pistas que has subido a YouTube Music",
 		"no_uploads": "Aún no hay nada subido. Las canciones que subas en music.youtube.com aparecerán aquí.",
 		"uploads_signed_out": "Inicia sesión para ver la música que has subido a YouTube Music.",
-		"no_upload_albums": "Aún no hay álbumes subidos. Los álbumes que subas en music.youtube.com aparecerán aquí."
+		"no_upload_albums": "Aún no hay álbumes subidos. Los álbumes que subas en music.youtube.com aparecerán aquí.",
+		"songs_signed_out": "Inicia sesión para ver las canciones guardadas en tu biblioteca de Youtube Music. La música en este equipo esta en la pestaña Local.",
+		"no_library_songs": "Todavía no hay canciones en tu biblioteca. Toca ⋯ en una canción y guárdala o da me gusta; aparecerá aquí.",
+		"empty_signed_out": "Aún no hay nada guardado. Abre una playlist o un álbum y toca Guardar en biblioteca, o inicia sesión para ver la de tu cuenta.",
+		"empty": "Tu biblioteca está vacía.",
+		"no_saved_playlists": "Todavía no hay playlists. Abre una y toca Guardar en biblioteca para tenerla aquí.",
+		"no_saved_albums": "Todavía no hay álbumes. Abre uno y toca Guardar en biblioteca para tenerlo aquí.",
+		"no_saved_artists": "Todavía no hay artistas. Abre uno y toca Guardar en biblioteca para tenerlo aquí.",
+		"no_artists": "Todavía no hay artistas. Aparecerán cuando guardes sus canciones o álbumes.",
+		"on_repeat": "En repetición",
+		"on_repeat_subtitle": "{count} canciones que más has escuchado este mes",
+		"songs_count": "{count} canciones"
 	},
 	"local": {
 		"scanning": "Escaneando carpeta...",
@@ -206,7 +221,11 @@
 		"artists_count": "Artistas ({count})",
 		"songs_count": "Canciones ({count})",
 		"add_folder": "Agregar carpeta",
-		"pick_folder_dialog": "Agregar una carpeta de música"
+		"pick_folder_dialog": "Agregar una carpeta de música",
+		"folders": "Carpetas",
+		"folders_hint": "La música en estas carpetas se reproduce sin conexión a Internet.",
+		"no_folders": "Todavía no hay carpetas. Añade la carpeta donde está tu música y aparecerá aquí.",
+		"nothing_playable": "Todavía no se encontró nada reproducible en estas carpetas. Buscando archivos mp3, flac, m4a, aac, ogg, opus, wav, wma, aiff, ape, wv y mka."
 	},
 	"settings": {
 		"title": "Configuración",
@@ -220,7 +239,9 @@
 			"data": "Datos y almacenamiento",
 			"data_hint": "Red y archivos en caché.",
 			"about": "Acerca de",
-			"about_hint": "Versión, actualizaciones y qué cambió."
+			"about_hint": "Versión, actualizaciones y qué cambió.",
+			"discord": "Discord",
+			"discord_hint": "Cómo se ve tu tarjeta de Rich Presence."
 		},
 		"sections": {
 			"language": "Idioma",
@@ -239,7 +260,11 @@
 			"report": "Reportar un problema",
 			"whats_new": "Novedades",
 			"blocked": "Artistas bloqueados",
-			"support": "Soporte"
+			"support": "Soporte",
+			"discord_status": "Estatus",
+			"discord_card": "Tarjeta",
+			"discord_links": "Cliqueable",
+			"discord_buttons": "Botones"
 		},
 		"general": {
 			"language": "Idioma de la interfaz",
@@ -358,6 +383,9 @@
 			"kofi": "Cómprame un café",
 			"kofi_hint": "Limusic es gratis y seguirá siendo gratis. Ko-fi está ahí por si quieres apoyar.",
 			"kofi_button": "Abrir Ko-fi"
+		},
+		"discord": {
+			"enable": "Rich Presence"
 		}
 	},
 	"dialogs": {
@@ -592,5 +620,25 @@
 		"songs_count": "{count} canciones",
 		"empty": "Nada aquí todavía. Lo que reproduzcas mientras tengas sesión iniciada aparecerá en esta página.",
 		"signed_out": "Inicia sesión para ver tu historial de escucha en YouTube Music."
+	},
+	"selection": {
+		"actions": "Acciones de pistas seleccionadas",
+		"count": "{count} seleccionadas",
+		"selected": "Seleccionada",
+		"not_selected": "No seleccionada",
+		"hidden": "{count} ocultas",
+		"enter": "Pistas seleccionadas",
+		"exit": "Salir del modo selección",
+		"hint": "Elige pistas para actuar sobre ellas",
+		"select_all": "Seleccionar todas ({count})",
+		"clear": "Limpiar",
+		"track": "{title}. Espacio para seleccionar, Enter para reproducir.",
+		"track_guest": "{title}. Espacio para seleccionar, Enter para agregar a la cola.",
+		"select_track": "Seleccionar {title}",
+		"lost": "{count} pistas seleccionadas no están en la lista.",
+		"pending": "Buscando {count} pistas seleccionadas en las páginas que aún están cargando.",
+		"local_playlist": "Archivos locales no pueden ser agregados a una playlist de YouTube.",
+		"account_changed": "Se dejó de añadir canciones porque cambió la cuenta.",
+		"playlist_partial": "Se añadió {added} a {playlist}; {duplicates} ya estaban allí; {remaining} sin confirmar. {error}"
 	}
 }
