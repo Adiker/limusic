@@ -261,7 +261,7 @@
 			"whats_new": "Novedades",
 			"blocked": "Artistas bloqueados",
 			"support": "Soporte",
-			"discord_status": "Estatus",
+			"discord_status": "Estado",
 			"discord_card": "Tarjeta",
 			"discord_links": "Cliqueable",
 			"discord_buttons": "Botones"
@@ -385,7 +385,37 @@
 			"kofi_button": "Abrir Ko-fi"
 		},
 		"discord": {
-			"enable": "Rich Presence"
+			"enable": "Rich Presence",
+			"enable_hint": "Muestra la canción que estás reproduciendo en tu perfil de Discord.",
+			"off_notice": "Rich Presence está desactivado, así que no se muestra en tu perfil. La vista previa sigue tus cambios.",
+			"show_paused": "Mostrar cuando esté en pausa",
+			"show_paused_hint": "Mantener la tarjeta visible mientras la pista está en pausa. Discord no tiene un estado de pausa, así que la barra de progreso desaparece en lugar de seguir avanzando.",
+			"hide_details": "Ocultar detalles",
+			"hide_details_hint": "Muestra solo que hay música reproduciendo. Ningún titulo, artista, album, portada, barra de progreso o botones salen de tu equipo.",
+			"status_line": "Texto del estado",
+			"status_line_hint": "Lo que Discord muestra junto a tu nombre en la lista de miembros. La tarjeta de perfil inferior siempre muestra el nombre de la aplicación.",
+			"status_app": "Nombre de la aplicación",
+			"status_line1": "Linea 1",
+			"status_line2": "Linea 2",
+			"app_name": "Nombre de la aplicación",
+			"app_name_hint": "Reemplaza “Limusic” siempre que aparezca el nombre de la aplicación. Déjalo vacío para mantenerlo.",
+			"app_name_placeholder": "Limusic",
+			"line1": "Linea 1",
+			"line1_hint": "La línea en negrita, justo debajo del encabezado.",
+			"line2": "Linea 2",
+			"line2_hint": "La linea más pequeña debajo de esta.",
+			"content_title": "Titulo de la canción",
+			"content_artist": "Artista",
+			"content_album": "Álbum",
+			"content_artist_album": "Artista y álbum",
+			"content_off": "Oculto",
+			"cover": "Carátula del álbum",
+			"cover_hint": "Muestra la carátula junto a la pista.",
+			"badge": "Insignia del proveedor",
+			"badge_hint": "Marca la carátula con un pequeño icono de Limusic, como hacen las tarjetas de Spotify y Apple Music.",
+			"line3": "Linea 3",
+			"line3_hint": "La última línea. Discord también la usa como texto al pasar el cursor sobre la carátula, así que necesita la carátula activada.",
+			"timestamps": "Barra de progreso"
 		}
 	},
 	"dialogs": {
