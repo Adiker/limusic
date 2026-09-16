@@ -316,15 +316,12 @@
 			"stream_clients_hint": "Turn a client off to skip it when resolving streams. Overridden by the {var} env var."
 		},
 		"themes": {
-			"accent_themes": "Accent Themes",
 			"interface_font": "Interface font",
 			"load_font_file": "Load font from file",
 			"custom_colors": "Custom Colors",
 			"primary_color": "Primary Accent",
 			"background_color": "Background",
 			"reset_theme": "Reset to default theme",
-			"accent_colors": "Accent colors",
-			"palettes": "Palettes",
 			"your_fonts": "Your fonts",
 			"custom_font": "Custom…",
 			"font_placeholder": "Font installed on this computer, e.g. Inter",

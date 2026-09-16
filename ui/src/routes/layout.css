@@ -491,6 +491,45 @@
 	--sidebar-ring: oklch(0.7729 0.1535 163.2231);
 }
 
+/* Pitch black for OLED/AMOLED panels: --background is #000000, so those pixels are switched off
+   rather than lit. Surfaces are black too and separated by borders instead of by lighter greys,
+   and the palette is monochrome so the one coloured thing on screen is the artwork. It stays
+   black in light mode on purpose: a black theme that lights the whole panel back up is pointless,
+   and every other token here would have to be maintained twice for a mode nobody picks it in. */
+.theme-amoled {
+	--background: oklch(0 0 0);
+	--foreground: oklch(0.985 0 0);
+	--card: oklch(0 0 0);
+	--card-foreground: oklch(0.985 0 0);
+	--popover: oklch(0 0 0);
+	--popover-foreground: oklch(0.985 0 0);
+	--primary: oklch(0.985 0 0);
+	--primary-foreground: oklch(0.145 0 0);
+	--secondary: oklch(0.205 0 0);
+	--secondary-foreground: oklch(0.985 0 0);
+	--muted: oklch(0.17 0 0);
+	--muted-foreground: oklch(0.708 0 0);
+	--accent: oklch(0.24 0 0);
+	--accent-foreground: oklch(0.985 0 0);
+	--destructive: oklch(0.704 0.191 22.216);
+	--border: oklch(1 0 0 / 14%);
+	--input: oklch(1 0 0 / 18%);
+	--ring: oklch(0.556 0 0);
+	--chart-1: oklch(0.985 0 0);
+	--chart-2: oklch(0.82 0 0);
+	--chart-3: oklch(0.65 0 0);
+	--chart-4: oklch(0.48 0 0);
+	--chart-5: oklch(0.32 0 0);
+	--sidebar: oklch(0 0 0);
+	--sidebar-foreground: oklch(0.985 0 0);
+	--sidebar-primary: oklch(0.985 0 0);
+	--sidebar-primary-foreground: oklch(0.145 0 0);
+	--sidebar-accent: oklch(0.24 0 0);
+	--sidebar-accent-foreground: oklch(0.985 0 0);
+	--sidebar-border: oklch(1 0 0 / 14%);
+	--sidebar-ring: oklch(0.556 0 0);
+}
+
 /* The blurred cover behind a hero (HomeHero, NowPlaying, the album and library headers), on its
    own compositing layer. That promotion is the whole point of the class: left unpromoted,
    WebKitGTK re-runs the 40px gaussian over the element every time anything underneath it repaints,

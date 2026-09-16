@@ -80,8 +80,6 @@
 		'mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground';
 	const CARD = 'divide-y divide-border/60 overflow-hidden rounded-xl border bg-card';
 
-	const ACCENT_THEMES = THEMES.filter((t) => t.kind === 'accent');
-	const PALETTE_THEMES = THEMES.filter((t) => t.kind === 'palette');
 	const currentTheme = $derived(THEMES.find((t) => t.id === theme.id) ?? THEMES[0]);
 
 	// --- Themes tab ---
@@ -600,9 +598,9 @@
 								{@render row({
 									title: t('settings.themes.background_color'),
 									desc:
-										currentTheme.kind === 'palette'
-											? t('settings.themes.tint_palette_hint', { theme: currentTheme.label })
-											: t('settings.themes.tint_hint'),
+										theme.id === 'default'
+											? t('settings.themes.tint_hint')
+											: t('settings.themes.tint_palette_hint', { theme: currentTheme.label }),
 									control: tintSlider
 								})}
 								{@render row({
@@ -925,36 +923,21 @@
 	<Select.Root type="single" value={theme.id} onValueChange={(v) => applyTheme(v as ThemeId)}>
 		<Select.Trigger class="w-44 shrink-0" aria-label={t('a11y.theme')}>
 			<span
-				class="size-4 shrink-0 rounded-full ring-1 ring-black/10"
+				class="size-4 shrink-0 rounded-full ring-1 ring-foreground/20"
 				style="background:{currentTheme.color}"
 			></span>
 			<span class="flex-1 truncate text-left">{currentTheme.label}</span>
 		</Select.Trigger>
 		<Select.Content>
-			<Select.Group>
-				<Select.GroupHeading>{t('settings.themes.accent_colors')}</Select.GroupHeading>
-				{#each ACCENT_THEMES as th (th.id)}
-					<Select.Item value={th.id} label={th.label}>
-						<span
-							class="size-4 shrink-0 rounded-full ring-1 ring-black/10"
-							style="background:{th.color}"
-						></span>
-						{th.label}
-					</Select.Item>
-				{/each}
-			</Select.Group>
-			<Select.Group>
-				<Select.GroupHeading>{t('settings.themes.palettes')}</Select.GroupHeading>
-				{#each PALETTE_THEMES as th (th.id)}
-					<Select.Item value={th.id} label={th.label}>
-						<span
-							class="size-4 shrink-0 rounded-full ring-1 ring-black/10"
-							style="background:{th.color}"
-						></span>
-						{th.label}
-					</Select.Item>
-				{/each}
-			</Select.Group>
+			{#each THEMES as th (th.id)}
+				<Select.Item value={th.id} label={th.label}>
+					<span
+						class="size-4 shrink-0 rounded-full ring-1 ring-foreground/20"
+						style="background:{th.color}"
+					></span>
+					{th.label}
+				</Select.Item>
+			{/each}
 		</Select.Content>
 	</Select.Root>
 {/snippet}
@@ -982,7 +965,7 @@
 		aria-label={t('a11y.background_tint')}
 		max={360}
 		step={1}
-		disabled={currentTheme.kind === 'palette'}
+		disabled={theme.id !== 'default'}
 		value={effective.hue}
 		onValueChange={(hue) => setCustom({ hue })}
 		class="w-44 shrink-0 [&_[data-slot=slider-range]]:bg-transparent [&_[data-slot=slider-track]]:bg-[linear-gradient(to_right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)]"
