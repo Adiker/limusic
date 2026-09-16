@@ -60,7 +60,9 @@
 		"filter_library": "Filtrer votre bibliothèque…",
 		"command_description": "Rechercher des musiques, albums, artistes et playlists",
 		"shuffle_all": "Mélanger tout",
-		"play_all": "Lancer tout"
+		"play_all": "Lancer tout",
+		"top_result": "Meilleur résultat",
+		"all_results_for": "Tous les résultats pour \"{query}\""
 	},
 	"nav": {
 		"home": "Accueil",
@@ -82,7 +84,8 @@
 		"remove_account": "Supprimer un compte",
 		"remove_account_title": "Supprimer de Limusic ?",
 		"remove_account_desc": "{name} est simplement supprimé de cette liste. Le compte Google lui-même n'est pas affecté, et vous pouvez vous reconnecter avec ce compte quand vous le souhaitez.",
-		"saved_accounts_hint": "Sélectionnez un compte enregistré pour y basculer."
+		"saved_accounts_hint": "Sélectionnez un compte enregistré pour y basculer.",
+		"no_channels": "YouTube n'a renvoyé aucune chaîne sélectionnable."
 	},
 	"player": {
 		"play": "Lancer",
@@ -124,7 +127,7 @@
 		"open_player": "Ouvrir le lecteur",
 		"minimize_player": "Réduire le lecteur",
 		"remove_from_liked": "Retirer des musiques aimées",
-		"save_to_liked": "Ajouter aux morceaux préférés",
+		"save_to_liked": "Ajouter aux titres préférés",
 		"enlarge_lyrics": "Aggrandir les paroles",
 		"shrink_lyrics": "Réduire les paroles",
 		"remove_rating": "Supprimer la notation",
@@ -154,7 +157,8 @@
 		"show_section": "Afficher {title} sur l'accueil",
 		"hide_section": "Cacher {title} de l'accueil",
 		"feed_empty": "Votre fil d’accueil est vide pour le moment.",
-		"signed_out_hint": "Se connecter et l'accueil se remplira avec vos mix et playlists construits avec vos écoutes."
+		"signed_out_hint": "Se connecter et l'accueil se remplira avec vos mix et playlists construits avec vos écoutes.",
+		"add_to_end": "Ajouter à la fin"
 	},
 	"artist": {
 		"subscribe": "S'abonner",
@@ -196,7 +200,18 @@
 		"every_upload": "Chaque piste que vous avez mise en ligne sur YouTube Music",
 		"no_uploads": "Rien n'a encore été mis en ligne. Les musiques que vous avez mises en ligne sur music.youtube.com apparaissent ici.",
 		"uploads_signed_out": "Connectez-vous pour voir la musique que vous avez mise en ligne sur YouTube Music.",
-		"no_upload_albums": "Aucun album n'a encore été mis en ligne. Les albums que vous mettez en ligne sur music.youtube.com s'affichent ici."
+		"no_upload_albums": "Aucun album n'a encore été mis en ligne. Les albums que vous mettez en ligne sur music.youtube.com s'affichent ici.",
+		"songs_signed_out": "Connectez-vous pour voir les titres enregistrés dans votre bibliothèque YouTube Music. La musique stockée sur cet appareil se trouve dans l'onglet \"Local\".",
+		"no_library_songs": "Votre bibliothèque ne contient encore aucun titre. Cliquez sur les trois points situés à côté d'un titre pour l'enregistrer ou l'ajouter à vos favoris. Il apparaîtra alors ici.",
+		"empty_signed_out": "Rien n'a encore été enregistré. Ouvrez une playlist ou un album et cliquez sur \"Enregistrer dans la bibliothèque\", ou connectez-vous pour accéder à celle de votre compte.",
+		"empty": "Votre bibliothèque est vide.",
+		"no_saved_playlists": "Il n'y a pas encore de playlist. Créez-en une et cliquez sur \"Enregistrer dans la bibliothèque\" pour la conserver ici.",
+		"no_saved_albums": "Aucun album n'a encore été enregistré. Ouvrez un album et cliquez sur \"Enregistrer dans la bibliothèque\".",
+		"no_saved_artists": "Aucun artiste pour l'instant. Enregistrez-en un depuis sa page pour le conserver ici.",
+		"no_artists": "Il n'y a pas encore d'artistes. Ils apparaîtront dès que vous aurez enregistré leurs titres ou leurs albums.",
+		"on_repeat": "En boucle",
+		"on_repeat_subtitle": "{count} titres que vous avez le plus écoutés ce mois-ci",
+		"songs_count": "{count} titres"
 	},
 	"local": {
 		"scanning": "Scan du dossier...",
@@ -206,7 +221,11 @@
 		"artists_count": "Artistes ({count})",
 		"songs_count": "Musiques ({count})",
 		"add_folder": "Ajouter le dossier",
-		"pick_folder_dialog": "Ajouter un dossier de musique"
+		"pick_folder_dialog": "Ajouter un dossier de musique",
+		"folders": "Dossiers",
+		"folders_hint": "La musique contenue dans ces dossiers peut être écoutée sans connexion Internet.",
+		"no_folders": "Il n'y a pas encore de dossiers. Ajoutez celui qui contient votre musique et il apparaîtra ici.",
+		"nothing_playable": "Aucun fichier lisible dans ces dossiers. Les fichiers au format mp3, flac, m4a, aac, ogg, opus, wav, wma, aiff, ape, wv et mka sont supportés."
 	},
 	"settings": {
 		"title": "Paramètres",
@@ -289,7 +308,7 @@
 			"artwork_background": "Illustraction d'arrière plan",
 			"artwork_background_hint": "Teinte le lecteur avec une version floutée de la pochette du morceau en cours. Quand désactiver, l’arrière-plan reste uni.",
 			"artwork_accent": "Adapter les couleurs avec l'illustration",
-			"artwork_accent_hint": "Adapte les couleurs de l’application à la pochette du morceau en cours : couleur d’accentuation, surfaces et bordures, avec une transition entre les morceaux. Lorsque cette option est désactivée, les couleurs du thème sélectionné sont conservées.",
+			"artwork_accent_hint": "Adapte les couleurs de l’application à la pochette du titre en cours : couleur d’accentuation, surfaces et bordures, avec une transition entre les morceaux. Lorsque cette option est désactivée, les couleurs du thème sélectionné sont conservées.",
 			"reset_theme_hint": "Réinitialise les couleurs, les arrondis et les polices personnalisés. Le préréglage est conservé.",
 			"interface_font_label": "Police d'interface",
 			"interface_font_short_hint": "Tout sauf les titres.",
@@ -310,19 +329,19 @@
 			"quality_low": "Bas",
 			"quality_auto": "Auto",
 			"quality_high": "Haut",
-			"autoplay": "Lecture automatique de morceaux similaires",
-			"autoplay_hint": "Continuer automatiquement avec des morceaux recommandés lorsque la file d’attente est terminée.",
-			"prevent_duplicates": "Empêcher les morceaux en double dans la file d’attente",
-			"prevent_duplicates_hint": "Éviter d’ajouter des morceaux déjà présents dans la file d’attente.",
+			"autoplay": "Lecture automatique de titres similaires",
+			"autoplay_hint": "Continuer automatiquement avec des titres recommandés lorsque la file d’attente est terminée.",
+			"prevent_duplicates": "Empêcher les titres en double dans la file d’attente",
+			"prevent_duplicates_hint": "Éviter d’ajouter des titres déjà présents dans la file d’attente.",
 			"sticky_shuffle": "Conserver la lecture aléatoire entre les files d’attente",
-			"sticky_shuffle_hint": "Quand désactiver, la lecture aléatoire s’applique uniquement à la file en cours : ouvrir ensuite un album ou une playlist lance les morceaux dans l’ordre.",
-			"play_history_hint": "Mémoriser les morceaux récemment écoutés pour personnaliser les recommandations.",
+			"sticky_shuffle_hint": "Quand désactiver, la lecture aléatoire s’applique uniquement à la file en cours : ouvrir ensuite un album ou une playlist lance les titres dans l’ordre.",
+			"play_history_hint": "Mémoriser les titres récemment écoutés pour personnaliser les recommandations.",
 			"music_videos": "Activer les clips musicaux",
 			"music_videos_hint": "Afficher le flux vidéo lorsqu’il est disponible au lieu de l’audio uniquement.",
 			"hide_videos": "Masquer les vidéos dans les résultats de recherche",
-			"hide_videos_hint": "Afficher uniquement les morceaux audio et les sorties officielles dans les résultats de recherche.",
+			"hide_videos_hint": "Afficher uniquement les titres audio et les sorties officielles dans les résultats de recherche.",
 			"lyrics_provider": "Paroles synchronisées (Boidu/LRCLIB)",
-			"lyrics_provider_hint": "Récupérer les paroles synchronisées par la communauté pour les morceaux en cours de lecture.",
+			"lyrics_provider_hint": "Récupérer les paroles synchronisées par la communauté pour les titres en cours de lecture.",
 			"blocked_artists": "Artistes bloqués",
 			"blocked_artists_hint": "Les artistes bloqués ne sont pas diffusés à la radio, en lecture automatique ni dans les suggestions. Les playlists et les albums que vous ouvrez continuent quant à eux de lire tous les titres qu'ils contiennent.",
 			"blocked_artists_empty": "Personne n'a encore été bloqué. Utilisez l'option « Bloquer l'artiste » dans le menu ⋯ d'un morceau.",
@@ -367,7 +386,7 @@
 		"edit_playlist": {
 			"title": "Modifier la playlist",
 			"new_title": "Créer une playlist",
-			"new_desc": "Créez une nouvelle playlist pour organiser vos morceaux.",
+			"new_desc": "Créez une nouvelle playlist pour organiser vos titres.",
 			"name_label": "Nom de la playlist",
 			"name_placeholder": "Mes morceaux préférés",
 			"desc_label": "Description",
@@ -554,7 +573,7 @@
 		"browser_failed": "Impossible d’ouvrir le navigateur : {error}",
 		"update_failed": "Échec de la mise à jour : {error}",
 		"shortcuts_dropped_one": "1 raccourci supprimé pour un morceau supprimé",
-		"shortcuts_dropped": "{count} raccourcis supprimés pour des morceaux supprimés",
+		"shortcuts_dropped": "Suppression de {count} raccourcis correspondant à des titres supprimés",
 		"pins_full": "Désépinglez d’abord un élément — {max} épingles maximum",
 		"starting_radio": "Lancement de la radio…",
 		"signed_in": "Connecté",
@@ -580,12 +599,25 @@
 		"sort_failed": "Impossible de trier cette playlist : {error}",
 		"already_in_all": "Les {count} éléments sont déjà dans {playlist}",
 		"already_in": "Déjà dans {playlist}",
-		"added_songs": "{count} morceaux ajoutés à {playlist}",
+		"added_songs": "{count} titres ajoutés à {playlist}",
 		"added_one": "Ajouté à {playlist}",
 		"app_icon_set": "L'icône de l'application a changé",
 		"blocked_copied": "{count} artistes bloqués ont été copiés au format JSON",
 		"blocked_artist": "{name} bloqué(e)",
-		"unblocked_artist": "{name} débloqué(e)"
+		"unblocked_artist": "{name} débloqué(e)",
+		"added_to_shortcuts": "Ajouté aux raccourcis",
+		"already_in_shortcuts": "Déjà dans les raccourcis",
+		"playing_next_one": "Prochain titre",
+		"playing_next": "{count} titres à venir",
+		"added_to_queue_one": "Ajouté à la file d'attente",
+		"added_to_queue": "{count} titres ont été ajoutés à la file d'attente",
+		"liked": "Ajouté à la liste des titres préférés",
+		"disliked": "Je n'ai pas aimé",
+		"rating_removed": "Note supprimée",
+		"subscribed": "Abonné à {name}",
+		"unsubscribed": "Désabonné",
+		"signed_in_as": "Connecté en tant que {name}",
+		"switched_to": "Basculé vers {name}"
 	},
 	"history": {
 		"title": "Historique",
@@ -595,5 +627,25 @@
 		"songs_count": "{count} chansons",
 		"empty": "Rien pour l'instant. Tout ce que vous jouez lorsque vous êtes connecté s'affiche sur cette page.",
 		"signed_out": "Connectez-vous pour consulter votre historique d'écoute sur YouTube Music."
+	},
+	"selection": {
+		"actions": "Actions des titres sélectionnés",
+		"count": "{count} sélectionnés",
+		"selected": "Sélectionné",
+		"not_selected": "Non sélectionné",
+		"hidden": "{count} masqués",
+		"enter": "Sélectionner les titres",
+		"exit": "Quitter le mode sélection",
+		"hint": "Choisissez les titres à traiter",
+		"select_all": "Sélectionner tout ({count})",
+		"clear": "Effacer",
+		"track": "{title}. Appuyez sur la barre d'espace pour sélectionner, puis sur Entrée pour jouer.",
+		"track_guest": "{title}. Appuyez sur la barre d'espace pour sélectionner, puis sur Entrée pour ajouter à la file d'attente de la session.",
+		"select_track": "Sélectionner {title}",
+		"lost": "Les {count} titres sélectionnés ne figurent plus dans cette liste.",
+		"pending": "Recherche de {count} titres sélectionnés dans les pages en cours de chargement.",
+		"local_playlist": "Les fichiers locaux ne peuvent pas être ajoutés à une playlist YouTube.",
+		"playlist_partial": "Ajout de {added} à {playlist} ; {duplicates} s'y trouvent déjà ; {remaining} n'est pas confirmé. {error}",
+		"account_changed": "L'ajout de titres a été interrompu en raison d'un changement de compte."
 	}
 }
