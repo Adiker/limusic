@@ -61,6 +61,12 @@ impl InnerTube {
     }
 
     /// Raw `search` POST. `params` = a filter (None = the mixed, unfiltered search). context/08.
+    ///
+    /// Sent anonymously (no cookie, no `onBehalfOfUser`) on purpose: a signed-in `search` is
+    /// written to the account's YouTube search history, and the typeahead fires one per debounce,
+    /// so every half-typed query showed up later in YouTube's and YTM's own search box (#203).
+    /// Search needs no credential (the response carries no per-account field, not even
+    /// `likeStatus`), so dropping it costs nothing but personalised ranking.
     async fn search_raw(
         &self,
         client: &YouTubeClient,
@@ -76,11 +82,11 @@ impl InnerTube {
             params: Option<String>,
         }
         let body = SearchBody {
-            context: self.context_for(client),
+            context: self.context_anonymous(client),
             query: query.to_owned(),
             params: params.map(str::to_owned),
         };
-        self.post("search", client, &body, true).await
+        self.post("search", client, &body, /* set_login */ false).await
     }
 
     // --- "hide music videos" (user setting, off by default) ------------------------------------
