@@ -262,15 +262,12 @@
 			"system_titlebar_hint": "Deja que el sistema gestione el borde de la ventana y sus botones. Limusic mantendrá su propia barra de herramientas debajo."
 		},
 		"themes": {
-			"accent_themes": "Temas de acento",
 			"interface_font": "Fuente de la interfaz",
 			"load_font_file": "Cargar fuente desde archivo",
 			"custom_colors": "Colores personalizados",
 			"primary_color": "Acento principal",
 			"background_color": "Fondo",
 			"reset_theme": "Restablecer tema predeterminado",
-			"accent_colors": "Colores de acento",
-			"palettes": "Paletas",
 			"your_fonts": "Tus fuentes",
 			"custom_font": "Personalizada…",
 			"font_placeholder": "Fuente instalada en este equipo, ej. Inter",

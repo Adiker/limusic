@@ -281,15 +281,12 @@
 			"system_titlebar_hint": "Laissez votre bureau afficher le cadre de la fenêtre et ses boutons. Limusic affiche sa propre barre d'outils en dessous."
 		},
 		"themes": {
-			"accent_themes": "Thèmes Accent",
 			"interface_font": "Interface police",
 			"load_font_file": "Charger une police depuis un fichier",
 			"custom_colors": "Couleurs personnalisées",
 			"primary_color": "Accent primaire",
 			"background_color": "Arrière-plan",
 			"reset_theme": "Revenir au thème par défaut",
-			"accent_colors": "Couleurs Accent",
-			"palettes": "Palettes",
 			"your_fonts": "Vos polices",
 			"custom_font": "Personnalisé…",
 			"font_placeholder": "Police installée sur cet ordinateur, p.ex. Inter",

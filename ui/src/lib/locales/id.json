@@ -281,15 +281,12 @@
 			"system_titlebar_hint": "Biarkan desktop Anda menampilkan bingkai jendela beserta tombol-tombolnya. Limusic tetap menggunakan bilah alatnya sendiri di bawahnya."
 		},
 		"themes": {
-			"accent_themes": "Tema Aksen",
 			"interface_font": "Font antarmuka",
 			"load_font_file": "Muat font dari file",
 			"custom_colors": "Warna Kustom",
 			"primary_color": "Aksen Utama",
 			"background_color": "Latar Belakang",
 			"reset_theme": "Atur ulang ke tema bawaan",
-			"accent_colors": "Warna aksen",
-			"palettes": "Palet",
 			"your_fonts": "Font Anda",
 			"custom_font": "Kustom…",
 			"font_placeholder": "Font terinstal di komputer ini, mis. Inter",

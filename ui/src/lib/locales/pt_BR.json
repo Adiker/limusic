@@ -262,15 +262,12 @@
 			"system_titlebar_hint": "Deixe sua área de trabalho desenhar a moldura e os botões da janela. O Limusic mantém sua própria barra de ferramentas abaixo dela."
 		},
 		"themes": {
-			"accent_themes": "Temas de destaque",
 			"interface_font": "Fonte da interface",
 			"load_font_file": "Carregar fonte de um arquivo",
 			"custom_colors": "Cores personalizadas",
 			"primary_color": "Cor de destaque",
 			"background_color": "Fundo",
 			"reset_theme": "Restaurar tema padrão",
-			"accent_colors": "Cores de destaque",
-			"palettes": "Paletas",
 			"your_fonts": "Suas fontes",
 			"custom_font": "Personalizada…",
 			"font_placeholder": "Fonte instalada neste computador, ex.: Inter",
