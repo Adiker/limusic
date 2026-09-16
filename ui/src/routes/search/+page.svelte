@@ -64,8 +64,10 @@
 			// In parallel, and the filtered one may fail on its own: the shelf falls back to the
 			// unfiltered rows rather than the whole search erroring out.
 			const [fresh, freshSongs] = await Promise.all([
-				api.searchAll(q),
-				api.search(q).catch(() => [] as SongItem[])
+				// The one search the user actually asked for, so this is the one that goes to
+				// YouTube signed in and lands in their search history (#203).
+				api.searchAll(q, true),
+				api.search(q, true).catch(() => [] as SongItem[])
 			]);
 			if (latest !== q) return; // a newer search superseded this one
 			res = fresh;

@@ -313,9 +313,13 @@ export interface ArtistPage {
 }
 
 // --- commands (context/11) -----------------------------------------------------------------
-export const search = (query: string) => invoke<SongItem[]>('search', { query });
+// `recordHistory` is true only for a query the user submitted: a signed-in search is written to the
+// account's YouTube search history, so a typeahead preview must stay anonymous (#203).
+export const search = (query: string, recordHistory = false) =>
+	invoke<SongItem[]>('search', { query, recordHistory });
 /** Unfiltered search → categorized sections. */
-export const searchAll = (query: string) => invoke<SearchResults>('search_all', { query });
+export const searchAll = (query: string, recordHistory = false) =>
+	invoke<SearchResults>('search_all', { query, recordHistory });
 /** Filtered "Show more" card search for one category (albums / artists / playlists). */
 export const searchCards = (query: string, category: 'albums' | 'artists' | 'playlists') =>
 	invoke<BrowseItem[]>('search_cards', { query, category });

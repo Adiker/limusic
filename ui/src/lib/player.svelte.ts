@@ -53,7 +53,12 @@ export const np = $state({ open: false, tab: 'queue' as 'queue' | 'lyrics' });
  * local state). Hydrated once in `initApp`; the modal writes here too, so a toggle takes effect
  * without a reload.
  */
-export const prefs = $state({ musicVideos: false });
+export const prefs = $state({
+	musicVideos: false,
+	/** `discord_rpc`. Two places toggle it (the titlebar button and the Discord settings tab) and
+	 *  each drew its own indicator, so turning it off in one left the other stale. One owner. */
+	discordRpc: false
+});
 
 /** videoId → the in-flight or settled loopback URL for its music video (null when it has none).
  *
@@ -1246,7 +1251,10 @@ export function initApp(mini = false): () => void {
 		.catch(() => {});
 	if (mini) return teardown;
 	api.getSettings()
-		.then((s) => (prefs.musicVideos = s.music_videos === 'true'))
+		.then((s) => {
+			prefs.musicVideos = s.music_videos === 'true';
+			prefs.discordRpc = s.discord_rpc === 'true';
+		})
 		.catch(() => {});
 	api.getAccount()
 		.then((a) => {
