@@ -338,6 +338,11 @@ struct Presence {
     pos_at: Instant,
     // pushed — `Some` iff a card is currently shown (cards exist only while playing)
     sent: Option<Sent>,
+    /// The layout changed since the last push. Kept apart from `sent`, which has to stay the
+    /// record of what Discord is showing: dropping `sent` to force a re-push also told `plan()`
+    /// there was nothing to take down, so turning "show while paused" off while paused left the
+    /// old card up until the next song.
+    cfg_dirty: bool,
     last_send: Option<Instant>,
 }
 
@@ -368,6 +373,7 @@ impl Presence {
             pos: 0.0,
             pos_at: Instant::now(),
             sent: None,
+            cfg_dirty: false,
             last_send: None,
         }
     }
@@ -417,13 +423,13 @@ impl Presence {
                     }
                 }
             }
-            // Forgetting what was sent is what makes the change visible: `wants_push` compares the
-            // *track*, not the rendered card, so an unchanged track would otherwise keep the old
-            // layout on screen until the next song.
+            // The dirty flag is what makes the change visible: `wants_push` compares the *track*,
+            // not the rendered card, so an unchanged track would otherwise keep the old layout on
+            // screen until the next song.
             Msg::Config(cfg) => {
                 if self.cfg != *cfg {
                     self.cfg = *cfg;
-                    self.sent = None;
+                    self.cfg_dirty = true;
                 }
             }
         }
@@ -498,6 +504,9 @@ impl Presence {
     fn wants_push(&self) -> bool {
         let Some(track) = &self.track else { return false };
         let Some(sent) = &self.sent else { return true };
+        if self.cfg_dirty {
+            return true;
+        }
         if sent.video_id != track.video_id {
             return true;
         }
@@ -565,6 +574,7 @@ impl Presence {
         if cfg.hide_details {
             act = act.status_display_type(activity::StatusDisplayType::Name);
             self.last_send = Some(Instant::now());
+            self.cfg_dirty = false;
             if client.set_activity(act).is_ok() && check_response(&mut client, "set_activity") {
                 self.sent = Some(Sent {
                     video_id: track.video_id,
@@ -579,11 +589,12 @@ impl Presence {
             return;
         }
 
-        act = act.details(
-            // `details` is the one line Discord will not render a card without, so a slot whose
-            // content this track lacks (an album-less single) falls back to the title.
-            field(&text_for(&cfg.line1, &track).unwrap_or_else(|| track.title.clone())),
-        );
+        // `details` is the one line Discord will not render a card without, so a slot whose
+        // content this track lacks (an album-less single) falls back to the title — and the link
+        // follows that fallback, or the line renders as the title and opens nothing.
+        let line1 = text_for(&cfg.line1, &track);
+        let line1_slot = if line1.is_some() { cfg.line1.as_str() } else { "title" };
+        act = act.details(field(&line1.unwrap_or_else(|| track.title.clone())));
         // No bar on a paused card: Discord has no paused state, so the one we sent would keep
         // running and show the track finishing while it sits still.
         if cfg.timestamps && self.playing {
@@ -595,7 +606,7 @@ impl Presence {
             _ => activity::StatusDisplayType::State,
         });
         if cfg.link_line1 {
-            if let Some(url) = link_for(&cfg.line1, &track) {
+            if let Some(url) = link_for(line1_slot, &track) {
                 act = act.details_url(url);
             }
         }
@@ -636,6 +647,7 @@ impl Presence {
 
         // The floor is charged for every frame we put on the wire, accepted or not.
         self.last_send = Some(Instant::now());
+        self.cfg_dirty = false;
         if client.set_activity(act).is_ok() && check_response(&mut client, "set_activity") {
             // Recorded even if Discord rejected the payload (warn-logged in check_response):
             // retrying an identical rejected frame in a loop helps nobody; the next real change
@@ -860,6 +872,7 @@ mod tests {
             duration: p.duration,
         });
         p.last_send = Some(Instant::now() - Duration::from_secs(60));
+        p.cfg_dirty = false;
     }
 
     /// The reported bug: a gapless advance pushed a card before mpv reported the new track's
@@ -1154,6 +1167,22 @@ mod tests {
         sent_now(&mut p, 30); // as push_card would leave it
         p.apply(Msg::Config(Box::new(cfg)));
         assert!(!p.wants_push(), "re-saving the same config is not a change");
+    }
+
+    /// Turning "show while paused" off while a paused card is up has to take that card down.
+    /// The layout change used to forget what was on screen, which left `plan()` with nothing to
+    /// clear and the stale card sitting on the profile until the next song.
+    #[test]
+    fn dropping_show_paused_while_paused_clears_the_card() {
+        let mut p = playing("abc", 30.0);
+        p.duration = 185.0;
+        p.apply(Msg::Config(Box::new(RpcConfig { show_paused: true, ..Default::default() })));
+        p.apply(Msg::Playing(false));
+        sent_now(&mut p, 30);
+        assert_eq!(p.plan(), Act::Idle, "the paused card is up and current");
+
+        p.apply(Msg::Config(Box::new(RpcConfig::default())));
+        assert_eq!(p.plan(), Act::Clear);
     }
 
     #[test]
