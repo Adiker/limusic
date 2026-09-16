@@ -14,18 +14,29 @@ use crate::state::{AppState, ON_REPEAT_ID, ON_REPEAT_LIMIT, ON_REPEAT_WINDOW_SEC
 
 type St<'a> = State<'a, Arc<AppState>>;
 
+/// `record_history`: true only for a query the user submitted. A typeahead preview passes false and
+/// goes out unauthenticated, so half-typed prefixes never reach the account's search history (#203).
 #[tauri::command]
-pub async fn search(state: St<'_>, query: String) -> Result<Vec<SongItem>, String> {
+pub async fn search(
+    state: St<'_>,
+    query: String,
+    record_history: bool,
+) -> Result<Vec<SongItem>, String> {
     let client = state.clients.get(innertube::METADATA_CLIENT).ok_or("metadata client missing")?;
-    let result = state.it.search_songs(client, &query).await.map_err(|e| e.to_string())?;
+    let result =
+        state.it.search_songs(client, &query, record_history).await.map_err(|e| e.to_string())?;
     Ok(result.items)
 }
 
-/// Unfiltered search → categorized sections for the search page.
+/// Unfiltered search → categorized sections for the search page. `record_history` as in [`search`].
 #[tauri::command]
-pub async fn search_all(state: St<'_>, query: String) -> Result<SearchResults, String> {
+pub async fn search_all(
+    state: St<'_>,
+    query: String,
+    record_history: bool,
+) -> Result<SearchResults, String> {
     let client = metadata_client(&state)?;
-    state.it.search_all(client, &query).await.map_err(|e| e.to_string())
+    state.it.search_all(client, &query, record_history).await.map_err(|e| e.to_string())
 }
 
 /// Filtered "Show more" search for one category (albums / artists / playlists).
