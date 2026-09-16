@@ -327,10 +327,14 @@ impl InnerTube {
                 // Signed in and Google says "no credential" (401) or "not for you" (403): the
                 // stored cookie has gone stale. Raw reqwest text here reads as a broken app and
                 // hands the user a URL instead of the one thing that fixes it. Only for a request
-                // that actually carried the cookie: a deliberately anonymous one (`search`) is
-                // refused for its own reasons and says nothing about the session.
+                // that actually carried the cookie: a deliberately anonymous one (a search
+                // preview) is refused for its own reasons and says nothing about the session, and
+                // `headers` sends the cookie only for a client that supports login, so every
+                // anonymous stream client in the fallback chain would otherwise sign the user out
+                // on the 403 that made the orchestrator move to the next one.
                 Err(e)
                     if set_login
+                        && client.login_supported
                         && self.is_logged_in()
                         && e.status().is_some_and(|s| s == 401 || s == 403) =>
                 {
