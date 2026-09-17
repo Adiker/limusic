@@ -62,7 +62,8 @@
 		"shuffle_all": "Aleatorio todo",
 		"play_all": "Reproducir todo",
 		"top_result": "Resultado principal",
-		"all_results_for": "Todos los resultados de \"{query}\""
+		"all_results_for": "Todos los resultados de \"{query}\"",
+		"refresh": "Actualizar"
 	},
 	"nav": {
 		"home": "Inicio",
@@ -324,7 +325,8 @@
 			"app_icon_hint": "Un PNG reemplaza el icono en la barra de tareas, la bandeja y esta ventana. Los accesos directos y el administrador de archivos mantienen el icono instalado.",
 			"app_icon_pick": "Elegir…",
 			"app_icon_dialog": "Elegir un icono para la aplicación",
-			"app_icon_filter": "Imagen PNG"
+			"app_icon_filter": "Imagen PNG",
+			"zoom": "Escala de la interfaz"
 		},
 		"playback": {
 			"audio_quality": "Calidad de audio",
