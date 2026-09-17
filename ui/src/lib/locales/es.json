@@ -265,7 +265,8 @@
 			"discord_status": "Estado",
 			"discord_card": "Tarjeta",
 			"discord_links": "Cliqueable",
-			"discord_buttons": "Botones"
+			"discord_buttons": "Botones",
+			"scrobbling": "Scrobbling"
 		},
 		"general": {
 			"language": "Idioma de la interfaz",
@@ -326,7 +327,8 @@
 			"app_icon_pick": "Elegir…",
 			"app_icon_dialog": "Elegir un icono para la aplicación",
 			"app_icon_filter": "Imagen PNG",
-			"zoom": "Escala de la interfaz"
+			"zoom": "Escala de la interfaz",
+			"zoom_hint": "Escala todo en la ventana. Los atajos para hacer zoom también lo cambian, y se recuerda entre reinicios."
 		},
 		"playback": {
 			"audio_quality": "Calidad de audio",
@@ -353,7 +355,11 @@
 			"blocked_artists_show_less": "Mostrar menos",
 			"blocked_artists_copy": "Copiar JSON",
 			"blocked_artists": "Artistas bloqueados",
-			"blocked_artists_hint": "Los artistas bloqueados se excluyen de la radio, la reproducción automática y recomendaciones. Puedes seguir reproduciendo todo en las playlists y álbumes que abras."
+			"blocked_artists_hint": "Los artistas bloqueados se excluyen de la radio, la reproducción automática y recomendaciones. Puedes seguir reproduciendo todo en las playlists y álbumes que abras.",
+			"lastfm_primary_artist": "Scrobble solo al artista principal",
+			"lastfm_primary_artist_hint": "Envía solo al primer artista acreditado a Last.fm, para que tus reproducciones aparezcan en la página real del artista. Los nombres unidos con \"&\" se mantienen completos.",
+			"lastfm_primary_strict": "Descarta también los artistas unidos con \"&\"",
+			"lastfm_primary_strict_hint": "“Future & Metro Boomin” se scrobblea como “Future”. Los dúos con “&” en el nombre también quedan acortados."
 		},
 		"data": {
 			"clear_cache": "Limpiar caché de imágenes y streams",
@@ -484,7 +490,8 @@
 			"zoom_in": "Acercar",
 			"zoom_out": "Alejar",
 			"reset_zoom": "Restablecer zoom",
-			"show_this_list": "Mostrar esta lista"
+			"show_this_list": "Mostrar esta lista",
+			"refresh_page": "Actualizar pagina"
 		},
 		"tempo_pitch": {
 			"title": "Controles de tempo y tono",
@@ -593,7 +600,8 @@
 		"expand_sidebar": "Expandir barra lateral",
 		"collapse_sidebar": "Contraer barra lateral",
 		"show_artwork": "Mostrar portada",
-		"show_video": "Mostrar video"
+		"show_video": "Mostrar video",
+		"zoom": "Escala de la interfaz"
 	},
 	"lyrics": {
 		"title": "Letra",
