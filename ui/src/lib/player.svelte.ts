@@ -731,12 +731,12 @@ export function ratingOf(song: SongItem): Rating {
 
 export const isLiked = (song: SongItem): boolean => ratingOf(song) === 'like';
 
-/** Like/unlike whatever is playing. Thin wrapper so the player bar and the mini player share one
+/** Rate whatever is playing. Thin wrapper so the player bar and the mini player share one
  *  implementation (and one optimistic path) with every list row. */
-export function toggleNowPlayingLike(): Promise<void> {
+export function toggleNowPlayingRating(want: 'like' | 'dislike' = 'like'): Promise<void> {
 	const n = playback.now;
 	if (!n) return Promise.resolve();
-	return toggleRating({ video_id: n.videoId, title: n.title, artists: n.artists }, 'like');
+	return toggleRating({ video_id: n.videoId, title: n.title, artists: n.artists }, want);
 }
 
 // --- Volume ------------------------------------------------------------------------------------
