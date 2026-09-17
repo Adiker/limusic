@@ -282,6 +282,7 @@
 			"player_view": "Player view",
 			"audio": "Audio",
 			"video": "Video",
+			"scrobbling": "Scrobbling",
 			"lyrics": "Lyrics",
 			"blocked": "Blocked artists",
 			"advanced": "Advanced",
@@ -382,6 +383,8 @@
 			"blocked_artists_show_all": "Show all {count}",
 			"blocked_artists_show_less": "Show less",
 			"blocked_artists_copy": "Copy JSON",
+			"lastfm_primary_artist": "Scrobble the primary artist only",
+			"lastfm_primary_artist_hint": "Send only the first credited artist to Last.fm, so a track credited to several artists counts toward the main one instead of creating a combined name. Names joined with \"&\" are kept whole.",
 			"lyrics_provider": "Synchronized lyrics (Boidu/LRCLIB)",
 			"lyrics_provider_hint": "Fetch community-synced lyrics for active songs."
 		},

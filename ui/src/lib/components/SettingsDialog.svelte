@@ -300,6 +300,9 @@
 	// for. Same test in `player.svelte.ts`, which hydrates `prefs` at launch.
 	const musicVideosOn = $derived(settings.music_videos === 'true');
 	const boiduOn = $derived(settings.lyrics_boidu !== 'false');
+	// Off by default: the full byline is what YouTube credits, and cutting it is a preference
+	// with a real failure mode (a comma-joined duo name), not a fix (issue #231).
+	const lastfmPrimaryOn = $derived(settings.lastfm_primary_artist === 'true');
 	const preventDuplicatesOn = $derived(settings.prevent_duplicates === 'true');
 	// Off by default: shuffle applies to the queue it was turned on for (issue #117).
 	const stickyShuffleOn = $derived(settings.sticky_shuffle === 'true');
@@ -354,6 +357,11 @@
 	async function setHideVideos(on: boolean) {
 		settings.hide_videos = on ? 'true' : 'false';
 		await api.setSetting('hide_videos', settings.hide_videos);
+	}
+
+	async function setLastfmPrimary(on: boolean) {
+		settings.lastfm_primary_artist = on ? 'true' : 'false';
+		await api.setSetting('lastfm_primary_artist', settings.lastfm_primary_artist);
 	}
 
 	async function setBoidu(on: boolean) {
@@ -739,6 +747,17 @@
 							</div>
 						</section>
 						<section class={GROUP}>
+							<h3 class={LABEL}>{t('settings.sections.scrobbling')}</h3>
+							<div class={CARD}>
+								{@render row({
+									title: t('settings.playback.lastfm_primary_artist'),
+									desc: t('settings.playback.lastfm_primary_artist_hint'),
+									control: lastfmPrimarySwitch,
+									tall: true
+								})}
+							</div>
+						</section>
+						<section class={GROUP}>
 							<h3 class={LABEL}>{t('settings.sections.lyrics')}</h3>
 							<div class={CARD}>
 								{@render row({
@@ -908,6 +927,10 @@
 	/>{/snippet}
 {#snippet musicVideoSwitch()}<Switch checked={musicVideosOn} onCheckedChange={setMusicVideos} />{/snippet}
 {#snippet hideVideoSwitch()}<Switch checked={hideVideosOn} onCheckedChange={setHideVideos} />{/snippet}
+{#snippet lastfmPrimarySwitch()}<Switch
+		checked={lastfmPrimaryOn}
+		onCheckedChange={setLastfmPrimary}
+	/>{/snippet}
 {#snippet boiduSwitch()}<Switch checked={boiduOn} onCheckedChange={setBoidu} />{/snippet}
 {#snippet bannerSwitch()}<Switch checked={updateBannerOn} onCheckedChange={setUpdateBanner} />{/snippet}
 {#snippet openPlayerSwitch()}<Switch
