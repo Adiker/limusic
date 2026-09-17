@@ -218,6 +218,27 @@ impl Player {
         Ok(())
     }
 
+    /// Route the audio bytes through a proxy (the app's `proxy` setting). Call before the first
+    /// [`Self::load`].
+    ///
+    /// The setting used to reach the InnerTube client only, so in a region that needs a proxy the
+    /// orchestrator resolved a stream URL and mpv then sat at 0:00 while ffmpeg retried a
+    /// googlevideo connection it could not open (#241).
+    ///
+    /// ffmpeg only speaks HTTP proxies (it CONNECTs through them for https too), so a `socks5://`
+    /// value is refused here rather than handed over: mpv would accept the string and ffmpeg would
+    /// silently stream direct.
+    pub fn set_http_proxy(&self, proxy: Option<&str>) -> Result<(), Error> {
+        let p = proxy.unwrap_or("").trim();
+        let usable = p.is_empty() || p.starts_with("http://") || p.starts_with("https://");
+        if !usable {
+            tracing::warn!(proxy = p, "mpv only speaks HTTP proxies — audio will stream direct");
+            return Ok(());
+        }
+        self.mpv.set_property("http-proxy", p)?;
+        Ok(())
+    }
+
     fn apply_headers(&self, headers: &HashMap<String, String>) -> Result<(), Error> {
         // User-Agent has its own mpv property; everything else joins http-header-fields.
         if let Some(ua) = headers.get("User-Agent").or_else(|| headers.get("user-agent")) {
@@ -507,6 +528,19 @@ mod tests {
         let lavf = p.mpv.get_property::<String>("stream-lavf-o").unwrap();
         assert!(lavf.contains("reconnect=1"), "reconnect options missing: {lavf}");
         assert!(lavf.contains("reconnect_on_network_error=1"), "{lavf}");
+
+        // The proxy has to reach the audio bytes, not just the API calls (#241), and a proxy mpv
+        // takes but ffmpeg ignores is worse than none: it looks applied and streams direct.
+        p.set_http_proxy(Some("http://127.0.0.1:8080")).unwrap();
+        assert_eq!(p.mpv.get_property::<String>("http-proxy").unwrap(), "http://127.0.0.1:8080");
+        p.set_http_proxy(Some("socks5://127.0.0.1:1080")).unwrap();
+        assert_eq!(
+            p.mpv.get_property::<String>("http-proxy").unwrap(),
+            "http://127.0.0.1:8080",
+            "a socks proxy must not replace a usable one"
+        );
+        p.set_http_proxy(None).unwrap();
+        assert_eq!(p.mpv.get_property::<String>("http-proxy").unwrap(), "");
 
         // The mpv log request is a raw FFI call libmpv2 doesn't wrap, and the whole point of it is
         // that someone reproducing a bug gets lines out of a shipped build. Check mpv takes the

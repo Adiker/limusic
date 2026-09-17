@@ -307,6 +307,8 @@ pub fn run() {
             // (cookie/dataSyncId/visitorData) from settings; fetch visitorData anonymously
             // (context/04 §A) only if we've never stored one.
             let proxy = db.get_setting("proxy");
+            // Before the first fetch: the shared client builds itself on first use.
+            http::set_proxy(proxy.as_deref());
             let cookie = db.get_setting("session_cookie").filter(|s| !s.is_empty());
             let data_sync_id = state::persisted_data_sync_id(&db);
             let visitor_data = db.get_setting("visitor_data").filter(|s| !s.is_empty());
@@ -330,6 +332,10 @@ pub fn run() {
             let clients = Clients::bundled();
 
             let mut player = Player::new(cache_dir.to_str().unwrap()).expect("init libmpv");
+            // The audio bytes are the one request that never went through the proxy setting (#241).
+            if let Err(e) = player.set_http_proxy(proxy.as_deref()) {
+                tracing::warn!("mpv refused the proxy setting: {e}");
+            }
             // Before anything can play: the first track of a restored queue has to come out at the
             // level the user left, not at 100.
             let _ = player.set_volume(state::saved_volume(&db));
