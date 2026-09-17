@@ -62,7 +62,8 @@
 		"shuffle_all": "Mélanger tout",
 		"play_all": "Lancer tout",
 		"top_result": "Meilleur résultat",
-		"all_results_for": "Tous les résultats pour \"{query}\""
+		"all_results_for": "Tous les résultats pour \"{query}\"",
+		"refresh": "Actualiser"
 	},
 	"nav": {
 		"home": "Accueil",
@@ -264,7 +265,8 @@
 			"discord_status": "Statut",
 			"discord_card": "Carte",
 			"discord_links": "Cliquable",
-			"discord_buttons": "Boutons"
+			"discord_buttons": "Boutons",
+			"scrobbling": "Scrobbling"
 		},
 		"general": {
 			"language": "Langue d'interface",
@@ -324,7 +326,9 @@
 			"app_icon_hint": "Un fichier PNG remplace l'icône dans la barre des tâches, dans la zone de notification et dans cette fenêtre. Les raccourcis et le gestionnaire de fichiers conservent l'icône installée.",
 			"app_icon_pick": "Choisir…",
 			"app_icon_dialog": "Choisissez une icône d'application",
-			"app_icon_filter": "Image au format PNG"
+			"app_icon_filter": "Image au format PNG",
+			"zoom": "Échelle de l'interface",
+			"zoom_hint": "Redimensionne tout ce qui se trouve dans la fenêtre. Les raccourcis clavier de zoom modifient également ce paramètre, qui est conservé d'un lancement à l'autre."
 		},
 		"playback": {
 			"audio_quality": "Qualité audio",
@@ -351,7 +355,11 @@
 			"blocked_artists_remove": "Débloquer {name}",
 			"blocked_artists_show_all": "Afficher tout {count}",
 			"blocked_artists_show_less": "Afficher moins",
-			"blocked_artists_copy": "Copier le JSON"
+			"blocked_artists_copy": "Copier le JSON",
+			"lastfm_primary_artist": "N'enregistrer que l'artiste principal",
+			"lastfm_primary_artist_hint": "Envoyer à Last.fm que le nom de l'artiste principal, afin que tes écoutes soient comptabilisées sur la bonne page d'artiste. Les noms séparés par \"&\" sont conservés tels quels.",
+			"lastfm_primary_strict": "Les artistes Drop sont également associés avec \"&\"",
+			"lastfm_primary_strict_hint": "\"Future & Metro Boomin\" est enregistré sous le nom \"Future\". Les duos dont le nom comporte le signe \"&\" sont également abrégés."
 		},
 		"data": {
 			"clear_cache": "Vider le cache des images et des flux",
@@ -482,7 +490,8 @@
 			"zoom_in": "Zoom avant",
 			"zoom_out": "Zoom arrière",
 			"reset_zoom": "Réinitialiser le zoom",
-			"show_this_list": "Afficher cette liste"
+			"show_this_list": "Afficher cette liste",
+			"refresh_page": "Actualiser la page"
 		},
 		"tempo_pitch": {
 			"title": "Contrôles du tempo et de la tonalité",
@@ -591,7 +600,8 @@
 		"expand_sidebar": "Développer la barre latérale",
 		"collapse_sidebar": "Réduire la barre latérale",
 		"show_artwork": "Afficher la pochette",
-		"show_video": "Afficher la vidéo"
+		"show_video": "Afficher la vidéo",
+		"zoom": "Échelle de l'interface"
 	},
 	"lyrics": {
 		"title": "Paroles",
