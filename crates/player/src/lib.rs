@@ -96,18 +96,27 @@ impl Player {
         //
         // Note what these bound. `cache-on-disk` is on above, and mpv's manual is explicit that in
         // that mode the payload lives in the cache file and these limits apply to *packet
-        // metadata* only, "typically 50 MB per hour of media". So 32 MiB is not "several tracks of
-        // audio bytes", it is roughly 40 minutes of media before mpv starts pruning metadata. Fine
-        // for songs, and the ceiling an hour-long mix runs into.
-        mpv.set_property("demuxer-max-bytes", 32 * 1024 * 1024_i64)?;
-        mpv.set_property("demuxer-max-back-bytes", 8 * 1024 * 1024_i64)?;
+        // metadata* only, "typically 50 MB per hour of media". So 64 MiB is not "several tracks of
+        // audio bytes", it is roughly 80 minutes of media before mpv starts pruning metadata. Big
+        // enough that a seek anywhere inside an hour-long mix lands in the cached range once the
+        // demuxer has had a head start, which turns those seeks into instant offline ones rather
+        // than ones that have to open a fresh HTTP request (issue #188).
+        mpv.set_property("demuxer-max-bytes", 64 * 1024 * 1024_i64)?;
+        mpv.set_property("demuxer-max-back-bytes", 12 * 1024 * 1024_i64)?;
         // ffmpeg's HTTP reader retries nothing by default: one dropped connection, one transient
         // error, and the track dies outright (mpv reports end-file with an error, which the app
         // turns into a skip). Seeking in a long stream is where that bites, because a seek past
         // the cached range opens a *fresh* request and gets no second chance. Issue #188.
+        //
+        // The retries are deliberately bounded. `reconnect_delay_max=5` alone means the loop is
+        // infinite (ffmpeg's `reconnect_max_retries` defaults to -1 = unlimited), and a connection
+        // that keeps dying at the same byte offset then hangs the demuxer forever: the app's log
+        // shows "Will reconnect at ..." with repeated audio underruns and never a track-failed
+        // event, so its retry-with-a-fresh-URL recovery never runs and playback is silently dead.
+        // A handful of attempts surfaces the error and lets the app re-resolve (issue #188 followup).
         mpv.set_property(
             "stream-lavf-o",
-            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=2,reconnect_max_retries=6,reconnect_delay_total_max=30",
         )?;
         request_mpv_log(&mpv);
         let mpv = Arc::new(mpv);
@@ -534,6 +543,16 @@ mod tests {
         let lavf = p.mpv.get_property::<String>("stream-lavf-o").unwrap();
         assert!(lavf.contains("reconnect=1"), "reconnect options missing: {lavf}");
         assert!(lavf.contains("reconnect_on_network_error=1"), "{lavf}");
+        // The retries have to be *bounded*. `reconnect_delay_max=5` alone is an infinite loop
+        // (ffmpeg's `reconnect_max_retries` defaults to -1): a connection that dies at the same
+        // byte offset hangs the demuxer forever and the app's track-failed recovery never runs
+        // (issue #188 — "Will reconnect at ..." with audio underruns and no error). A cap is what
+        // turns that into an error the app can recover from instead of a silent stall.
+        assert!(lavf.contains("reconnect_max_retries"), "retry cap missing: {lavf}");
+        assert!(
+            !lavf.contains("reconnect_max_retries=-1"),
+            "retry cap must not be unlimited: {lavf}"
+        );
 
         // The proxy has to reach the audio bytes, not just the API calls (#241), and a proxy mpv
         // takes but ffmpeg ignores is worse than none: it looks applied and streams direct.
