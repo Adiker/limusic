@@ -114,9 +114,20 @@ impl Player {
         // shows "Will reconnect at ..." with repeated audio underruns and never a track-failed
         // event, so its retry-with-a-fresh-URL recovery never runs and playback is silently dead.
         // A handful of attempts surfaces the error and lets the app re-resolve (issue #188 followup).
+        //
+        // `short_seek_size=1` disables ffmpeg's "soft-seek" optimization. When a seek lands within
+        // `short_seek` bytes of the end of the current response range, the HTTP reader drains the
+        // rest of the body instead of issuing a new Range request ("Soft-seeking to offset ... by
+        // draining N remaining byte(s)"). `short_seek` is the TLS/TCP stack's `SO_RCVBUF`, and on
+        // Windows that reports a huge auto-tuned window, so a past-cache seek into a long
+        // googlevideo response - whose initial `Range: bytes=0-` puts the range end at EOF - is
+        // classified as "short" and ffmpeg tries to drain the remaining ~120 MB at dial-up speed.
+        // Playback then pins at the seek target forever (issue #188). A threshold of 1 forces every
+        // real seek to close the connection and open a fresh Range request, which googlevideo
+        // answers with a 206.
         mpv.set_property(
             "stream-lavf-o",
-            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=2,reconnect_max_retries=6,reconnect_delay_total_max=30",
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=2,reconnect_max_retries=6,reconnect_delay_total_max=30,short_seek_size=1",
         )?;
         request_mpv_log(&mpv);
         let mpv = Arc::new(mpv);
@@ -543,6 +554,9 @@ mod tests {
         let lavf = p.mpv.get_property::<String>("stream-lavf-o").unwrap();
         assert!(lavf.contains("reconnect=1"), "reconnect options missing: {lavf}");
         assert!(lavf.contains("reconnect_on_network_error=1"), "{lavf}");
+        // Without this ffmpeg soft-seeks (drains the response body) instead of opening a new
+        // connection, which stalls a deep seek in a long stream (issue #188).
+        assert!(lavf.contains("short_seek_size=1"), "soft-seek guard missing: {lavf}");
         // The retries have to be *bounded*. `reconnect_delay_max=5` alone is an infinite loop
         // (ffmpeg's `reconnect_max_retries` defaults to -1): a connection that dies at the same
         // byte offset hangs the demuxer forever and the app's track-failed recovery never runs
