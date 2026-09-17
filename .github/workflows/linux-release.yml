@@ -410,6 +410,14 @@ jobs:
           fetch_manifest() { # fetch_manifest <dir>
             rm -rf "$1" && gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern latest.json --dir "$1"
           }
+          # gh has no timeout of its own, and a stall on the asset endpoint gives no output at all:
+          # the job hangs instead of failing, so `retry` never gets its turn. v0.7.3 sat there twice,
+          # ten minutes each, on the 174 MB AppImage that took 18 seconds in v0.7.2. Ten minutes is
+          # ~290 KB/s on this file, far under anything a runner does, so a timeout can only fire on
+          # an upload that was never going to finish.
+          upload() { # upload <file…>
+            timeout 600 gh release upload "$TAG" "$@" --clobber --repo "$GITHUB_REPOSITORY"
+          }
 
           APPIMAGE="$(ls target/release/bundle/appimage/limusic_${VERSION}_*.AppImage 2>/dev/null | head -1 || true)"
           SIG="$APPIMAGE.sig"
@@ -421,7 +429,7 @@ jobs:
             echo "::error::no .sig next to the AppImage — signing key missing, or createUpdaterArtifacts got turned off"; exit 1
           fi
 
-          retry 3 gh release upload "$TAG" "$APPIMAGE" "$SIG" --clobber --repo "$GITHUB_REPOSITORY"
+          retry 3 upload "$APPIMAGE" "$SIG"
 
           # The deb rides along unsigned and stays out of latest.json: Tauri's updater has no deb
           # support, so there is nothing for a signature to be checked by. Debian users update by
@@ -433,7 +441,7 @@ jobs:
           elif [ -z "$DEB" ]; then
             echo "::warning::no deb for $VERSION in target/release/bundle/deb — nothing attached"
           else
-            retry 3 gh release upload "$TAG" "$DEB" --clobber --repo "$GITHUB_REPOSITORY"
+            retry 3 upload "$DEB"
           fi
 
           # latest.json is the one thing both release workflows write, and they now run in parallel.
@@ -450,7 +458,7 @@ jobs:
             jq --arg sig "$(cat "$SIG")" --arg url "$URL" \
               '.platforms["linux-x86_64"] = { signature: $sig, url: $url }' \
               manifest/latest.json > latest.json
-            retry 3 gh release upload "$TAG" latest.json --clobber --repo "$GITHUB_REPOSITORY"
+            retry 3 upload latest.json
 
             sleep $((3 + RANDOM % 5))
             retry 3 fetch_manifest check
