@@ -306,7 +306,12 @@ pub fn run() {
             // Session bootstrap (context/15 startup ordering): load the persisted login session
             // (cookie/dataSyncId/visitorData) from settings; fetch visitorData anonymously
             // (context/04 §A) only if we've never stored one.
-            let proxy = db.get_setting("proxy");
+            // `LIMUSIC_PROXY` overrides the stored setting, so a region-locked surface can be
+            // tested for one run without a system-wide VPN (CLAUDE.md).
+            let proxy = std::env::var("LIMUSIC_PROXY")
+                .ok()
+                .filter(|p| !p.trim().is_empty())
+                .or_else(|| db.get_setting("proxy").filter(|p| !p.trim().is_empty()));
             // Before the first fetch: the shared client builds itself on first use.
             http::set_proxy(proxy.as_deref());
             let cookie = db.get_setting("session_cookie").filter(|s| !s.is_empty());
