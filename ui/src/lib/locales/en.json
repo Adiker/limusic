@@ -384,7 +384,9 @@
 			"blocked_artists_show_less": "Show less",
 			"blocked_artists_copy": "Copy JSON",
 			"lastfm_primary_artist": "Scrobble the primary artist only",
-			"lastfm_primary_artist_hint": "Send only the first credited artist to Last.fm, so a track credited to several artists counts toward the main one instead of creating a combined name. Names joined with \"&\" are kept whole.",
+			"lastfm_primary_artist_hint": "Send only the first credited artist to Last.fm, so your plays land on the real artist page. Names joined with \"&\" are kept whole.",
+			"lastfm_primary_strict": "Drop artists joined with \"&\" too",
+			"lastfm_primary_strict_hint": "\"Future & Metro Boomin\" scrobbles as \"Future\". Duos with \"&\" in their name get shortened too.",
 			"lyrics_provider": "Synchronized lyrics (Boidu/LRCLIB)",
 			"lyrics_provider_hint": "Fetch community-synced lyrics for active songs."
 		},

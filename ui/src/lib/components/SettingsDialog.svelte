@@ -303,6 +303,9 @@
 	// Off by default: the full byline is what YouTube credits, and cutting it is a preference
 	// with a real failure mode (a comma-joined duo name), not a fix (issue #231).
 	const lastfmPrimaryOn = $derived(settings.lastfm_primary_artist === 'true');
+	// Sub-setting of the one above: also cut at "&", which costs the joint acts that have their
+	// own Last.fm page. Only reachable while the parent is on.
+	const lastfmStrictOn = $derived(settings.lastfm_primary_strict === 'true');
 	const preventDuplicatesOn = $derived(settings.prevent_duplicates === 'true');
 	// Off by default: shuffle applies to the queue it was turned on for (issue #117).
 	const stickyShuffleOn = $derived(settings.sticky_shuffle === 'true');
@@ -362,6 +365,11 @@
 	async function setLastfmPrimary(on: boolean) {
 		settings.lastfm_primary_artist = on ? 'true' : 'false';
 		await api.setSetting('lastfm_primary_artist', settings.lastfm_primary_artist);
+	}
+
+	async function setLastfmStrict(on: boolean) {
+		settings.lastfm_primary_strict = on ? 'true' : 'false';
+		await api.setSetting('lastfm_primary_strict', settings.lastfm_primary_strict);
 	}
 
 	async function setBoidu(on: boolean) {
@@ -755,6 +763,14 @@
 									control: lastfmPrimarySwitch,
 									tall: true
 								})}
+								{#if lastfmPrimaryOn}
+									{@render row({
+										title: t('settings.playback.lastfm_primary_strict'),
+										desc: t('settings.playback.lastfm_primary_strict_hint'),
+										control: lastfmStrictSwitch,
+										tall: true
+									})}
+								{/if}
 							</div>
 						</section>
 						<section class={GROUP}>
@@ -930,6 +946,10 @@
 {#snippet lastfmPrimarySwitch()}<Switch
 		checked={lastfmPrimaryOn}
 		onCheckedChange={setLastfmPrimary}
+	/>{/snippet}
+{#snippet lastfmStrictSwitch()}<Switch
+		checked={lastfmStrictOn}
+		onCheckedChange={setLastfmStrict}
 	/>{/snippet}
 {#snippet boiduSwitch()}<Switch checked={boiduOn} onCheckedChange={setBoidu} />{/snippet}
 {#snippet bannerSwitch()}<Switch checked={updateBannerOn} onCheckedChange={setUpdateBanner} />{/snippet}

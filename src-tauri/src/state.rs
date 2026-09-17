@@ -2059,7 +2059,8 @@ impl AppState {
         // Read per track rather than cached: one settings row on a track change, and the switch
         // then applies to what is already playing.
         let primary_only = self.db.get_setting("lastfm_primary_artist").as_deref() == Some("true");
-        self.lastfm.set_track(item, primary_only);
+        let strict = self.db.get_setting("lastfm_primary_strict").as_deref() == Some("true");
+        self.lastfm.set_track(item, primary_only, strict);
         // New track ⇒ let the next position tick through immediately instead of waiting out the
         // ~1s throttle, so a restored seek position (and the play-state self-heal) lands at once.
         self.last_media_push.store(0, Ordering::Relaxed);
