@@ -680,15 +680,21 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 match window.label() {
                     "main" => {
-                        let hide = window
-                            .app_handle()
-                            .try_state::<Arc<AppState>>()
-                            .map(|s| close_hides(s.db.get_setting("close_to_tray").as_deref()))
-                            .unwrap_or(true);
+                        let hide = tray::available()
+                            && window
+                                .app_handle()
+                                .try_state::<Arc<AppState>>()
+                                .map(|s| close_hides(s.db.get_setting("close_to_tray").as_deref()))
+                                .unwrap_or(true);
                         if hide {
                             api.prevent_close();
                             let _ = window.hide();
                             tray::set_main_visible(window.app_handle(), false);
+                        } else if let Some(state) = window.app_handle().try_state::<Arc<AppState>>()
+                        {
+                            // Really quitting: persist the exact resume position, the same thing
+                            // the tray's Quit item does.
+                            state.flush_position();
                         }
                     }
                     // Nothing in the widget closes it, but a WM shortcut still can. Turn that into
@@ -721,6 +727,9 @@ pub fn run() {
 }
 
 /// ✕ hides to tray unless the user explicitly set close_to_tray=false (unset → default on).
+///
+/// Gated by [`tray::available`] at the call site: with no tray to click, hiding would strand the
+/// app with no window (#232).
 fn close_hides(setting: Option<&str>) -> bool {
     setting != Some("false")
 }
