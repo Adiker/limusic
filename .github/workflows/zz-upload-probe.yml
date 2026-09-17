@@ -59,6 +59,7 @@ jobs:
 
       - name: Probe
         run: |
+          set +e
           set -uo pipefail
           # Sample the NIC's tx counter while an upload runs, so a stall is visible as
           # "bytes stopped moving" instead of as silence.
@@ -77,6 +78,7 @@ jobs:
             local id
             id="$(gh api "repos/$GITHUB_REPOSITORY/releases/$REL/assets" --jq ".[]|select(.name==\"$1\")|.id" 2>/dev/null | head -1)"
             [ -n "$id" ] && gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id" >/dev/null 2>&1 && echo "    deleted $1"
+            return 0
           }
 
           LAST=""
