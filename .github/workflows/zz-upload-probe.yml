@@ -1,0 +1,124 @@
+name: zz upload probe
+
+# THROWAWAY. Delete this file once the v0.7.3 AppImage upload hang is understood.
+# Uploads dd'd blobs of increasing size to a DRAFT release so the >100 MB stall can be
+# bracketed in ~30s instead of the 9 min a real Linux release run costs before it uploads.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: Numeric id of the draft release to upload into
+        required: true
+        default: "390982860"
+        type: string
+      sizes:
+        description: Blob sizes in MiB, space separated
+        required: true
+        default: "10 50 120 174"
+        type: string
+      also_gh:
+        description: Also try `gh release upload` at the largest size
+        required: false
+        default: true
+        type: boolean
+      advmss:
+        description: Clamp the default route's advertised MSS to this before probing (0 = leave alone)
+        required: false
+        default: "0"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REL: ${{ inputs.release_id }}
+    steps:
+      - name: Facts
+        run: |
+          gh --version
+          curl --version | head -1
+          IFACE="$(ip route show default | awk '{print $5; exit}')"
+          echo "iface=$IFACE"
+          ip link show "$IFACE" | head -1
+          ip route show default
+          echo "--- resolve uploads.github.com"
+          getent ahosts uploads.github.com | sort -u
+          echo "IFACE=$IFACE" >> "$GITHUB_ENV"
+
+      - name: Clamp MSS
+        if: ${{ inputs.advmss != '0' }}
+        run: |
+          sudo ip route change $(ip route show default | head -1) advmss ${{ inputs.advmss }}
+          ip route show default
+
+      - name: Probe
+        run: |
+          set -uo pipefail
+          # Sample the NIC's tx counter while an upload runs, so a stall is visible as
+          # "bytes stopped moving" instead of as silence.
+          watch_tx() { # watch_tx <pid> <label>
+            local pid="$1" label="$2" t0 t1 last=0 s=0
+            t0="$(cat /sys/class/net/$IFACE/statistics/tx_bytes)"
+            while kill -0 "$pid" 2>/dev/null; do
+              sleep 5; s=$((s+5))
+              t1="$(cat /sys/class/net/$IFACE/statistics/tx_bytes)"
+              local mib=$(( (t1-t0)/1048576 ))
+              echo "    [$label] t+${s}s  tx=${mib} MiB  (+$((mib-last)) MiB in 5s)"
+              last=$mib
+            done
+          }
+          del_asset() { # del_asset <name>
+            local id
+            id="$(gh api "repos/$GITHUB_REPOSITORY/releases/$REL/assets" --jq ".[]|select(.name==\"$1\")|.id" 2>/dev/null | head -1)"
+            [ -n "$id" ] && gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id" >/dev/null 2>&1 && echo "    deleted $1"
+          }
+
+          LAST=""
+          for MB in ${{ inputs.sizes }}; do
+            LAST="$MB"
+            F="/tmp/probe-$MB.bin"
+            head -c $((MB*1024*1024)) /dev/urandom > "$F"
+            NAME="probe-${MB}m-${GITHUB_RUN_ID}.bin"
+            del_asset "$NAME"
+            echo "== curl POST ${MB} MiB -> $NAME"
+            START=$(date +%s)
+            curl -sS -o /tmp/resp.json \
+              -w '    RESULT http=%{http_code} total=%{time_total}s sent=%{size_upload}B speed=%{speed_upload}B/s connect=%{time_connect}s ttfb=%{time_starttransfer}s\n' \
+              -X POST --max-time 240 --no-progress-meter \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/octet-stream" \
+              -T "$F" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$REL/assets?name=$NAME" &
+            CPID=$!
+            watch_tx "$CPID" "curl ${MB}m"
+            wait "$CPID"; RC=$?
+            echo "    curl exit=$RC after $(( $(date +%s)-START ))s"
+            [ "$RC" = 0 ] && head -c 300 /tmp/resp.json && echo
+            del_asset "$NAME"
+            rm -f "$F"
+          done
+
+          if [ "${{ inputs.also_gh }}" = "true" ] && [ -n "$LAST" ]; then
+            MB="$LAST"
+            F="/tmp/gh-probe-$MB.bin"
+            head -c $((MB*1024*1024)) /dev/urandom > "$F"
+            NAME="ghprobe-${MB}m-${GITHUB_RUN_ID}.bin"
+            mkdir -p /tmp/ghp && cp "$F" "/tmp/ghp/$NAME"
+            echo "== gh release upload ${MB} MiB -> $NAME"
+            START=$(date +%s)
+            GH_DEBUG=api timeout 300 gh release upload ci-upload-probe "/tmp/ghp/$NAME" \
+              --clobber --repo "$GITHUB_REPOSITORY" > /tmp/gh.log 2>&1 &
+            GPID=$!
+            watch_tx "$GPID" "gh ${MB}m"
+            wait "$GPID"; RC=$?
+            echo "    gh exit=$RC after $(( $(date +%s)-START ))s"
+            grep -vE '^\* |^< (x-|date:|server:|content-security|strict|referrer|vary|access-control|report-to|nel:|x-gh)' /tmp/gh.log | tail -40
+            del_asset "$NAME"
+          fi
