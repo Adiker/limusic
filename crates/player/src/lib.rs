@@ -101,8 +101,22 @@ impl Player {
         // enough that a seek anywhere inside an hour-long mix lands in the cached range once the
         // demuxer has had a head start, which turns those seeks into instant offline ones rather
         // than ones that have to open a fresh HTTP request (issue #188).
+        //
+        // The *back* buffer is the same size, not mpv's skimpy default. It is what makes a
+        // backward seek instant: at the old 8 MiB mpv had long since pruned a position the user
+        // had already heard, so scrubbing back forced a fresh network read and an audible stall
+        // (the log showed `Enter buffering ... waited 0.76 secs` after a seek into an
+        // already-played range). 64 MiB keeps roughly an entire mix, so backward seeks stay
+        // offline. It is packet metadata, so the memory cost is the same order as the forward cap.
         mpv.set_property("demuxer-max-bytes", 64 * 1024 * 1024_i64)?;
-        mpv.set_property("demuxer-max-back-bytes", 12 * 1024 * 1024_i64)?;
+        mpv.set_property("demuxer-max-back-bytes", 64 * 1024 * 1024_i64)?;
+        // mpv enters "buffering" whenever a seek needs the network, and by default resumes only
+        // once a full second of audio is buffered (`cache-pause-wait`, default 1). That second is
+        // most of the "wait for it to start" after a seek; the connection answers in a fraction of
+        // it. Resume on a shorter buffer and let the demuxer keep filling behind playback. mpv
+        // still buffers (it pauses if the cache empties and the device underruns), so this shrinks
+        // the safety margin to start sooner, it does not remove the guard.
+        mpv.set_property("cache-pause-wait", 0.3)?;
         // ffmpeg's HTTP reader retries nothing by default: one dropped connection, one transient
         // error, and the track dies outright (mpv reports end-file with an error, which the app
         // turns into a skip). Seeking in a long stream is where that bites, because a seek past
@@ -611,6 +625,21 @@ mod tests {
         );
         p.set_http_proxy(None).unwrap();
         assert_eq!(p.mpv.get_property::<String>("http-proxy").unwrap(), "");
+
+        // Seek latency. A 12 MiB back buffer was pruned well before a long mix ended, so a backward
+        // seek hit the network and stalled; the default 1 s buffering gate is most of the rest of
+        // the post-seek wait. Read both back so a silently-rejected value fails here.
+        assert_eq!(
+            p.mpv.get_property::<i64>("demuxer-max-back-bytes").unwrap(),
+            64 * 1024 * 1024,
+            "back buffer reverted to mpv's default"
+        );
+        // mpv stores this as a float, so the read-back is 0.30000001..., not 0.3 exactly.
+        let cpw: f64 = p.mpv.get_property("cache-pause-wait").unwrap_or(-1.0);
+        assert!(
+            (cpw - 0.3).abs() < 1e-6,
+            "buffering gate reverted to mpv's default, got {cpw}"
+        );
 
         // The mpv log request is a raw FFI call libmpv2 doesn't wrap, and the whole point of it is
         // that someone reproducing a bug gets lines out of a shipped build. Check mpv takes the
