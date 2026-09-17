@@ -225,14 +225,20 @@ impl Player {
     /// orchestrator resolved a stream URL and mpv then sat at 0:00 while ffmpeg retried a
     /// googlevideo connection it could not open (#241).
     ///
-    /// ffmpeg only speaks HTTP proxies (it CONNECTs through them for https too), so a `socks5://`
-    /// value is refused here rather than handed over: mpv would accept the string and ffmpeg would
-    /// silently stream direct.
+    /// ffmpeg only speaks `http://` proxies (it CONNECTs through them for https URLs too), so
+    /// anything else is refused here rather than handed over: mpv would accept the string and
+    /// ffmpeg would silently stream direct. That includes `https://`, which looks supported and is
+    /// not: `libavformat` gates proxying on a literal `http://` prefix (`av_strstart` in http.c and
+    /// tls.c), so an https proxy is dropped without a word.
+    ///
+    /// Only the scheme is logged: a proxy URI can carry credentials in its userinfo and the warning
+    /// lands in `limusic.log`, which is what users attach to bug reports.
     pub fn set_http_proxy(&self, proxy: Option<&str>) -> Result<(), Error> {
         let p = proxy.unwrap_or("").trim();
-        let usable = p.is_empty() || p.starts_with("http://") || p.starts_with("https://");
+        let usable = p.is_empty() || p.starts_with("http://");
         if !usable {
-            tracing::warn!(proxy = p, "mpv only speaks HTTP proxies — audio will stream direct");
+            let scheme = p.split_once("://").map_or("(none)", |(s, _)| s);
+            tracing::warn!(scheme, "mpv only speaks http:// proxies, audio will stream direct");
             return Ok(());
         }
         self.mpv.set_property("http-proxy", p)?;
@@ -538,6 +544,12 @@ mod tests {
             p.mpv.get_property::<String>("http-proxy").unwrap(),
             "http://127.0.0.1:8080",
             "a socks proxy must not replace a usable one"
+        );
+        p.set_http_proxy(Some("https://127.0.0.1:8443")).unwrap();
+        assert_eq!(
+            p.mpv.get_property::<String>("http-proxy").unwrap(),
+            "http://127.0.0.1:8080",
+            "ffmpeg gates proxying on a literal http:// prefix, so https must be refused too"
         );
         p.set_http_proxy(None).unwrap();
         assert_eq!(p.mpv.get_property::<String>("http-proxy").unwrap(), "");

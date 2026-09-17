@@ -42,7 +42,12 @@ pub fn client() -> &'static reqwest::Client {
         if let Some(p) = PROXY.get() {
             match reqwest::Proxy::all(p.as_str()) {
                 Ok(proxy) => b = b.proxy(proxy),
-                Err(e) => tracing::warn!(proxy = %p, "unusable proxy setting, going direct: {e}"),
+                // Scheme only: the URI can carry credentials in its userinfo, and this lands in
+                // limusic.log, which is what users attach to bug reports.
+                Err(e) => {
+                    let scheme = p.split_once("://").map_or("(none)", |(s, _)| s);
+                    tracing::warn!(scheme, "unusable proxy setting, going direct: {e}")
+                }
             }
         }
         b.build().unwrap_or_default()
