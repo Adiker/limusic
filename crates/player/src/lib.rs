@@ -154,15 +154,25 @@ impl Player {
     }
 
     /// Load and play a fresh URL, replacing the playlist. context/14.
+    ///
+    /// `start` lands playback at that position in seconds from the first sample, via `loadfile`'s
+    /// `start=` option. It exists because a `seek` issued right after `loadfile` is *not* queued by
+    /// mpv: the file isn't loaded yet, the command fails with `MPV_ERROR_COMMAND`, and a caller that
+    /// ignores the error (as `state::start_current` did) silently plays from 0 instead of the
+    /// requested position, so every resume and every failed-track retry restarted at the top
+    /// (issue #188). `start=` is applied as part of the load, so there is no window to lose it.
     pub fn load(
         &self,
         url: &str,
         headers: &HashMap<String, String>,
         gain_db: Option<f64>,
+        start: Option<f64>,
     ) -> Result<(), Error> {
         self.apply_headers(headers)?;
         self.set_gain(gain_db)?;
-        self.mpv.command("loadfile", &[&quoted(url), "replace"])?;
+        let args = loadfile_args(url, start);
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.mpv.command("loadfile", &refs)?;
         Ok(())
     }
 
@@ -502,6 +512,21 @@ fn quoted(arg: &str) -> String {
     format!("\"{}\"", arg.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+/// The `loadfile` argument list for [`Player::load`], with an optional start position passed
+/// through the file-local `start=` option. Split out from the FFI call so the argument list is
+/// testable without libmpv, the same way `quoted` is. `loadfile`'s third positional (`index`) must
+/// be supplied before the options string, so `-1` (auto) rides along whenever `start` is present.
+/// A non-finite or non-positive start is dropped: `start=0` is the default anyway, and a NaN would
+/// poison the load.
+fn loadfile_args(url: &str, start: Option<f64>) -> Vec<String> {
+    let mut args = vec![quoted(url), "replace".to_owned()];
+    if let Some(pos) = start.filter(|p| p.is_finite() && *p > 0.0) {
+        args.push("-1".to_owned());
+        args.push(quoted(&format!("start={pos}")));
+    }
+    args
+}
+
 /// Slider percent → mpv `volume` value, over a 60 dB range. mpv applies gain = (v/100)³,
 /// i.e. 60·log10(v/100) dB, so v = 100·10^(−(1−s/100)^1.5) yields −60·(1−s/100)^1.5 dB:
 /// 50% is −21 dB, 25% is −39 dB, 1% is −59 dB. 0 stays a hard mute.
@@ -519,7 +544,7 @@ fn perceptual_to_mpv(percent: i64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{af_chain, perceptual_to_mpv, quoted};
+    use super::{af_chain, loadfile_args, perceptual_to_mpv, quoted};
 
     #[test]
     fn gain_and_pitch_share_one_chain() {
@@ -632,6 +657,27 @@ mod tests {
         let after = af(); // mpv hands the chain back in its own escaped form, hence `contains`
         assert!(after.contains("volume=-4dB"), "retune after a rejection failed: {after}");
         assert!(!after.contains("rubberband"), "stored pitch survived the rollback: {after}");
+    }
+
+    #[test]
+    fn loadfile_start_is_a_file_local_option() {
+        // No start: the plain 2-argument loadfile, unchanged.
+        assert_eq!(loadfile_args("u", None), vec!["\"u\"", "replace"]);
+        // Anything at or below 0 is the default position, so it is not worth the option — and a
+        // NaN/∞ must never reach mpv.
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(loadfile_args("u", Some(bad)), vec!["\"u\"", "replace"], "start={bad}");
+        }
+        // The `index` positional has to be present for `options` to be read.
+        assert_eq!(
+            loadfile_args("u", Some(605.0)),
+            vec!["\"u\"", "replace", "-1", "\"start=605\""]
+        );
+        // Fractional resume positions are what `state::pending_seek` actually carries.
+        assert_eq!(
+            loadfile_args("u", Some(8.6155624669999)),
+            vec!["\"u\"", "replace", "-1", "\"start=8.6155624669999\""]
+        );
     }
 
     #[test]

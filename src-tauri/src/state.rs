@@ -1764,18 +1764,11 @@ impl AppState {
         if self.generation.load(Ordering::SeqCst) != gen {
             return false; // user moved on
         }
-        if let Err(e) =
-            self.player.load(&data.stream_url, &data.headers, loudness_gain(data.loudness_db))
-        {
-            self.emit_error(&item.video_id, &e.to_string());
-            return false;
-        }
-        let _ = self.player.play();
         // Resume a restored position, but only for the exact track it was saved against (any first
-        // play consumes it, so jumping elsewhere doesn't inherit it). mpv queues an absolute seek
-        // issued right after loadfile and applies it when the file loads.
-        // ponytail: if resume-position proves flaky on some mpv build, switch to the loadfile
-        // `start=` option instead of a post-load seek.
+        // play consumes it, so jumping elsewhere doesn't inherit it). This is handed to `loadfile`
+        // as `start=`, not issued as a seek afterwards: mpv does *not* queue a seek that arrives
+        // before the file is loaded. It fails with MPV_ERROR_COMMAND and playback starts at 0, so
+        // a restored position and a failed-track retry both lost their offset (issue #188).
         let seek = self
             .pending_seek
             .lock()
@@ -1783,9 +1776,16 @@ impl AppState {
             .take()
             .filter(|(vid, _)| *vid == item.video_id)
             .map(|(_, pos)| pos);
-        if let Some(pos) = seek {
-            let _ = self.player.seek(pos);
+        if let Err(e) = self.player.load(
+            &data.stream_url,
+            &data.headers,
+            loudness_gain(data.loudness_db),
+            seek,
+        ) {
+            self.emit_error(&item.video_id, &e.to_string());
+            return false;
         }
+        let _ = self.player.play();
         // Items played from cards/radio can arrive without a duration; the player response knows
         // the exact length of the cut we stream. Backfill before emitting — lyrics matching keys
         // on it (a wrong-cut LRCLIB match plays lyrics seconds off the audio).
@@ -2787,19 +2787,19 @@ impl AppState {
         if self.generation.load(Ordering::SeqCst) != gen {
             return; // superseded by a newer sync
         }
-        if let Err(e) =
-            self.player.load(&data.stream_url, &data.headers, loudness_gain(data.loudness_db))
-        {
-            self.emit_error(&track.id, &e.to_string());
-            return;
-        }
-        // Seek first (mpv queues it until the file loads), then set play/pause — avoids a blip of
-        // audio at 0 before the seek lands.
+        // The load lands on the live position directly (`start=`), so there is no blip of audio at
+        // 0 and no lost post-load seek (see `Player::load`).
         let target_ms =
             if playing { position_ms + t0.elapsed().as_millis() as i64 } else { position_ms };
         let pos = target_ms as f64 / 1000.0;
-        if pos > 0.5 {
-            let _ = self.player.seek(pos);
+        if let Err(e) = self.player.load(
+            &data.stream_url,
+            &data.headers,
+            loudness_gain(data.loudness_db),
+            (pos > 0.5).then_some(pos),
+        ) {
+            self.emit_error(&track.id, &e.to_string());
+            return;
         }
         let _ = if playing { self.player.play() } else { self.player.pause() };
         if let Some(item) = self.current_item().await {
