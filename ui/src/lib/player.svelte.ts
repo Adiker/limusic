@@ -1045,11 +1045,27 @@ export const ui = $state({
 	channelPickerOpen: false,
 	channelPickerRequired: false, // true while a multi-channel login is not finalized yet
 	channelIdentities: [] as AccountIdentity[],
+	// Bumped by `refreshView`. The root layout keys the page on it alongside `auth.epoch`, so a
+	// refresh remounts the current route the same way a sign-in does.
+	epoch: 0,
 	// Manual sidebar collapse, lg and up (below that the rail is already collapsed by the
 	// breakpoint). Here rather than in Sidebar because the now-playing view and the fullscreen
 	// lyrics panel are overlays that offset themselves by the sidebar's width.
 	sidebarCollapsed: browser && localStorage.getItem('sidebar_collapsed') === '1'
 });
+
+/**
+ * Reload whatever page is on screen (the titlebar's refresh button, F5). Browse responses are
+ * cached for five minutes, so dropping the cache is half of it and remounting the route is the
+ * other half: every page fetches in `onMount`, so a remount is what re-runs the load.
+ *
+ * YouTube rotates the home feed per request (about a third of "Quick picks" comes back different),
+ * which is what #177 was asking for; there is no per-shelf endpoint to refresh less than this.
+ */
+export function refreshView() {
+	clearCached();
+	ui.epoch++;
+}
 
 export function openChannelPicker(required = false) {
 	ui.channelPickerRequired = required;
