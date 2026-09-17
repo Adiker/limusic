@@ -19,6 +19,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Slider } from '$lib/components/ui/slider';
+	import { LEVELS as ZOOM_LEVELS, setZoom, zoom } from '$lib/zoom.svelte';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
@@ -83,6 +84,8 @@
 	const currentTheme = $derived(THEMES.find((t) => t.id === theme.id) ?? THEMES[0]);
 
 	// --- Themes tab ---
+	const pct = (level: number) => `${Math.round(level * 100)}%`;
+
 	type FontKey = 'fontSans' | 'fontHeading';
 	const FONT_ROWS: { key: FontKey; label: string; hint: string }[] = $derived([
 		{
@@ -609,6 +612,11 @@
 									control: radiusSlider
 								})}
 								{@render row({
+									title: t('settings.themes.zoom'),
+									desc: t('settings.themes.zoom_hint'),
+									control: zoomSelect
+								})}
+								{@render row({
 									title: t('settings.themes.app_icon'),
 									desc: t('settings.themes.app_icon_hint'),
 									control: appIconButtons
@@ -986,6 +994,19 @@
 			{effective.radius.toFixed(2)}
 		</span>
 	</div>
+{/snippet}
+
+{#snippet zoomSelect()}
+	<Select.Root type="single" value={String(zoom.level)} onValueChange={(v) => setZoom(Number(v))}>
+		<Select.Trigger class="w-44 shrink-0" aria-label={t('a11y.zoom')}>
+			<span class="flex-1 text-left">{pct(zoom.level)}</span>
+		</Select.Trigger>
+		<Select.Content>
+			{#each ZOOM_LEVELS as lv (lv)}
+				<Select.Item value={String(lv)} label={pct(lv)}>{pct(lv)}</Select.Item>
+			{/each}
+		</Select.Content>
+	</Select.Root>
 {/snippet}
 
 {#snippet fontSelect(key: FontKey, label: string)}
