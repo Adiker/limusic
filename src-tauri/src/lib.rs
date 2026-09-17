@@ -311,7 +311,19 @@ pub fn run() {
             let proxy = std::env::var("LIMUSIC_PROXY")
                 .ok()
                 .filter(|p| !p.trim().is_empty())
-                .or_else(|| db.get_setting("proxy").filter(|p| !p.trim().is_empty()));
+                .or_else(|| db.get_setting("proxy").filter(|p| !p.trim().is_empty()))
+                // The setting is free text from the UI. An unparseable one used to fail
+                // `InnerTube::new` below, and that `expect` bricks the app: no window, so no way
+                // to reach settings and undo it. Drop it once here, for every consumer.
+                .filter(|p| match reqwest::Proxy::all(p.as_str()) {
+                    Ok(_) => true,
+                    // Scheme only: the URI can carry credentials in its userinfo (see http.rs).
+                    Err(e) => {
+                        let scheme = p.split_once("://").map_or("(none)", |(s, _)| s);
+                        tracing::warn!(scheme, "unusable proxy setting, going direct: {e}");
+                        false
+                    }
+                });
             // Before the first fetch: the shared client builds itself on first use.
             http::set_proxy(proxy.as_deref());
             let cookie = db.get_setting("session_cookie").filter(|s| !s.is_empty());
