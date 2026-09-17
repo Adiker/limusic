@@ -416,29 +416,27 @@ jobs:
           }
           # `gh release upload` has neither a timeout nor stall detection. When GitHub's asset
           # origin (uploads.github.com) degrades, gh sits there with no output and no bytes moving,
-          # so the job hangs instead of failing and `retry` never gets its turn: v0.7.3 lost two runs
-          # that way on an AppImage that had gone up in 18 seconds the day before. It is not a
-          # size threshold. A probe that same afternoon wedged on a 10 MiB blob, while the 420 byte
-          # .sig went through, so anything past a few packets can hang.
+          # so the job hangs instead of failing and `retry` never gets its turn: v0.7.3 lost two
+          # Linux runs that way on an AppImage that had gone up in 18 seconds the day before, and
+          # the release sat half-published. It is not a size threshold. A probe that afternoon
+          # wedged on a 10 MiB blob while a 420 byte .sig went straight through.
           #
           # curl can tell a stalled upload from a slow one, which is the whole point: --speed-limit
           # with --speed-time gives up once throughput has been under 32 KB/s for a minute, while an
-          # upload that is merely slow (the one that eventually landed averaged 610 KB/s) runs to
-          # completion however long it takes. --max-time is the outer bound, for bytes that trickle
-          # just above the stall limit forever.
+          # upload that is merely slow (the Linux one that eventually landed averaged 610 KB/s) runs
+          # to completion however long it takes. --max-time is the outer bound, for bytes that
+          # trickle just above the stall limit forever.
           #
-          # Files go up one at a time, largest first, so a failure part-way cannot leave a .sig on
-          # the release beside a missing AppImage, which is exactly the state v0.7.3's first attempt
-          # left behind.
+          # Files go up one at a time, the signed artifact before its .sig, so a failure part-way
+          # cannot leave a .sig on the release beside a missing binary.
           upload() { # upload <file…>
-            local f name id code
+            local f name id code state
             for f in "$@"; do
-              # The API rewrites an asset name it does not like (a space becomes a dot) and then
-              # stores it under the rewritten one, so sending the basename verbatim would leave the
-              # lookup below searching for a name that is not there and the re-upload answering 422.
-              # Sanitising first means what we send is what gets stored. It is also already
-              # URL-safe. None of this release's filenames change, but a future one might.
-              name="$(basename "$f")"; name="${name//[^A-Za-z0-9._-]/.}"
+              # The API rewrites an asset name it does not like (a space becomes a dot) and stores
+              # it under the rewritten one, so sending the basename verbatim would leave the lookup
+              # below searching for a name that is not there and the re-upload answering 422.
+              # Sanitising first means what we send is what gets stored, and it is already URL-safe.
+              name="$(basename "$f")"; name="${name//[!A-Za-z0-9._-]/.}"
               # What --clobber used to do. A killed upload also leaves the asset in the "starter"
               # state, where it is listed with the right size, 404s on download, and blocks the name.
               id="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate \
@@ -455,6 +453,14 @@ jobs:
                 || { echo "::warning::$name: the upload stalled or the connection failed" >&2; return 1; }
               if [ "$code" != 201 ]; then
                 echo "::warning::$name: the asset endpoint answered HTTP $code" >&2; return 1
+              fi
+              # 201 is not quite proof, and this is the failure that would not announce itself:
+              # latest.json pointing at a "starter" asset is a release that looks complete here and
+              # 404s for every updater. Returning 1 sends `retry` round again, which deletes it.
+              state="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" --paginate \
+                       --jq ".[] | select(.name == \"$name\") | .state" | head -1)"
+              if [ "$state" != uploaded ]; then
+                echo "::warning::$name: asset is in state '${state:-missing}', not 'uploaded'" >&2; return 1
               fi
               echo "uploaded $name"
             done
@@ -475,16 +481,6 @@ jobs:
           fi
 
           retry 5 upload "$APPIMAGE" "$SIG"
-
-          # HTTP 201 is not proof. An interrupted upload leaves the asset listed, with the right
-          # size, in the "starter" state, and starter assets 404 on download. latest.json would
-          # point at one and every Linux updater would fail on a release that looks complete here.
-          NAME="$(basename "$APPIMAGE")"; NAME="${NAME//[^A-Za-z0-9._-]/.}"
-          STATE="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" \
-            --jq ".[] | select(.name == \"$NAME\") | .state")"
-          if [ "$STATE" != uploaded ]; then
-            echo "::error::the AppImage asset is in state '${STATE:-missing}', not 'uploaded'"; exit 1
-          fi
 
           # The deb rides along unsigned and stays out of latest.json: Tauri's updater has no deb
           # support, so there is nothing for a signature to be checked by. Debian users update by
