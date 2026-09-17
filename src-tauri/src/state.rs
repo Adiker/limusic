@@ -1776,12 +1776,10 @@ impl AppState {
             .take()
             .filter(|(vid, _)| *vid == item.video_id)
             .map(|(_, pos)| pos);
-        if let Err(e) = self.player.load(
-            &data.stream_url,
-            &data.headers,
-            loudness_gain(data.loudness_db),
-            seek,
-        ) {
+        let stream_url = mpv_stream_url(&data);
+        if let Err(e) =
+            self.player.load(&stream_url, &data.headers, loudness_gain(data.loudness_db), seek)
+        {
             self.emit_error(&item.video_id, &e.to_string());
             return false;
         }
@@ -1929,7 +1927,7 @@ impl AppState {
         }
         // Headers are global in mpv; the direct-URL clients need none beyond UA, which the
         // current track already set. Just append the URL.
-        if let Err(e) = self.player.enqueue(&data.stream_url) {
+        if let Err(e) = self.player.enqueue(&mpv_stream_url(&data)) {
             tracing::warn!(error = %e, "enqueue lookahead failed");
             return;
         }
@@ -2792,8 +2790,9 @@ impl AppState {
         let target_ms =
             if playing { position_ms + t0.elapsed().as_millis() as i64 } else { position_ms };
         let pos = target_ms as f64 / 1000.0;
+        let stream_url = mpv_stream_url(&data);
         if let Err(e) = self.player.load(
-            &data.stream_url,
+            &stream_url,
             &data.headers,
             loudness_gain(data.loudness_db),
             (pos > 0.5).then_some(pos),
@@ -3791,6 +3790,30 @@ fn history_threshold(duration: f64) -> f64 {
 fn loudness_gain(loudness_db: Option<f64>) -> Option<f64> {
     let gain = TARGET_LUFS - (loudness_db? - 14.0);
     (gain < -0.05).then(|| gain.max(-24.0))
+}
+
+/// The URL to hand mpv for one resolved track: the loopback chunked proxy when it is up, otherwise
+/// the googlevideo URL itself. Local files (no scheme) and non-http schemes pass straight through.
+///
+/// ffmpeg opens a stream with an open-ended `Range: bytes=X-`, which googlevideo throttles to ~2×
+/// realtime; the proxy re-issues it as bounded ranges, which are served at full speed, so both the
+/// first play and every seek start sooner. audioproxy.rs has the numbers and the kill-switch.
+fn mpv_stream_url(data: &PlaybackData) -> String {
+    // A user proxy reaches mpv as `http-proxy` (#241), and ffmpeg would send the loopback request
+    // through it, and it cannot reach our 127.0.0.1, so audio would go silent. Hand mpv the
+    // googlevideo URL instead and let the user's proxy carry it: no chunked proxy, but working
+    // playback. Nothing else is lost, because the proxy's own upstream fetch already goes through
+    // `http::client()`, which is proxied.
+    if crate::http::has_proxy() {
+        return data.stream_url.clone();
+    }
+    let http = data.stream_url.starts_with("http://") || data.stream_url.starts_with("https://");
+    if http {
+        if let Some(url) = crate::audioproxy::register(&data.stream_url, &data.headers) {
+            return url;
+        }
+    }
+    data.stream_url.clone()
 }
 
 /// Loudness target, matching YouTube Music's own player rather than the video site's -14.

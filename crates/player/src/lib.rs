@@ -599,7 +599,7 @@ mod tests {
         // The retries have to be *bounded*. `reconnect_delay_max=5` alone is an infinite loop
         // (ffmpeg's `reconnect_max_retries` defaults to -1): a connection that dies at the same
         // byte offset hangs the demuxer forever and the app's track-failed recovery never runs
-        // (issue #188 — "Will reconnect at ..." with audio underruns and no error). A cap is what
+        // (issue #188: "Will reconnect at ..." with audio underruns and no error). A cap is what
         // turns that into an error the app can recover from instead of a silent stall.
         assert!(lavf.contains("reconnect_max_retries"), "retry cap missing: {lavf}");
         assert!(
@@ -636,10 +636,7 @@ mod tests {
         );
         // mpv stores this as a float, so the read-back is 0.30000001..., not 0.3 exactly.
         let cpw: f64 = p.mpv.get_property("cache-pause-wait").unwrap_or(-1.0);
-        assert!(
-            (cpw - 0.3).abs() < 1e-6,
-            "buffering gate reverted to mpv's default, got {cpw}"
-        );
+        assert!((cpw - 0.3).abs() < 1e-6, "buffering gate reverted to mpv's default, got {cpw}");
 
         // The mpv log request is a raw FFI call libmpv2 doesn't wrap, and the whole point of it is
         // that someone reproducing a bug gets lines out of a shipped build. Check mpv takes the
@@ -692,8 +689,8 @@ mod tests {
     fn loadfile_start_is_a_file_local_option() {
         // No start: the plain 2-argument loadfile, unchanged.
         assert_eq!(loadfile_args("u", None), vec!["\"u\"", "replace"]);
-        // Anything at or below 0 is the default position, so it is not worth the option — and a
-        // NaN/∞ must never reach mpv.
+        // Anything at or below 0 is the default position, so it is not worth the option, and a
+        // NaN or infinity must never reach mpv.
         for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
             assert_eq!(loadfile_args("u", Some(bad)), vec!["\"u\"", "replace"], "start={bad}");
         }
