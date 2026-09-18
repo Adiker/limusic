@@ -672,6 +672,14 @@ html.art-tint.dark {
 	html {
 		@apply font-sans;
 	}
+	button:not(:disabled),
+	[role='button'] {
+		/* Tailwind v4's preflight drops the UA stylesheet's pointer cursor on <button>, so a control
+		   only got one where someone remembered a cursor-pointer class, and most did not (issue #257).
+		   One base rule covers every button and every div-as-button card; anything that wants a
+		   different cursor still wins with its own utility, since utilities come after base. */
+		cursor: pointer;
+	}
 	img {
 		/* No artwork in this app is a drag payload: the drag sources for the shortcuts grid and the
 		   queue are the wrapping card/row, never the image. Left native, every <img> peels off a
