@@ -293,6 +293,11 @@ struct QueueState {
     /// This queue is a radio: YouTube generated every upcoming track, so "Add to queue" replaces
     /// them rather than queueing behind an endless feed the user never asked to finish.
     radio: bool,
+    /// `play_song` is fetching this queue's radio right now (the generation it did it for). The
+    /// autoplay early trigger fires from `start_current` while such a queue is still its single
+    /// seed track, so without this hold both paths request the same `RDAMVM…` page at the same
+    /// moment and the queue ends up holding it twice (issue #255).
+    hydrating: Option<u64>,
     /// The queue index we've already appended to mpv for gapless lookahead (if any).
     lookahead_loaded: Option<usize>,
     /// Which client served the currently-loaded track (for the WEB_REMIX-403 feedback). context/06.
@@ -1073,14 +1078,17 @@ impl AppState {
         let video_id = seed.video_id.clone();
         let sticky = self.sticky_shuffle();
 
+        // A local file isn't a videoId YouTube has ever heard of: it has no radio, and asking for
+        // one offline (where local music earns its keep) is a guaranteed-failing request.
+        let local = crate::local::is_local_song(&video_id);
+
         {
             let mut q = self.queue.lock().await;
             // Unplayed manual adds survive a context switch (Spotify semantics): they follow the
             // new track, ahead of its radio (hydration appends behind them).
             let mut carried = upcoming_queued(&q.items, q.current);
-            // A local file has no radio behind it (see below), so don't promise one in the header.
-            q.source_name = (!crate::local::is_local_song(&seed.video_id))
-                .then(|| format!("{} Radio", seed.title));
+            // A local file has no radio behind it, so don't promise one in the header.
+            q.source_name = (!local).then(|| format!("{} Radio", seed.title));
             q.items = vec![seed];
             q.items.append(&mut carried);
             q.current = 0;
@@ -1088,19 +1096,20 @@ impl AppState {
             q.lookahead_loaded = None;
             q.radio_seed = None; // single-song queue → autoplay re-seeds from the last track
             q.radio = false;
+            // Hold off the autoplay early trigger `start_current` is about to spawn: this queue is
+            // one track long, so it would fetch the very radio being hydrated below (#255).
+            q.hydrating = (!local).then_some(gen);
             // Shuffle carries into the new queue only when it's sticky (re-snapshotted after
             // radio hydration); otherwise a new context starts unshuffled.
             q.shuffle_orig = (sticky && q.shuffle_orig.is_some()).then(|| q.items.clone());
         }
 
         if !self.start_current(gen).await {
+            self.end_hydration(gen).await;
             return;
         }
 
-        // A local file isn't a videoId YouTube has ever heard of: asking for its radio is a
-        // guaranteed-useless request, and offline (where local music earns its keep) it's a
-        // guaranteed-failing one.
-        if crate::local::is_local_song(&video_id) {
+        if local {
             self.prime_lookahead(gen).await;
             return;
         }
@@ -1109,22 +1118,27 @@ impl AppState {
         // directly (`RDAMVM<videoId>`): a bare next(videoId) returns only the seed song + an
         // automixPreviewVideoRenderer, so the queue would never grow past one track.
         let radio_id = format!("RDAMVM{video_id}");
-        match self
+        let hydrated = self
             .it
             .next(
                 self.clients.get(innertube::METADATA_CLIENT).unwrap(),
                 Some(&video_id),
                 Some(&radio_id),
             )
-            .await
-        {
+            .await;
+        self.end_hydration(gen).await; // autoplay may top this queue up from here on
+        match hydrated {
             Ok(next) => {
                 let mut q = self.queue.lock().await;
                 if self.generation.load(Ordering::SeqCst) != gen {
                     return; // superseded
                 }
+                // Deduped against the queue, not just against the seed: a carried manual add can
+                // be in the radio page too, and it should stay where the user put it.
+                let mut seen: HashSet<String> =
+                    q.items.iter().map(|i| i.video_id.clone()).collect();
                 for item in next.items {
-                    if item.video_id != video_id {
+                    if seen.insert(item.video_id.clone()) {
                         q.items.push(item);
                     }
                 }
@@ -1201,6 +1215,7 @@ impl AppState {
             q.radio_seed = radio_seed_for(source_id);
             q.source_name = source_name;
             q.radio = false; // a chosen playlist/album; `start_radio` sets it back on for its own
+            q.hydrating = None; // a `play_song` radio still in flight is for a queue that's gone
             if keep_shuffled {
                 // Snapshot the real playlist order (for un-shuffle), then play the clicked track
                 // first with everything else shuffled behind it. Carried adds are spliced in
@@ -2349,6 +2364,15 @@ impl AppState {
         self.db.get_setting("autoplay").map(|v| v != "false").unwrap_or(true)
     }
 
+    /// Lift the hold `play_song` put on the autoplay trigger while it hydrated a radio, unless a
+    /// newer queue has taken it over in the meantime (its own `play_song` clears it).
+    async fn end_hydration(&self, gen: u64) {
+        let mut q = self.queue.lock().await;
+        if q.hydrating == Some(gen) {
+            q.hydrating = None;
+        }
+    }
+
     /// Extend the queue with radio continuation when it's nearly out (autoplay). Returns how many
     /// tracks were appended. Guards: setting on, repeat Off, not a guest, tail near (last two
     /// tracks), generation unchanged across the network call. Continuation matches where the queue
@@ -2360,8 +2384,11 @@ impl AppState {
         if !self.autoplay_enabled() || self.lt.is_guest().await {
             return 0;
         }
-        let (last_video, seed, existing) = {
+        let (last_video, seed) = {
             let q = self.queue.lock().await;
+            if q.hydrating.is_some() {
+                return 0; // `play_song` is already fetching this queue's radio (#255)
+            }
             if q.repeat != RepeatMode::Off {
                 return 0; // the queue never exhausts under repeat
             }
@@ -2375,13 +2402,12 @@ impl AppState {
                 return 0;
             }
             let seed = q.radio_seed.clone().unwrap_or_else(|| format!("RDAMVM{}", last.video_id));
-            let existing: HashSet<String> = q.items.iter().map(|i| i.video_id.clone()).collect();
-            (last.video_id.clone(), seed, existing)
+            (last.video_id.clone(), seed)
         };
         let Some(client) = self.clients.get(innertube::METADATA_CLIENT) else { return 0 };
-        // Snapshot → network → re-lock, same discipline as `prime_lookahead`; the generation
-        // check between them is what makes it safe. A track added *during* the fetch could
-        // theoretically duplicate — accepted (YTM's own radio repeats occasionally too).
+        // Snapshot → network → re-lock, same discipline as `prime_lookahead`; the generation check
+        // between them is what makes it safe, and `absorb_radio` dedupes against the queue as it
+        // is after the fetch, so whatever grew it meanwhile can't come back as a duplicate.
         let fresh = match self.it.next(client, Some(&last_video), Some(&seed)).await {
             Ok(next) => next.items,
             Err(e) => {
@@ -2389,7 +2415,7 @@ impl AppState {
                 return 0;
             }
         };
-        let added = self.absorb_radio(fresh, existing.clone(), gen, &seed, AUTOPLAY_BATCH).await;
+        let added = self.absorb_radio(fresh, gen, &seed, AUTOPLAY_BATCH).await;
         if added > 0 {
             return added;
         }
@@ -2408,7 +2434,7 @@ impl AppState {
         let Ok((fresh, seed)) = self.fetch_radio(Some(&last_video), &song_seed).await else {
             return 0;
         };
-        self.absorb_radio(fresh, existing, gen, &seed, AUTOPLAY_BATCH).await
+        self.absorb_radio(fresh, gen, &seed, AUTOPLAY_BATCH).await
     }
 
     /// Append a fetched radio page to the tail of the queue and run the bookkeeping that follows.
@@ -2417,7 +2443,6 @@ impl AppState {
     async fn absorb_radio(
         self: &std::sync::Arc<Self>,
         fresh: Vec<SongItem>,
-        existing: HashSet<String>,
         gen: u64,
         seed: &str,
         cap: usize,
@@ -2427,6 +2452,10 @@ impl AppState {
         }
         let (added, trimmed) = {
             let mut q = self.queue.lock().await;
+            // Against the queue as it is *now*, not a snapshot from before the fetch: a playlist
+            // fill, a guest add or `play_song`'s own hydration can all have appended something
+            // while we were on the network, and dropping a stale set on top of it duplicates.
+            let existing: HashSet<String> = q.items.iter().map(|i| i.video_id.clone()).collect();
             let added = merge_radio(&mut q.items, fresh, existing, cap);
             // Not while shuffle is on: `shuffle_orig` is a parallel clone of the list and rebasing
             // both consistently is a bigger change than this one. Deliberate, see plan 039.
