@@ -62,7 +62,8 @@
 		"shuffle_all": "Tocar tudo aleatoriamente",
 		"play_all": "Tocar tudo",
 		"top_result": "Melhor resultado",
-		"all_results_for": "Todos os resultados para “{query}”"
+		"all_results_for": "Todos os resultados para “{query}”",
+		"refresh": "Atualizar"
 	},
 	"nav": {
 		"home": "Início",
@@ -264,7 +265,8 @@
 			"discord_status": "Status",
 			"discord_card": "Painel",
 			"discord_links": "Clicável",
-			"discord_buttons": "Botões"
+			"discord_buttons": "Botões",
+			"scrobbling": "Scrobbling"
 		},
 		"general": {
 			"language": "Idioma da interface",
@@ -324,7 +326,9 @@
 			"app_icon_hint": "Um PNG substitui o ícone na barra de tarefas, na área de notificação e nesta janela. Os atalhos e o gerenciador de arquivos mantêm o ícone instalado.",
 			"app_icon_pick": "Escolher…",
 			"app_icon_dialog": "Escolha um ícone do aplicativo",
-			"app_icon_filter": "Imagem PNG"
+			"app_icon_filter": "Imagem PNG",
+			"zoom": "Escala da interface",
+			"zoom_hint": "Redimensiona tudo na janela. Os atalhos de zoom também alteram a escala, e ela fica salva ao reabrir o app."
 		},
 		"playback": {
 			"audio_quality": "Qualidade de áudio",
@@ -351,7 +355,11 @@
 			"blocked_artists_remove": "Desbloquear {name}",
 			"blocked_artists_show_all": "Mostrar todos os {count}",
 			"blocked_artists_show_less": "Mostrar menos",
-			"blocked_artists_copy": "Copiar JSON"
+			"blocked_artists_copy": "Copiar JSON",
+			"lastfm_primary_artist": "Incluir apenas o artista principal no scrobble",
+			"lastfm_primary_artist_hint": "Envia apenas o primeiro artista creditado ao Last.fm, para que suas reproduções sejam registradas na página do artista correto. Nomes unidos por \"&\" são mantidos inteiros.",
+			"lastfm_primary_strict": "Descartar também artistas unidos por \"&\"",
+			"lastfm_primary_strict_hint": "\"Future & Metro Boomin\" é registrado como \"Future\". Duplas com \"&\" no nome também são encurtadas."
 		},
 		"data": {
 			"clear_cache": "Limpar cache de imagens e streams",
@@ -482,7 +490,8 @@
 			"zoom_in": "Ampliar",
 			"zoom_out": "Reduzir",
 			"reset_zoom": "Redefinir zoom",
-			"show_this_list": "Mostrar esta lista"
+			"show_this_list": "Mostrar esta lista",
+			"refresh_page": "Recarregar página"
 		},
 		"tempo_pitch": {
 			"title": "Controles de tempo e tom",
@@ -591,7 +600,8 @@
 		"expand_sidebar": "Expandir barra lateral",
 		"collapse_sidebar": "Recolher barra lateral",
 		"show_artwork": "Mostrar capa",
-		"show_video": "Mostrar vídeo"
+		"show_video": "Mostrar vídeo",
+		"zoom": "Escala da interface"
 	},
 	"lyrics": {
 		"title": "Letra",
