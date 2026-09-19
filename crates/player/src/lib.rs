@@ -744,6 +744,16 @@ fn start_crossfade(decks: &Arc<Decks>, from: usize, fade: f64) {
     decks.active.store(1 - from, Ordering::SeqCst);
     let _ = incoming.set_property("pause", false);
     let _ = decks.tx.send(PlayerEvent::TrackEnded);
+    // mpv reported the incoming track's duration when it was *preloaded*, while this deck was
+    // still the inactive one, so that event was dropped and nothing repeats it: a property change
+    // is only sent when the property changes. Without this the player bar keeps the outgoing
+    // track's length for the whole of the next song. After `TrackEnded`, which resets the app's
+    // stored duration on its way through the queue advance.
+    if let Ok(secs) = incoming.get_property::<f64>("duration") {
+        if secs.is_finite() && secs > 0.0 {
+            let _ = decks.tx.send(PlayerEvent::Duration(secs));
+        }
+    }
     tracing::info!(from, fade, "crossfading");
     let (ramp, fade_out, fade_in) = (decks.clone(), out.clone(), incoming.clone());
     let spawned = std::thread::Builder::new().name("mpv-crossfade".into()).spawn(move || {
