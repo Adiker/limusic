@@ -281,13 +281,26 @@ impl InnerTube {
             browse_id: browse_id.map(str::to_owned),
             params: params.map(str::to_owned),
         };
-        let value = self.post("browse", client, &body, true).await?;
-        // A stale cookie authenticates transport-wise but YouTube returns a logged-out "Sign in"
-        // state for account-scoped browse. Surface it as a clear error, not a blank page.
-        if self.is_logged_in() && browse::is_signed_out(&value) {
-            return Err(self.reject_session());
+        let mut healed = false;
+        loop {
+            let value = self.post("browse", client, &body, true).await?;
+
+            // A stale cookie authenticates transport-wise but YouTube returns a logged-out "Sign
+            // in" state for account-scoped browse. Same reasoning as the transport's 401: let the
+            // healer have a go and retry once before telling the user their session expired.
+            if self.is_logged_in() && browse::is_signed_out(&value) {
+                if !healed && !self.healing_suspended() {
+                    healed = true;
+                    tracing::warn!("InnerTube browse returned the signed-out state, healing");
+                    self.wait_for_session_heal().await?;
+                    tracing::info!("heal finished, retrying browse");
+                    continue;
+                }
+                return Err(self.reject_session());
+            }
+
+            return Ok(value);
         }
-        Ok(value)
     }
 
     /// POST a paging token. The ctoken is carried in the query, matching Metrolist's

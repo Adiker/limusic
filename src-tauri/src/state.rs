@@ -454,6 +454,18 @@ impl AppState {
         cookie: String,
         expect_account: Option<&str>,
     ) -> Result<SignInOutcome, String> {
+        // Validating a cookie already in hand: a 401 here is the answer, not something to wait on
+        // a heal for. `refresh_session` also reaches `sign_in` while healing, and a wait there
+        // would park the healing task on the heal it is performing, holding `auth` for the whole
+        // timeout.
+        innertube::without_healing(self.sign_in_inner(cookie, expect_account)).await
+    }
+
+    async fn sign_in_inner(
+        &self,
+        cookie: String,
+        expect_account: Option<&str>,
+    ) -> Result<SignInOutcome, String> {
         let _turn = self.auth.lock().await;
         if let Some(expect) = expect_account {
             let live = self.it.cookie().unwrap_or_default();
@@ -662,6 +674,11 @@ impl AppState {
     /// account_menu must succeed under a one-off context for that exact identity before the shared
     /// transport, persistence, or UI is updated.
     pub async fn switch_account(&self, selection_key: &str) -> Result<serde_json::Value, String> {
+        // Same as `sign_in`: this validates an identity it was handed, so let it hear the answer.
+        innertube::without_healing(self.switch_account_inner(selection_key)).await
+    }
+
+    async fn switch_account_inner(&self, selection_key: &str) -> Result<serde_json::Value, String> {
         let _turn = self.auth.lock().await;
         if !self.it.is_logged_in() {
             return Err("Sign in before switching channels.".into());
@@ -797,6 +814,12 @@ impl AppState {
     /// a dead session would leave the app half-logged-in. On success the transport, the
     /// projections and the UI all move together; on failure the previous session is left untouched.
     pub async fn switch_google_account(&self, id: &str) -> Result<serde_json::Value, String> {
+        // The stored cookie being stale is the expected failure here, and the caller rolls back
+        // on it. Waiting on a heal would only delay that by up to `HEAL_TIMEOUT`.
+        innertube::without_healing(self.switch_google_account_inner(id)).await
+    }
+
+    async fn switch_google_account_inner(&self, id: &str) -> Result<serde_json::Value, String> {
         let _turn = self.auth.lock().await;
         let account = self.db.get_account(id).ok_or("That account is no longer saved.")?;
         let previous_cookie = self.it.cookie();
