@@ -2384,8 +2384,12 @@ impl AppState {
         }
         let (last_video, seed) = {
             let q = self.queue.lock().await;
-            if q.hydrating.is_some() {
-                return 0; // `play_song` is already fetching this queue's radio (#255)
+            if q.hydrating == Some(gen) {
+                // This queue's own `play_song` is already fetching its radio (#255). Keyed to the
+                // generation: a marker left by a queue that has since been replaced (`play_index`
+                // and the other load paths bump the generation without clearing it) must not stop
+                // the new queue from topping itself up.
+                return 0;
             }
             if q.repeat != RepeatMode::Off {
                 return 0; // the queue never exhausts under repeat
