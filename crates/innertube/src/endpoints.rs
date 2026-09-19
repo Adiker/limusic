@@ -352,12 +352,15 @@ impl InnerTube {
                 break;
             };
             let mut page = browse::parse_library(&value);
-            keep(&mut page);
             if page.is_empty() {
-                // A spurious token (some grids carry one that resolves to nothing), or a page of
-                // cards we already have: either way there is nothing further to page to.
+                // A spurious token: some grids carry one that resolves to nothing.
                 break;
             }
+            // Dedupe after the emptiness test, not before: a page that is entirely cards we
+            // already have still carries the token for the page after it, and that one can hold
+            // cards found nowhere else. A token that cycles is bounded by the self-reference
+            // filter below and by the page cap above.
+            keep(&mut page);
             items.extend(page);
             token = browse::continuation_token(&value).filter(|next| *next != t);
         }
