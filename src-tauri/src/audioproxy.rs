@@ -281,18 +281,13 @@ async fn probe(reg: &Registration) -> Result<Meta, StatusCode> {
             .and_then(total_from_content_range)
             .ok_or(StatusCode::BAD_GATEWAY)?;
         Ok(Meta { total, content_type: content_type(&resp) })
-    } else if status.is_success() {
-        // googlevideo honours ranges, so this is the odd server that ignored one. Fall back to the
-        // length it announced rather than failing the track.
-        let total = resp
-            .headers()
-            .get(header::CONTENT_LENGTH)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse().ok())
-            .ok_or(StatusCode::BAD_GATEWAY)?;
-        Ok(Meta { total, content_type: content_type(&resp) })
     } else {
-        // Expired URL (googlevideo links last ~6h) or a refusal. mpv errors and the app re-resolves.
+        // Anything but a 206 is a dead end here, including a 200 from a server that ignored the
+        // range: every byte this proxy serves comes from a bounded range (`pump_chunks` accepts
+        // only 206), so taking the whole-file answer would just move the failure from this handled
+        // spot to an I/O error mid-body. Only googlevideo URLs are ever registered and those
+        // honour ranges, so in practice this is an expired URL (they last ~6h) or a refusal. mpv
+        // errors and the app re-resolves.
         tracing::debug!(status = %status, "audio proxy: upstream refused");
         Err(StatusCode::BAD_GATEWAY)
     }
