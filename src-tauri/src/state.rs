@@ -3790,6 +3790,16 @@ pub fn saved_volume(db: &Db) -> i64 {
     v.filter(|v| (0..=100).contains(v)).unwrap_or(100)
 }
 
+/// Crossfade length in seconds, or `None` when it's off. Experimental, so off unless asked for,
+/// and clamped to the range the settings slider offers in case the stored value predates it.
+pub fn saved_crossfade(db: &Db) -> Option<f64> {
+    if db.get_setting("crossfade").as_deref() != Some("true") {
+        return None;
+    }
+    let secs = db.get_setting("crossfade_secs").and_then(|s| s.parse::<f64>().ok());
+    Some(secs.filter(|s| s.is_finite()).unwrap_or(5.0).clamp(1.0, 10.0))
+}
+
 /// How far into a track a play counts (context/01 §registerPlayback): halfway, capped at 30s.
 /// `duration` is mpv's, which is 0.0 until it reports one, so an unknown length means the full 30s.
 fn history_threshold(duration: f64) -> f64 {

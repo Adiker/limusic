@@ -295,6 +295,9 @@
 	const quality = $derived(settings.quality ?? 'HIGH');
 	const historyOn = $derived(settings.enable_history !== 'false');
 	const autoplayOn = $derived(settings.autoplay !== 'false');
+	// Off by default: experimental, and it runs a second decoder while tracks overlap.
+	const crossfadeOn = $derived(settings.crossfade === 'true');
+	const crossfadeSecs = $derived(Number(settings.crossfade_secs ?? '5'));
 	const hideVideosOn = $derived(settings.hide_videos === 'true');
 	// Off until the setting is turned on: still experimental, so nobody gets video they didn't ask
 	// for. Same test in `player.svelte.ts`, which hydrates `prefs` at launch.
@@ -347,6 +350,16 @@
 	async function setAutoplay(on: boolean) {
 		settings.autoplay = on ? 'true' : 'false';
 		await api.setSetting('autoplay', settings.autoplay);
+	}
+
+	async function setCrossfade(on: boolean) {
+		settings.crossfade = on ? 'true' : 'false';
+		await api.setSetting('crossfade', settings.crossfade);
+	}
+
+	async function setCrossfadeSecs(secs: number) {
+		settings.crossfade_secs = String(secs);
+		await api.setSetting('crossfade_secs', settings.crossfade_secs);
 	}
 
 	// Also lands in `prefs`, which is where the player view reads it: the switch has to take effect
@@ -713,6 +726,21 @@
 									control: autoplaySwitch
 								})}
 								{@render row({
+									title: t('settings.playback.crossfade'),
+									badge: t('settings.themes.experimental'),
+									desc: t('settings.playback.crossfade_hint'),
+									control: crossfadeSwitch,
+									tall: true
+								})}
+								{#if crossfadeOn}
+									{@render row({
+										title: t('settings.playback.crossfade_duration'),
+										desc: t('settings.playback.crossfade_duration_hint'),
+										control: crossfadeSlider,
+										tall: true
+									})}
+								{/if}
+								{@render row({
 									title: t('settings.playback.prevent_duplicates'),
 									desc: t('settings.playback.prevent_duplicates_hint'),
 									control: dupSwitch,
@@ -933,6 +961,25 @@
 		onCheckedChange={setSystemTitlebar}
 	/>{/snippet}
 {#snippet autoplaySwitch()}<Switch checked={autoplayOn} onCheckedChange={setAutoplay} />{/snippet}
+
+{#snippet crossfadeSwitch()}<Switch checked={crossfadeOn} onCheckedChange={setCrossfade} />{/snippet}
+
+{#snippet crossfadeSlider()}
+	<div class="flex w-44 shrink-0 items-center gap-3">
+		<Slider
+			type="single"
+			aria-label={t('settings.playback.crossfade_duration')}
+			min={1}
+			max={10}
+			step={1}
+			value={crossfadeSecs}
+			onValueChange={setCrossfadeSecs}
+		/>
+		<span class="w-8 shrink-0 text-right font-mono text-xs text-muted-foreground">
+			{t('settings.playback.crossfade_seconds', { secs: crossfadeSecs })}
+		</span>
+	</div>
+{/snippet}
 {#snippet dupSwitch()}<Switch
 		checked={preventDuplicatesOn}
 		onCheckedChange={setPreventDuplicates}

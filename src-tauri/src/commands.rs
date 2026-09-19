@@ -190,7 +190,7 @@ pub async fn get_queue(state: St<'_>) -> Result<serde_json::Value, String> {
 /// `visitor_data`) and internal blobs (`queue_json`, `queue_index`, `queue_position`) never cross
 /// into the webview: they'd otherwise ship the login credential to the renderer on every open, and
 /// the webview can't overwrite them either.
-const UI_SETTINGS: [&str; 19] = [
+const UI_SETTINGS: [&str; 21] = [
     "volume",
     "proxy",
     "quality",
@@ -210,6 +210,8 @@ const UI_SETTINGS: [&str; 19] = [
     "system_titlebar",
     "lastfm_primary_artist",
     "lastfm_primary_strict",
+    "crossfade",
+    "crossfade_secs",
 ];
 
 /// Resolve the music video for `video_id` and hand back a `limusicvideo://` URL the player view
@@ -299,6 +301,11 @@ pub async fn set_setting(
     // to follow without waiting for the next track.
     if key == "discord_rpc_config" {
         state.set_discord_config(&value);
+    }
+    // Both halves are one player setting. Applies from the next track change: the transition the
+    // user is already hearing keeps the length it started with.
+    if key == "crossfade" || key == "crossfade_secs" {
+        state.player.set_crossfade(crate::state::saved_crossfade(&state.db));
     }
     // Applies to what's fetched from here on: the live queue keeps whatever is already in it.
     if key == "hide_videos" {
