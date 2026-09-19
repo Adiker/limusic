@@ -1,6 +1,7 @@
 //! Limusic Tauri app. Wires transport + player + db + orchestrator behind the command boundary.
 
 mod appicon;
+mod audioproxy;
 mod blocked;
 mod cipher;
 mod commands;
@@ -414,6 +415,11 @@ pub fn run() {
             // never sees a googlevideo URL (context/11). videoproxy.rs explains why a socket and
             // not a custom scheme.
             videoproxy::start(app_state.clone());
+
+            // mpv's audio goes through a second loopback socket so the open-ended range ffmpeg
+            // sends becomes bounded ranges upstream, which is the difference between 32 KB/s and
+            // several MB/s on the same URL. audioproxy.rs has the measurements.
+            audioproxy::start();
 
             // Local music artwork reaches the webview over the asset protocol, whose configured
             // scope is empty — the folders it may read are the ones the user picked (local.rs).

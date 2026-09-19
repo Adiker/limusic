@@ -96,18 +96,52 @@ impl Player {
         //
         // Note what these bound. `cache-on-disk` is on above, and mpv's manual is explicit that in
         // that mode the payload lives in the cache file and these limits apply to *packet
-        // metadata* only, "typically 50 MB per hour of media". So 32 MiB is not "several tracks of
-        // audio bytes", it is roughly 40 minutes of media before mpv starts pruning metadata. Fine
-        // for songs, and the ceiling an hour-long mix runs into.
-        mpv.set_property("demuxer-max-bytes", 32 * 1024 * 1024_i64)?;
-        mpv.set_property("demuxer-max-back-bytes", 8 * 1024 * 1024_i64)?;
+        // metadata* only, "typically 50 MB per hour of media". So 64 MiB is not "several tracks of
+        // audio bytes", it is roughly 80 minutes of media before mpv starts pruning metadata. Big
+        // enough that a seek anywhere inside an hour-long mix lands in the cached range once the
+        // demuxer has had a head start, which turns those seeks into instant offline ones rather
+        // than ones that have to open a fresh HTTP request (issue #188).
+        //
+        // The *back* buffer is the same size, not mpv's skimpy default. It is what makes a
+        // backward seek instant: at the old 8 MiB mpv had long since pruned a position the user
+        // had already heard, so scrubbing back forced a fresh network read and an audible stall
+        // (the log showed `Enter buffering ... waited 0.76 secs` after a seek into an
+        // already-played range). 64 MiB keeps roughly an entire mix, so backward seeks stay
+        // offline. It is packet metadata, so the memory cost is the same order as the forward cap.
+        mpv.set_property("demuxer-max-bytes", 64 * 1024 * 1024_i64)?;
+        mpv.set_property("demuxer-max-back-bytes", 64 * 1024 * 1024_i64)?;
+        // mpv enters "buffering" whenever a seek needs the network, and by default resumes only
+        // once a full second of audio is buffered (`cache-pause-wait`, default 1). That second is
+        // most of the "wait for it to start" after a seek; the connection answers in a fraction of
+        // it. Resume on a shorter buffer and let the demuxer keep filling behind playback. mpv
+        // still buffers (it pauses if the cache empties and the device underruns), so this shrinks
+        // the safety margin to start sooner, it does not remove the guard.
+        mpv.set_property("cache-pause-wait", 0.3)?;
         // ffmpeg's HTTP reader retries nothing by default: one dropped connection, one transient
         // error, and the track dies outright (mpv reports end-file with an error, which the app
         // turns into a skip). Seeking in a long stream is where that bites, because a seek past
         // the cached range opens a *fresh* request and gets no second chance. Issue #188.
+        //
+        // The retries are deliberately bounded. `reconnect_delay_max=5` alone means the loop is
+        // infinite (ffmpeg's `reconnect_max_retries` defaults to -1 = unlimited), and a connection
+        // that keeps dying at the same byte offset then hangs the demuxer forever: the app's log
+        // shows "Will reconnect at ..." with repeated audio underruns and never a track-failed
+        // event, so its retry-with-a-fresh-URL recovery never runs and playback is silently dead.
+        // A handful of attempts surfaces the error and lets the app re-resolve (issue #188 followup).
+        //
+        // `short_seek_size=1` disables ffmpeg's "soft-seek" optimization. When a seek lands within
+        // `short_seek` bytes of the end of the current response range, the HTTP reader drains the
+        // rest of the body instead of issuing a new Range request ("Soft-seeking to offset ... by
+        // draining N remaining byte(s)"). `short_seek` is the TLS/TCP stack's `SO_RCVBUF`, and on
+        // Windows that reports a huge auto-tuned window, so a past-cache seek into a long
+        // googlevideo response - whose initial `Range: bytes=0-` puts the range end at EOF - is
+        // classified as "short" and ffmpeg tries to drain the remaining ~120 MB at dial-up speed.
+        // Playback then pins at the seek target forever (issue #188). A threshold of 1 forces every
+        // real seek to close the connection and open a fresh Range request, which googlevideo
+        // answers with a 206.
         mpv.set_property(
             "stream-lavf-o",
-            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=2,reconnect_max_retries=6,reconnect_delay_total_max=30,short_seek_size=1",
         )?;
         request_mpv_log(&mpv);
         let mpv = Arc::new(mpv);
@@ -134,15 +168,25 @@ impl Player {
     }
 
     /// Load and play a fresh URL, replacing the playlist. context/14.
+    ///
+    /// `start` lands playback at that position in seconds from the first sample, via `loadfile`'s
+    /// `start=` option. It exists because a `seek` issued right after `loadfile` is *not* queued by
+    /// mpv: the file isn't loaded yet, the command fails with `MPV_ERROR_COMMAND`, and a caller that
+    /// ignores the error (as `state::start_current` did) silently plays from 0 instead of the
+    /// requested position, so every resume and every failed-track retry restarted at the top
+    /// (issue #188). `start=` is applied as part of the load, so there is no window to lose it.
     pub fn load(
         &self,
         url: &str,
         headers: &HashMap<String, String>,
         gain_db: Option<f64>,
+        start: Option<f64>,
     ) -> Result<(), Error> {
         self.apply_headers(headers)?;
         self.set_gain(gain_db)?;
-        self.mpv.command("loadfile", &[&quoted(url), "replace"])?;
+        let args = loadfile_args(url, start);
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        self.mpv.command("loadfile", &refs)?;
         Ok(())
     }
 
@@ -482,6 +526,21 @@ fn quoted(arg: &str) -> String {
     format!("\"{}\"", arg.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+/// The `loadfile` argument list for [`Player::load`], with an optional start position passed
+/// through the file-local `start=` option. Split out from the FFI call so the argument list is
+/// testable without libmpv, the same way `quoted` is. `loadfile`'s third positional (`index`) must
+/// be supplied before the options string, so `-1` (auto) rides along whenever `start` is present.
+/// A non-finite or non-positive start is dropped: `start=0` is the default anyway, and a NaN would
+/// poison the load.
+fn loadfile_args(url: &str, start: Option<f64>) -> Vec<String> {
+    let mut args = vec![quoted(url), "replace".to_owned()];
+    if let Some(pos) = start.filter(|p| p.is_finite() && *p > 0.0) {
+        args.push("-1".to_owned());
+        args.push(quoted(&format!("start={pos}")));
+    }
+    args
+}
+
 /// Slider percent → mpv `volume` value, over a 60 dB range. mpv applies gain = (v/100)³,
 /// i.e. 60·log10(v/100) dB, so v = 100·10^(−(1−s/100)^1.5) yields −60·(1−s/100)^1.5 dB:
 /// 50% is −21 dB, 25% is −39 dB, 1% is −59 dB. 0 stays a hard mute.
@@ -499,7 +558,7 @@ fn perceptual_to_mpv(percent: i64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{af_chain, perceptual_to_mpv, quoted};
+    use super::{af_chain, loadfile_args, perceptual_to_mpv, quoted};
 
     #[test]
     fn gain_and_pitch_share_one_chain() {
@@ -534,6 +593,19 @@ mod tests {
         let lavf = p.mpv.get_property::<String>("stream-lavf-o").unwrap();
         assert!(lavf.contains("reconnect=1"), "reconnect options missing: {lavf}");
         assert!(lavf.contains("reconnect_on_network_error=1"), "{lavf}");
+        // Without this ffmpeg soft-seeks (drains the response body) instead of opening a new
+        // connection, which stalls a deep seek in a long stream (issue #188).
+        assert!(lavf.contains("short_seek_size=1"), "soft-seek guard missing: {lavf}");
+        // The retries have to be *bounded*. `reconnect_delay_max=5` alone is an infinite loop
+        // (ffmpeg's `reconnect_max_retries` defaults to -1): a connection that dies at the same
+        // byte offset hangs the demuxer forever and the app's track-failed recovery never runs
+        // (issue #188: "Will reconnect at ..." with audio underruns and no error). A cap is what
+        // turns that into an error the app can recover from instead of a silent stall.
+        assert!(lavf.contains("reconnect_max_retries"), "retry cap missing: {lavf}");
+        assert!(
+            !lavf.contains("reconnect_max_retries=-1"),
+            "retry cap must not be unlimited: {lavf}"
+        );
 
         // The proxy has to reach the audio bytes, not just the API calls (#241), and a proxy mpv
         // takes but ffmpeg ignores is worse than none: it looks applied and streams direct.
@@ -553,6 +625,18 @@ mod tests {
         );
         p.set_http_proxy(None).unwrap();
         assert_eq!(p.mpv.get_property::<String>("http-proxy").unwrap(), "");
+
+        // Seek latency. A 12 MiB back buffer was pruned well before a long mix ended, so a backward
+        // seek hit the network and stalled; the default 1 s buffering gate is most of the rest of
+        // the post-seek wait. Read both back so a silently-rejected value fails here.
+        assert_eq!(
+            p.mpv.get_property::<i64>("demuxer-max-back-bytes").unwrap(),
+            64 * 1024 * 1024,
+            "back buffer reverted to mpv's default"
+        );
+        // mpv stores this as a float, so the read-back is 0.30000001..., not 0.3 exactly.
+        let cpw: f64 = p.mpv.get_property("cache-pause-wait").unwrap_or(-1.0);
+        assert!((cpw - 0.3).abs() < 1e-6, "buffering gate reverted to mpv's default, got {cpw}");
 
         // The mpv log request is a raw FFI call libmpv2 doesn't wrap, and the whole point of it is
         // that someone reproducing a bug gets lines out of a shipped build. Check mpv takes the
@@ -599,6 +683,27 @@ mod tests {
         let after = af(); // mpv hands the chain back in its own escaped form, hence `contains`
         assert!(after.contains("volume=-4dB"), "retune after a rejection failed: {after}");
         assert!(!after.contains("rubberband"), "stored pitch survived the rollback: {after}");
+    }
+
+    #[test]
+    fn loadfile_start_is_a_file_local_option() {
+        // No start: the plain 2-argument loadfile, unchanged.
+        assert_eq!(loadfile_args("u", None), vec!["\"u\"", "replace"]);
+        // Anything at or below 0 is the default position, so it is not worth the option, and a
+        // NaN or infinity must never reach mpv.
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(loadfile_args("u", Some(bad)), vec!["\"u\"", "replace"], "start={bad}");
+        }
+        // The `index` positional has to be present for `options` to be read.
+        assert_eq!(
+            loadfile_args("u", Some(605.0)),
+            vec!["\"u\"", "replace", "-1", "\"start=605\""]
+        );
+        // Fractional resume positions are what `state::pending_seek` actually carries.
+        assert_eq!(
+            loadfile_args("u", Some(8.6155624669999)),
+            vec!["\"u\"", "replace", "-1", "\"start=8.6155624669999\""]
+        );
     }
 
     #[test]

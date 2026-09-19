@@ -336,7 +336,22 @@ impl InnerTube {
         browse_id: &str,
     ) -> Result<Vec<BrowseItem>, Error> {
         let value = self.browse(client, Some(browse_id), None).await?;
+        // A card the grid hands out twice is fatal on the UI side: every library list is keyed by
+        // browseId, and one repeat blanks the whole list (the sidebar, the Library page, the
+        // add-to-playlist picker) with an each_key_duplicate. Only libraries past the first page
+        // saw it, which is why removing a few playlists in YouTube Music "fixed" it. Issues #258,
+        // #260.
+        let mut seen = std::collections::HashSet::new();
+        let mut dropped = 0usize;
+        let mut keep = |items: &mut Vec<BrowseItem>| {
+            items.retain(|i: &BrowseItem| {
+                let fresh = seen.insert(i.id.clone());
+                dropped += usize::from(!fresh);
+                fresh
+            })
+        };
         let mut items = browse::parse_library(&value);
+        keep(&mut items);
         let mut token = browse::continuation_token(&value);
         // ponytail: page cap, so a token that never resolves can't spin forever. Raise it if
         // anyone turns up with a library past ~500 entries.
@@ -349,12 +364,27 @@ impl InnerTube {
             }) else {
                 break;
             };
-            let page = browse::parse_library(&value);
+            let mut page = browse::parse_library(&value);
             if page.is_empty() {
-                break; // a spurious token (some grids carry one that resolves to nothing)
+                // A spurious token: some grids carry one that resolves to nothing.
+                break;
             }
+            // Dedupe after the emptiness test, not before: a page that is entirely cards we
+            // already have still carries the token for the page after it, and that one can hold
+            // cards found nowhere else. A token that cycles is bounded by the self-reference
+            // filter below and by the page cap above.
+            keep(&mut page);
             items.extend(page);
             token = browse::continuation_token(&value).filter(|next| *next != t);
+        }
+        // Says so in a log the next reporter pastes: without it, a library that still looks wrong
+        // can't be told apart from one that was never duplicating in the first place.
+        if dropped > 0 {
+            tracing::warn!(
+                browse_id,
+                dropped,
+                "library grid repeated cards; kept the first of each"
+            );
         }
         Ok(items)
     }
