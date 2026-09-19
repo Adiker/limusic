@@ -262,15 +262,12 @@
 			"system_titlebar_hint": "Позвольте рабочему столу отрисовывать рамку окна и кнопки на ней. Limusic размещает собственную панель инструментов под ней."
 		},
 		"themes": {
-			"accent_themes": "Акцентные темы",
 			"interface_font": "Шрифт интерфейса",
 			"load_font_file": "Загрузить шрифт от файла",
 			"custom_colors": "Разные цвета",
 			"primary_color": "Основное ударение",
 			"background_color": "Фон",
 			"reset_theme": "Сбросить до темы по умолчанию",
-			"accent_colors": "Акцентные цвета",
-			"palettes": "Палитры",
 			"your_fonts": "Ваши шрифты",
 			"custom_font": "Кастом…",
 			"font_placeholder": "",

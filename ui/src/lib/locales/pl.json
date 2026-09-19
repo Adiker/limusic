@@ -1,4 +1,24 @@
 {
+	"selection": {
+		"actions": "",
+		"count": "",
+		"selected": "",
+		"not_selected": "",
+		"hidden": "",
+		"enter": "",
+		"exit": "",
+		"hint": "",
+		"select_all": "",
+		"clear": "",
+		"track": "",
+		"track_guest": "",
+		"select_track": "",
+		"lost": "",
+		"pending": "",
+		"local_playlist": "",
+		"account_changed": "",
+		"playlist_partial": ""
+	},
 	"common": {
 		"loading": "",
 		"retry": "",
@@ -15,6 +35,7 @@
 		"create": "",
 		"back": "",
 		"forward": "",
+		"refresh": "",
 		"custom": "",
 		"reset": "",
 		"unknown_artist": "",
@@ -60,7 +81,9 @@
 		"filter_library": "",
 		"command_description": "",
 		"shuffle_all": "",
-		"play_all": ""
+		"play_all": "",
+		"top_result": "",
+		"all_results_for": ""
 	},
 	"nav": {
 		"home": "",
@@ -82,7 +105,8 @@
 		"remove_account_title": "",
 		"remove_account_desc": "",
 		"saved_accounts_hint": "",
-		"history": ""
+		"history": "",
+		"no_channels": ""
 	},
 	"player": {
 		"play": "",
@@ -154,7 +178,8 @@
 		"show_section": "",
 		"hide_section": "",
 		"feed_empty": "",
-		"signed_out_hint": ""
+		"signed_out_hint": "",
+		"add_to_end": ""
 	},
 	"history": {
 		"title": "",
@@ -205,7 +230,18 @@
 		"every_upload": "",
 		"no_uploads": "",
 		"no_upload_albums": "",
-		"uploads_signed_out": ""
+		"uploads_signed_out": "",
+		"songs_signed_out": "",
+		"no_library_songs": "",
+		"empty_signed_out": "",
+		"empty": "",
+		"no_saved_playlists": "",
+		"no_saved_albums": "",
+		"no_saved_artists": "",
+		"no_artists": "",
+		"on_repeat": "",
+		"on_repeat_subtitle": "",
+		"songs_count": ""
 	},
 	"local": {
 		"scanning": "",
@@ -215,13 +251,19 @@
 		"artists_count": "",
 		"songs_count": "",
 		"add_folder": "",
-		"pick_folder_dialog": ""
+		"pick_folder_dialog": "",
+		"folders": "",
+		"folders_hint": "",
+		"no_folders": "",
+		"nothing_playable": ""
 	},
 	"settings": {
 		"title": "",
 		"tabs": {
 			"general": "",
 			"general_hint": "",
+			"discord": "",
+			"discord_hint": "",
 			"themes": "",
 			"themes_hint": "",
 			"playback": "",
@@ -240,6 +282,7 @@
 			"player_view": "",
 			"audio": "",
 			"video": "",
+			"scrobbling": "",
 			"lyrics": "",
 			"blocked": "",
 			"advanced": "",
@@ -248,7 +291,11 @@
 			"updates": "",
 			"report": "",
 			"whats_new": "",
-			"support": ""
+			"support": "",
+			"discord_status": "",
+			"discord_card": "",
+			"discord_links": "",
+			"discord_buttons": ""
 		},
 		"general": {
 			"language": "",
@@ -287,6 +334,8 @@
 			"tint_hint": "",
 			"roundness": "",
 			"roundness_hint": "",
+			"zoom": "",
+			"zoom_hint": "",
 			"load_font_file_hint": "",
 			"open_player": "",
 			"open_player_hint": "",
@@ -334,6 +383,10 @@
 			"blocked_artists_show_all": "",
 			"blocked_artists_show_less": "",
 			"blocked_artists_copy": "",
+			"lastfm_primary_artist": "",
+			"lastfm_primary_artist_hint": "",
+			"lastfm_primary_strict": "",
+			"lastfm_primary_strict_hint": "",
 			"lyrics_provider": "",
 			"lyrics_provider_hint": ""
 		},
@@ -367,6 +420,60 @@
 			"kofi": "",
 			"kofi_hint": "",
 			"kofi_button": ""
+		},
+		"discord": {
+			"enable": "",
+			"enable_hint": "",
+			"off_notice": "",
+			"show_paused": "",
+			"show_paused_hint": "",
+			"hide_details": "",
+			"hide_details_hint": "",
+			"status_line": "",
+			"status_line_hint": "",
+			"status_app": "",
+			"status_line1": "",
+			"status_line2": "",
+			"app_name": "",
+			"app_name_hint": "",
+			"app_name_placeholder": "",
+			"line1": "",
+			"line1_hint": "",
+			"line2": "",
+			"line2_hint": "",
+			"content_title": "",
+			"content_artist": "",
+			"content_album": "",
+			"content_artist_album": "",
+			"content_off": "",
+			"cover": "",
+			"cover_hint": "",
+			"badge": "",
+			"badge_hint": "",
+			"line3": "",
+			"line3_hint": "",
+			"timestamps": "",
+			"timestamps_hint": "",
+			"links_hint": "",
+			"link_line1": "",
+			"link_line2": "",
+			"link_cover": "",
+			"button1": "",
+			"button2": "",
+			"buttons_hint": "",
+			"button_listen": "",
+			"button_album": "",
+			"button_artist": "",
+			"button_app": "",
+			"button_off": "",
+			"preview": "",
+			"preview_live": "",
+			"preview_sample": "",
+			"preview_paused": "",
+			"reset": "",
+			"preview_status": "",
+			"preview_you": "",
+			"preview_card": ""
 		}
 	},
 	"dialogs": {
@@ -406,6 +513,7 @@
 			"toggle_repeat": "",
 			"mute_unmute": "",
 			"search_anywhere": "",
+			"refresh_page": "",
 			"toggle_now_playing": "",
 			"volume_up": "",
 			"volume_down": "",
@@ -517,6 +625,7 @@
 		"choose_accent": "",
 		"background_tint": "",
 		"roundness": "",
+		"zoom": "",
 		"more_options": "",
 		"expand_sidebar": "",
 		"collapse_sidebar": "",
@@ -591,6 +700,19 @@
 		"app_icon_set": "",
 		"blocked_copied": "",
 		"blocked_artist": "",
-		"unblocked_artist": ""
+		"unblocked_artist": "",
+		"added_to_shortcuts": "",
+		"already_in_shortcuts": "",
+		"playing_next_one": "",
+		"playing_next": "",
+		"added_to_queue_one": "",
+		"added_to_queue": "",
+		"liked": "",
+		"disliked": "",
+		"rating_removed": "",
+		"subscribed": "",
+		"unsubscribed": "",
+		"signed_in_as": "",
+		"switched_to": ""
 	}
 }
