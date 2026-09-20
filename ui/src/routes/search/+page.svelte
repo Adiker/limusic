@@ -71,7 +71,9 @@
 				// The one search the user actually asked for, so this is the one that goes to
 				// YouTube signed in and lands in their search history (#203).
 				api.searchAll(q, true),
-				api.search(q, true).catch(() => [] as SongItem[]),
+				// Not recorded: the unfiltered search above already wrote this query to the
+				// account's history, and recording it twice is two entries for one search.
+				api.search(q, false).catch(() => [] as SongItem[]),
 				api.searchVideos(q).catch(() => [] as SongItem[])
 			]);
 			if (latest !== q) return; // a newer search superseded this one
