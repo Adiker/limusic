@@ -36,7 +36,7 @@
 	import * as api from '$lib/api';
 	import { ON_REPEAT_ID } from '$lib/api';
 	import type { BrowseItem, PlaylistPage, SongItem } from '$lib/api';
-	import { getCached, putCached, invalidateCached } from '$lib/pagecache';
+	import { getCached, putCached, invalidateCachedPrefix } from '$lib/pagecache';
 	import { thumb } from '$lib/thumb';
 	import { anchorMenu, fitMenu, NO_ANCHOR } from '$lib/menu';
 	import { rowWindow } from '$lib/rows';
@@ -70,6 +70,7 @@
 		toggleSaved,
 		bumpLibraryTrackCount,
 		noteUnsavedFrom,
+		setRating,
 		patchLibraryPlaylist,
 		lastPlaylistAdd,
 		lastPlaylistRemove
@@ -507,6 +508,14 @@
 		if (pl && loadedKey) putCached(loadedKey, pl);
 	}
 
+	// Same, for a write that removed rows: the entries for every *other* order this playlist was
+	// fetched in still hold them, and `fetchSorted` serves a hit without revalidating, so changing
+	// the sort would bring the removed tracks back.
+	function cacheAfterRemoval() {
+		invalidateCachedPrefix(`playlist:${id}`);
+		cacheCurrent();
+	}
+
 	// One page at a time, shared: the scroll sentinel and the "load the rest before playing" walk
 	// both go through here, so they can never fire overlapping requests for the same token.
 	function loadMore(): Promise<void> {
@@ -771,7 +780,10 @@
 		pl = { ...pl, items: kept };
 		try {
 			if (isLiked) {
-				await api.rate(track.video_id, 'indifferent');
+				// Through the shared path, not `api.rate`: an unlike is a rating write wherever it
+				// is spelled as a removal, and the override, the player bar and the index all have
+				// to follow it.
+				await setRating(track, 'indifferent');
 				toast.success(t('toasts.removed_from_liked'));
 			} else {
 				await api.removeFromPlaylist(id, track.video_id, track.set_video_id!);
@@ -779,7 +791,7 @@
 				noteUnsavedFrom(id, track.video_id);
 				toast.success(t('toasts.removed_from_playlist'));
 			}
-			cacheCurrent();
+			cacheAfterRemoval();
 		} catch (e) {
 			pl = { ...pl, items: prev }; // revert
 			cacheCurrent();
@@ -803,7 +815,7 @@
 			if (isLiked) {
 				for (const row of targets) {
 					try {
-						await api.rate(row.video_id, 'indifferent');
+						await setRating(row, 'indifferent');
 					} catch (e) {
 						lastError = e;
 						failed.add(idOf(row));
@@ -824,7 +836,7 @@
 			// A partial liked-music removal puts the rows that survived back where they were.
 			if (failed.size)
 				pl = { ...pl, items: prev.filter((row) => !gone.has(idOf(row)) || failed.has(idOf(row))) };
-			cacheCurrent();
+			cacheAfterRemoval();
 			selection.clear();
 		} catch (e) {
 			pl = { ...pl, items: prev }; // revert
@@ -836,7 +848,7 @@
 	async function deleteThisPlaylist() {
 		try {
 			await api.deletePlaylist(id);
-			invalidateCached(`playlist:${id}`);
+			invalidateCachedPrefix(`playlist:${id}`);
 			toast.success(t('toasts.playlist_deleted'));
 			goto('/library');
 		} catch (e) {

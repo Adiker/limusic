@@ -51,7 +51,7 @@
 		toggleSongLibrary
 	} from '$lib/player.svelte';
 	import { t } from '$lib/i18n.svelte';
-	import { invalidateCached } from '$lib/pagecache';
+	import { invalidateCachedPrefix } from '$lib/pagecache';
 	import TempoPitchDialog from './TempoPitchDialog.svelte';
 
 	let {
@@ -154,7 +154,9 @@
 		// An open page for this playlist drops the row now; the cache drop covers every other one,
 		// which has no rendered list to patch.
 		notePlaylistRemove(playlistId, setVideoId);
-		invalidateCached(`playlist:${playlistId}`);
+		// Every order the page cached this playlist in, not just the bare key: a sort the user
+		// picked earlier still holds the row, and the playlist page serves that hit as it is.
+		invalidateCachedPrefix(`playlist:${playlistId}`);
 		toast.success(t('toasts.removed_from_playlist'));
 		// The song is out of the playlist, so it does not stay in the queue that playlist filled.
 		// The playing row can't just be dropped (`remove_from_queue` refuses the current index, and
@@ -162,8 +164,13 @@
 		// that leaves it behind the pointer, where removing it shifts `current` back onto the song
 		// now playing.
 		if (queueIndex === undefined) return;
-		if (queueIndex === playback.queue.currentIndex) await api.nextTrack();
-		await api.removeFromQueue(queueIndex);
+		// Resolved again rather than reused: the index this menu opened on is a position, and a
+		// queue edit during the request above (a guest add, another removal) moves every row
+		// behind it. The setVideoId identifies the row itself.
+		const at = playback.queue.items.findIndex((r) => r.set_video_id === setVideoId);
+		if (at < 0) return; // already gone from the queue
+		if (at === playback.queue.currentIndex) await api.nextTrack();
+		await api.removeFromQueue(at);
 	}
 </script>
 

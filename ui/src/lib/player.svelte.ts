@@ -843,28 +843,46 @@ const rated = (r: Rating) =>
 /** Optimistic rating change, reverted if YouTube rejects it. `msg` overrides the toast, for the
  *  callers that clear a like by another name (out of Library ▸ Songs, which is that same list). */
 async function rate(song: SongItem, next: Rating, msg?: string) {
+	if (ratingOf(song) === next) return;
+	try {
+		await setRating(song, next);
+		toast.success(msg ?? rated(next));
+	} catch (e) {
+		toast.error(String(e));
+	}
+}
+
+/**
+ * The rating write and everything that has to move with it: the override every list and ⋯ menu
+ * reads, the player bar's own rating, the saved-in index and the Library ▸ Songs cache. A caller
+ * that skips this (the playlist page's unlike, which is a removal to the user) leaves the rest of
+ * the UI showing the old answer until a reload.
+ *
+ * Throws whatever the write threw, with the override already put back, so a caller removing
+ * several rows can tell which ones survived. It toasts nothing: that is the caller's, because one
+ * toast per row is not a bulk removal.
+ */
+export async function setRating(song: SongItem, next: Rating): Promise<void> {
 	const prev = ratingOf(song);
-	if (prev === next) return;
 	const isNow = playback.now?.videoId === song.video_id;
 	ratings[song.video_id] = next;
 	capOverrides(ratings);
 	if (isNow) playback.rating = next;
 	try {
 		await api.rate(song.video_id, next);
-		// Keep the index in step: it outlives this override on a reload, and the crawl that would
-		// otherwise correct it runs at most every six hours.
-		if (next === 'like') noteSavedIn(api.LIKED_MUSIC_ID, [song.video_id]);
-		else noteUnsavedFrom(api.LIKED_MUSIC_ID, song.video_id);
-		// Library ▸ Songs *is* the liked-videos browse, and its tab paints from the cache without
-		// revalidating, so a like from anywhere else has to drop it or the row is missing for 5 min.
-		invalidateCached(LIBRARY_SONGS_KEY);
-		toast.success(msg ?? rated(next));
-		if (next === 'dislike') dropDisliked(song.video_id, isNow);
 	} catch (e) {
 		ratings[song.video_id] = prev;
 		if (isNow) playback.rating = prev;
-		toast.error(String(e));
+		throw e;
 	}
+	// Keep the index in step: it outlives this override on a reload, and the crawl that would
+	// otherwise correct it runs at most every six hours.
+	if (next === 'like') noteSavedIn(api.LIKED_MUSIC_ID, [song.video_id]);
+	else noteUnsavedFrom(api.LIKED_MUSIC_ID, song.video_id);
+	// Library ▸ Songs *is* the liked-videos browse, and its tab paints from the cache without
+	// revalidating, so a like from anywhere else has to drop it or the row is missing for 5 min.
+	invalidateCached(LIBRARY_SONGS_KEY);
+	if (next === 'dislike') dropDisliked(song.video_id, isNow);
 }
 
 /** A disliked track shouldn't keep playing, or sit waiting to. Skip it if it's playing, and drop

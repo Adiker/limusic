@@ -120,7 +120,8 @@ export async function enqueueItem(item: BrowseItem, next: boolean): Promise<void
  *
  * ponytail: the first page only. `enqueueItem` passes a playlist's `continuation` to the backend,
  * which walks the rest into the queue; the add path has no equivalent, so a very long playlist
- * copies the tracks that came back. Walk the pages here if someone asks for the whole 500.
+ * copies the tracks that came back, and says so rather than quietly dropping the rest. Walk the
+ * pages here if someone asks for the whole 500.
  */
 export async function addItemToPlaylist(item: BrowseItem): Promise<void> {
 	if (item.kind === 'song') {
@@ -130,6 +131,7 @@ export async function addItemToPlaylist(item: BrowseItem): Promise<void> {
 	try {
 		const src =
 			item.kind === 'album' ? await api.getAlbum(item.id) : await api.getPlaylist(item.id);
+		if (src.continuation) toast.error(t('toasts.partial_playlist_added'));
 		openAddManyToPlaylist(src.items);
 	} catch {
 		toast.error(t('toasts.could_not_add'));
