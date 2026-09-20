@@ -26,7 +26,7 @@
 	import { HELP_COMBO } from '$lib/shortcuts';
 	import { copyText } from '$lib/clipboard';
 	import * as api from '$lib/api';
-	import { blocked, prefs, ui, toast, unblockArtist } from '$lib/player.svelte';
+	import { blocked, prefs, refreshView, ui, toast, unblockArtist } from '$lib/player.svelte';
 	import { win } from '$lib/win.svelte';
 	import ColorPicker from '$lib/components/ColorPicker.svelte';
 	import Changelog from '$lib/components/Changelog.svelte';
@@ -939,11 +939,13 @@
 </Dialog.Root>
 
 <!-- Controls. Split out so the rows above read as a list of settings rather than a wall of markup. -->
+<!-- The picker refreshes the page behind the dialog once Rust has the new language: half of what is
+     on screen is YouTube's own text (#274), and that half only changes on the next fetch. -->
 {#snippet languagePicker()}
 	<Select.Root
 		type="single"
 		value={currentLocale.id}
-		onValueChange={(v) => setLocale(v as LocaleId)}
+		onValueChange={(v) => setLocale(v as LocaleId).then(refreshView)}
 	>
 		<Select.Trigger class="w-44 shrink-0" aria-label={t('settings.general.language')}>
 			<span class="flex-1 truncate text-left">{currentLocaleLabel}</span>

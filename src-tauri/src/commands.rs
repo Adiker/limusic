@@ -199,7 +199,7 @@ pub async fn get_queue(state: St<'_>) -> Result<serde_json::Value, String> {
 /// `visitor_data`) and internal blobs (`queue_json`, `queue_index`, `queue_position`) never cross
 /// into the webview: they'd otherwise ship the login credential to the renderer on every open, and
 /// the webview can't overwrite them either.
-const UI_SETTINGS: [&str; 21] = [
+const UI_SETTINGS: [&str; 22] = [
     "volume",
     "proxy",
     "quality",
@@ -221,6 +221,7 @@ const UI_SETTINGS: [&str; 21] = [
     "lastfm_primary_strict",
     "crossfade",
     "crossfade_secs",
+    "locale",
 ];
 
 /// Resolve the music video for `video_id` and hand back a `limusicvideo://` URL the player view
@@ -315,6 +316,12 @@ pub async fn set_setting(
     // user is already hearing keeps the length it started with.
     if key == "crossfade" || key == "crossfade_secs" {
         state.player.set_crossfade(crate::state::saved_crossfade(&state.db));
+    }
+    // The language YouTube answers in (#274). The SPA writes it whenever the two disagree, which is
+    // also how a fresh install's language gets here at all. It drops its own browse cache and
+    // remounts the route afterwards, so what is already on screen follows without a restart.
+    if key == "locale" {
+        state.it.set_locale(&value);
     }
     // Applies to what's fetched from here on: the live queue keeps whatever is already in it.
     if key == "hide_videos" {

@@ -17,7 +17,7 @@ import { clearCached, invalidateCached, LIBRARY_SONGS_KEY } from './pagecache';
 import * as pl from './personal';
 import type { Personal } from './personal';
 import { appearance } from './theme.svelte';
-import { t } from './i18n.svelte';
+import { currentLocale, pushLocaleToRust, t } from './i18n.svelte';
 
 export const playback = $state({
 	now: null as NowPlaying | null,
@@ -1299,6 +1299,14 @@ export function initApp(mini = false): () => void {
 		.then((s) => {
 			prefs.musicVideos = s.music_videos === 'true';
 			prefs.discordRpc = s.discord_rpc === 'true';
+			// Half of what the app shows is YouTube's own text, and Rust asks for it in the language
+			// this setting holds (#274). It reads the setting at startup, before the SPA exists to
+			// tell it anything, so the two disagree on a fresh install, on a language taken from the
+			// system, and on the first launch after this shipped. Put it right and refetch: the pages
+			// already on screen were painted in the stale language.
+			if (s.locale !== currentLocale.id) {
+				pushLocaleToRust(currentLocale.id).then(refreshView);
+			}
 		})
 		.catch(() => {});
 	api.getAccount()

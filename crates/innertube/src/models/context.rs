@@ -17,6 +17,18 @@ impl Default for Locale {
     }
 }
 
+impl Locale {
+    /// The `Accept-Language` to send alongside this locale. YouTube reads `hl` out of the context
+    /// object, not the header, but a client that asks for Korean content in the body and English
+    /// in its headers is not one a browser would produce.
+    pub(crate) fn accept_language(&self) -> String {
+        match self.hl.as_str() {
+            "en" => "en-US,en;q=0.9".to_owned(),
+            hl => format!("{hl},en;q=0.5"),
+        }
+    }
+}
+
 // The three load-bearing JSON flags (context/01) are realized structurally here:
 // - ignoreUnknownKeys → serde ignores unknown fields on Deserialize by default.
 // - explicitNulls = false → `skip_serializing_if = "Option::is_none"` on every Option.
