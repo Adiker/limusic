@@ -576,6 +576,10 @@ export const addToPlaylist = (playlistId: string, videoId: string) =>
 	invoke<boolean>('add_to_playlist', { playlistId, videoId });
 export const removeFromPlaylist = (playlistId: string, videoId: string, setVideoId: string) =>
 	invoke<void>('remove_from_playlist', { playlistId, videoId, setVideoId });
+
+/** Bulk removal: one request, all or nothing. `tracks` is [videoId, setVideoId] per row. */
+export const removeManyFromPlaylist = (playlistId: string, tracks: [string, string][]) =>
+	invoke<void>('remove_many_from_playlist', { playlistId, tracks });
 export const createPlaylist = (title: string) => invoke<string>('create_playlist', { title });
 /** Name / description / visibility, from the "Edit playlist" dialog. Leave a field out and
  *  YouTube is never told about it, so an untouched one can't be overwritten. */

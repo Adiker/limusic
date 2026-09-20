@@ -746,16 +746,35 @@ impl InnerTube {
         video_id: &str,
         set_video_id: &str,
     ) -> Result<(), Error> {
-        self.edit_playlist(
+        self.playlist_remove_many(
             client,
             playlist_id,
-            serde_json::json!({
-                "action": "ACTION_REMOVE_VIDEO",
-                "setVideoId": set_video_id,
-                "removedVideoId": video_id,
-            }),
+            &[(video_id.to_owned(), set_video_id.to_owned())],
         )
         .await
+    }
+
+    /// Remove several videos in one `edit_playlist` request: the endpoint takes an array of
+    /// actions, so a bulk removal is one round trip rather than one per track.
+    // ponytail: no chunking. YouTube has taken a few hundred actions in one body; split into
+    // batches here if a very long selection ever comes back rejected.
+    pub async fn playlist_remove_many(
+        &self,
+        client: &YouTubeClient,
+        playlist_id: &str,
+        tracks: &[(String, String)],
+    ) -> Result<(), Error> {
+        let actions = tracks
+            .iter()
+            .map(|(video_id, set_video_id)| {
+                serde_json::json!({
+                    "action": "ACTION_REMOVE_VIDEO",
+                    "setVideoId": set_video_id,
+                    "removedVideoId": video_id,
+                })
+            })
+            .collect();
+        self.edit_playlist_actions(client, playlist_id, actions).await
     }
 
     /// Store a sort order on a playlist you own, so every other client on the account shows the

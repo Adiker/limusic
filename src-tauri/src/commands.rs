@@ -1025,6 +1025,28 @@ pub async fn remove_from_playlist(
     Ok(())
 }
 
+/// Remove several tracks from one playlist in a single request (the bulk bar's Remove).
+///
+/// All or nothing: YouTube applies the whole action list or rejects it, so the UI can revert its
+/// optimistic removal on an error without working out which rows made it.
+#[tauri::command]
+pub async fn remove_many_from_playlist(
+    state: St<'_>,
+    playlist_id: String,
+    tracks: Vec<(String, String)>,
+) -> Result<(), String> {
+    let client = editable_playlist(&state, &playlist_id)?;
+    state
+        .it
+        .playlist_remove_many(client, &playlist_id, &tracks)
+        .await
+        .map_err(|e| e.to_string())?;
+    for (video_id, _) in &tracks {
+        state.db.remove_playlist_track(&playlist_id, video_id);
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn create_playlist(state: St<'_>, title: String) -> Result<String, String> {
     let client = require_login(&state)?;

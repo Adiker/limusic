@@ -673,6 +673,7 @@ pub fn run() {
             commands::set_album_saved,
             commands::add_to_playlist,
             commands::remove_from_playlist,
+            commands::remove_many_from_playlist,
             commands::create_playlist,
             commands::edit_playlist_details,
             commands::set_playlist_cover,

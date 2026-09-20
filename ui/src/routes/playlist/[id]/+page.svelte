@@ -787,6 +787,52 @@
 		}
 	}
 
+	/** The bulk bar's Remove. One request for a normal playlist; Liked Music has only per-song
+	 *  unrate, so that one loops and keeps whichever rows failed. */
+	async function removeSelected(tracks: SongItem[]) {
+		if (!pl) return;
+		const targets = tracks.filter((t) => isLiked || t.set_video_id);
+		if (!targets.length) return;
+		const prev = pl.items;
+		const idOf = (row: SongItem) => (isLiked ? row.video_id : row.set_video_id) ?? '';
+		const gone = new Set(targets.map(idOf));
+		const failed = new Set<string>();
+		let lastError: unknown;
+		pl = { ...pl, items: prev.filter((row) => !gone.has(idOf(row))) };
+		try {
+			if (isLiked) {
+				for (const row of targets) {
+					try {
+						await api.rate(row.video_id, 'indifferent');
+					} catch (e) {
+						lastError = e;
+						failed.add(idOf(row));
+					}
+				}
+				if (failed.size === targets.length) throw lastError;
+				if (failed.size) toast.error(String(lastError));
+				else toast.success(t('toasts.removed_from_liked'));
+			} else {
+				await api.removeManyFromPlaylist(
+					id,
+					targets.map((s) => [s.video_id, s.set_video_id!] as [string, string])
+				);
+				bumpLibraryTrackCount(id, -targets.length);
+				for (const s of targets) noteUnsavedFrom(id, s.video_id);
+				toast.success(t('toasts.removed_from_playlist'));
+			}
+			// A partial liked-music removal puts the rows that survived back where they were.
+			if (failed.size)
+				pl = { ...pl, items: prev.filter((row) => !gone.has(idOf(row)) || failed.has(idOf(row))) };
+			cacheCurrent();
+			selection.clear();
+		} catch (e) {
+			pl = { ...pl, items: prev }; // revert
+			cacheCurrent();
+			toast.error(String(e));
+		}
+	}
+
 	async function deleteThisPlaylist() {
 		try {
 			await api.deletePlaylist(id);
@@ -939,7 +985,11 @@
 					<TrackFilter bind:value={query} placeholder={t('common.search_this_playlist')} />
 				</div>
 			</div>
-			<TrackSelectionBar {selection} from={pl.title} />
+			<TrackSelectionBar
+				{selection}
+				from={pl.title}
+				onRemove={isLiked || editable ? removeSelected : undefined}
+			/>
 			<div
 				class="p-4 transition-opacity {resorting ? 'opacity-50' : ''}"
 				aria-busy={resorting}
