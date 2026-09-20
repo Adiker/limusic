@@ -104,9 +104,13 @@ pub fn apply(app: &AppHandle) {
     let Some(icon) = current(app) else { return };
     if let Some(w) = app.get_webview_window("main") {
         // Alt-Tab and the small titlebar icon. Tauri routes this to tao's `set_window_icon`,
-        // which sends WM_SETICON with ICON_SMALL and nothing else. The taskbar button reads
-        // ICON_BIG, so on Windows this call alone changes nothing the user is looking at, and
-        // `set_icons` below re-sends both at the sizes the shell actually draws.
+        // which sends WM_SETICON with ICON_SMALL and nothing else, at the source's own size.
+        //
+        // Windows takes the other path instead of both. `apply` runs off the main thread, so this
+        // call is a *queued* window message while `set_icons` is a synchronous `SendMessageW`:
+        // whichever lands last wins, and leaving both in would put the unscaled icon back at
+        // random. `set_icons` covers ICON_SMALL as well, at the size the shell draws.
+        #[cfg(not(target_os = "windows"))]
         let _ = w.set_icon(icon.clone());
         #[cfg(target_os = "windows")]
         crate::taskbar::set_icons(&w, &icon);

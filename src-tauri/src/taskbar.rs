@@ -42,6 +42,10 @@ const SUBCLASS_ID: usize = 0x11_4d_05_1c;
 /// The handles we last handed the window, so the next pair can free them.
 static PREV_BIG: AtomicIsize = AtomicIsize::new(0);
 static PREV_SMALL: AtomicIsize = AtomicIsize::new(0);
+/// One icon swap at a time. `set_app_icon` is an async command, so two picks in quick succession
+/// can overlap, and the swap-then-`DestroyIcon` below runs *after* `SendMessageW` returns: the
+/// older call would otherwise free a handle the window has already been given by the newer one.
+static ICON_SWAP: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// `RegisterWindowMessageW("TaskbarButtonCreated")`. The shell sends it once the taskbar button
 /// exists; `ThumbBarAddButtons` before that silently does nothing, and it comes again after an
@@ -329,6 +333,7 @@ fn icon_from_bgra(pixels: &[u32], w: i32, h: i32) -> Option<HICON> {
 /// crate feature to shave a few pixels off a second monitor running a different scale.
 pub fn set_icons(window: &tauri::WebviewWindow, img: &tauri::image::Image<'_>) {
     let Ok(hwnd) = window.hwnd() else { return };
+    let _swap = ICON_SWAP.lock().unwrap_or_else(|e| e.into_inner());
     let big = metric(SM_CXICON, SM_CYICON);
     let small = metric(SM_CXSMICON, SM_CYSMICON);
     // Alt-Tab and the window menu. Tauri's `set_icon` reaches ICON_SMALL too, but only at the
