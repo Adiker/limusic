@@ -91,6 +91,9 @@ export interface QueueState {
 	repeat?: RepeatMode;
 	/** What seeded the queue (playlist/album title, "<song> Radio") — the "Next from" header. */
 	sourceName?: string | null;
+	/** The playlist the queue was started from, when it was one. What "Remove from this playlist"
+	 *  in the player's track menu writes to; absent for radios, single songs and guest queues. */
+	sourceId?: string | null;
 }
 
 export interface Account {
@@ -621,6 +624,7 @@ export interface QueueIndex {
 	shuffle?: boolean;
 	repeat?: RepeatMode;
 	sourceName?: string | null;
+	sourceId?: string | null;
 	current: SongItem | null;
 }
 

@@ -69,7 +69,8 @@
 		bumpLibraryTrackCount,
 		noteUnsavedFrom,
 		patchLibraryPlaylist,
-		lastPlaylistAdd
+		lastPlaylistAdd,
+		lastPlaylistRemove
 	} from '$lib/player.svelte';
 
 	// `$state.raw`, not `$state`: a deep proxy makes every read of a row go through a trap and
@@ -449,6 +450,18 @@
 		pl = { ...pl, items: [...pl.items, ...lastPlaylistAdd.songs] };
 		cacheCurrent();
 		fillSetVideoIds();
+	});
+
+	// Removed from THIS playlist somewhere else (the player's track menu, on a song playing out of
+	// it): drop the row here too. Same epoch guard as the add above.
+	let seenRemoveEpoch = lastPlaylistRemove.epoch;
+	$effect(() => {
+		if (lastPlaylistRemove.epoch === seenRemoveEpoch) return;
+		seenRemoveEpoch = lastPlaylistRemove.epoch;
+		if (!pl || lastPlaylistRemove.playlistId !== id) return;
+		const gone = lastPlaylistRemove.setVideoId;
+		pl = { ...pl, items: pl.items.filter((t) => t.set_video_id !== gone) };
+		cacheCurrent();
 	});
 
 	// Optimistic rows lack set_video_id, so "Remove from playlist" is hidden on them. Refetch and

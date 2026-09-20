@@ -1116,6 +1116,16 @@ export function openAddManyToPlaylist(songs: SongItem[]) {
 // Last successful add-to-playlist — the open playlist page appends these optimistically.
 export const lastPlaylistAdd = $state({ playlistId: '', songs: [] as SongItem[], epoch: 0 });
 
+// Last successful removal from a playlist made from somewhere that is *not* that playlist's page
+// (the player's track menu). The open page drops the row on it instead of waiting for a refetch.
+export const lastPlaylistRemove = $state({ playlistId: '', setVideoId: '', epoch: 0 });
+
+export function notePlaylistRemove(playlistId: string, setVideoId: string) {
+	lastPlaylistRemove.playlistId = playlistId;
+	lastPlaylistRemove.setVideoId = setVideoId;
+	lastPlaylistRemove.epoch++;
+}
+
 export function notePlaylistAdd(playlistId: string, songs: SongItem[]) {
 	lastPlaylistAdd.playlistId = playlistId;
 	// Strip per-context fields: set_video_id belongs to the source playlist, the queue markers to
@@ -1182,7 +1192,8 @@ export function initApp(mini = false): () => void {
 				playedFrom: q.playedFrom,
 				shuffle: q.shuffle,
 				repeat: q.repeat,
-				sourceName: q.sourceName
+				sourceName: q.sourceName,
+				sourceId: q.sourceId
 			};
 		}),
 		api.onQueueAppended((q) => {

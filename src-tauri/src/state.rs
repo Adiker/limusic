@@ -290,6 +290,10 @@ struct QueueState {
     /// Human name of what seeded the queue (playlist/album title, "<song> Radio") — the queue
     /// panel's "Next from: …" header. Pure display metadata.
     source_name: Option<String>,
+    /// The playlist this queue was started from, exactly as the page passed it. What the player's
+    /// "Remove from this playlist" writes to, so the action only exists while a playlist is what
+    /// is actually playing. `None` for radios, single songs and a mirrored guest queue.
+    source_id: Option<String>,
     /// This queue is a radio: YouTube generated every upcoming track, so "Add to queue" replaces
     /// them rather than queueing behind an endless feed the user never asked to finish.
     radio: bool,
@@ -1118,6 +1122,7 @@ impl AppState {
             q.played_from = 0; // new queue, nothing played in it yet
             q.lookahead_loaded = None;
             q.radio_seed = None; // single-song queue → autoplay re-seeds from the last track
+            q.source_id = None;
             q.radio = false;
             // Hold off the autoplay early trigger `start_current` is about to spawn: this queue is
             // one track long, so it would fetch the very radio being hydrated below (#255).
@@ -1235,6 +1240,7 @@ impl AppState {
             q.items = items;
             q.current = start;
             q.lookahead_loaded = None;
+            q.source_id = source_id.clone();
             q.radio_seed = radio_seed_for(source_id);
             q.source_name = source_name;
             q.radio = false; // a chosen playlist/album; `start_radio` sets it back on for its own
@@ -2202,6 +2208,7 @@ impl AppState {
                 "shuffle": q.shuffle_orig.is_some(),
                 "repeat": q.repeat,
                 "sourceName": &q.source_name,
+                "sourceId": &q.source_id,
                 // The playing row, so `start_current`'s duration/artists backfill still reaches
                 // the panel without shipping the other 4,999 rows to carry it.
                 "current": q.items.get(q.current),
@@ -2214,6 +2221,7 @@ impl AppState {
                 "shuffle": q.shuffle_orig.is_some(),
                 "repeat": q.repeat,
                 "sourceName": &q.source_name,
+                "sourceId": &q.source_id,
             })
         };
         let _ = self.app.emit(if unchanged { "queue-index" } else { "queue-changed" }, payload);
@@ -2283,6 +2291,7 @@ impl AppState {
             "shuffle": q.shuffle_orig.is_some(),
             "repeat": q.repeat,
             "sourceName": &q.source_name,
+            "sourceId": &q.source_id,
         })
     }
 
@@ -2551,6 +2560,7 @@ impl AppState {
                     "shuffleOrig": &q.shuffle_orig,
                     "radioSeed": &q.radio_seed,
                     "sourceName": &q.source_name,
+                    "sourceId": &q.source_id,
                     "radio": q.radio,
                 })
                 .to_string()
@@ -2594,6 +2604,8 @@ impl AppState {
             saved.get("radioSeed").and_then(|v| v.as_str()).map(str::to_owned);
         let source_name: Option<String> =
             saved.get("sourceName").and_then(|v| v.as_str()).map(str::to_owned);
+        let source_id: Option<String> =
+            saved.get("sourceId").and_then(|v| v.as_str()).map(str::to_owned);
         let radio = saved.get("radio").and_then(|v| v.as_bool()).unwrap_or(false);
         // `queue_index` is rewritten on every persist while `queue_json` is only rewritten when
         // the rows change, so on an advance it is the fresher of the two. But the two are separate
@@ -2636,6 +2648,7 @@ impl AppState {
             q.shuffle_orig = shuffle_orig;
             q.radio_seed = radio_seed;
             q.source_name = source_name;
+            q.source_id = source_id;
             q.radio = radio;
         }
         if repeat == RepeatMode::One {
@@ -2799,6 +2812,7 @@ impl AppState {
             q.shuffle_orig = None; // host rebuilt the queue — local shuffle snapshot is stale
             q.radio_seed = None; // guests never autoplay — the host drives
             q.source_name = None; // the host's context isn't known — header falls back
+            q.source_id = None;
         }
         // A Listen Together track is the host's; `Track` carries no upload flag and a guest could
         // not stream someone else's upload anyway.
@@ -3512,6 +3526,7 @@ fn splice_radio_into(
     }
     q.radio_seed = Some(seed);
     q.source_name = title;
+    q.source_id = None; // a radio is nobody's playlist to edit
     q.radio = true;
     // Shuffle is sticky across queues: re-snapshot the new order as the "original", then shuffle
     // what's upcoming (same handling as a radio hydration in `play_song`).
@@ -3891,6 +3906,7 @@ fn persist_fingerprint(q: &QueueState) -> u64 {
     q.shuffle_orig.is_some().hash(&mut hasher);
     q.radio_seed.hash(&mut hasher);
     q.source_name.hash(&mut hasher);
+    q.source_id.hash(&mut hasher);
     q.radio.hash(&mut hasher);
     hasher.finish()
 }

@@ -305,6 +305,8 @@
 						? () => api.removeFromQueue(i)
 						: undefined}
 					removeLabel={t('player.remove_from_queue')}
+					playlistId={playback.queue.sourceId}
+					queueIndex={i}
 				/>
 			</div>
 		{/each}

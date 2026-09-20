@@ -135,6 +135,7 @@
 		"remove_from_queue": "Remove from queue",
 		"save_to_playlist": "Save to playlist",
 		"remove_from_playlist": "Remove from playlist",
+		"remove_from_this_playlist": "Remove from this playlist",
 		"go_to_artist": "Go to artist",
 		"block_artist": "Block artist",
 		"go_to_album": "Go to album",
