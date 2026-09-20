@@ -28,6 +28,15 @@ pub async fn search(
     Ok(result.items)
 }
 
+/// Search video uploads only: the Videos shelf and its "Show more" page (#209, #266). Never
+/// records history, the page's other searches already did.
+#[tauri::command]
+pub async fn search_videos(state: St<'_>, query: String) -> Result<Vec<SongItem>, String> {
+    let client = metadata_client(&state)?;
+    let result = state.it.search_videos(client, &query).await.map_err(|e| e.to_string())?;
+    Ok(result.items)
+}
+
 /// Unfiltered search → categorized sections for the search page. `record_history` as in [`search`].
 #[tauri::command]
 pub async fn search_all(
@@ -190,7 +199,7 @@ pub async fn get_queue(state: St<'_>) -> Result<serde_json::Value, String> {
 /// `visitor_data`) and internal blobs (`queue_json`, `queue_index`, `queue_position`) never cross
 /// into the webview: they'd otherwise ship the login credential to the renderer on every open, and
 /// the webview can't overwrite them either.
-const UI_SETTINGS: [&str; 19] = [
+const UI_SETTINGS: [&str; 22] = [
     "volume",
     "proxy",
     "quality",
@@ -210,6 +219,9 @@ const UI_SETTINGS: [&str; 19] = [
     "system_titlebar",
     "lastfm_primary_artist",
     "lastfm_primary_strict",
+    "crossfade",
+    "crossfade_secs",
+    "locale",
 ];
 
 /// Resolve the music video for `video_id` and hand back a `limusicvideo://` URL the player view
@@ -299,6 +311,17 @@ pub async fn set_setting(
     // to follow without waiting for the next track.
     if key == "discord_rpc_config" {
         state.set_discord_config(&value);
+    }
+    // Both halves are one player setting. Applies from the next track change: the transition the
+    // user is already hearing keeps the length it started with.
+    if key == "crossfade" || key == "crossfade_secs" {
+        state.player.set_crossfade(crate::state::saved_crossfade(&state.db));
+    }
+    // The language YouTube answers in (#274). The SPA writes it whenever the two disagree, which is
+    // also how a fresh install's language gets here at all. It drops its own browse cache and
+    // remounts the route afterwards, so what is already on screen follows without a restart.
+    if key == "locale" {
+        state.it.set_locale(&value);
     }
     // Applies to what's fetched from here on: the live queue keeps whatever is already in it.
     if key == "hide_videos" {
@@ -1015,6 +1038,28 @@ pub async fn remove_from_playlist(
         .await
         .map_err(|e| e.to_string())?;
     state.db.remove_playlist_track(&playlist_id, &video_id);
+    Ok(())
+}
+
+/// Remove several tracks from one playlist in a single request (the bulk bar's Remove).
+///
+/// All or nothing: YouTube applies the whole action list or rejects it, so the UI can revert its
+/// optimistic removal on an error without working out which rows made it.
+#[tauri::command]
+pub async fn remove_many_from_playlist(
+    state: St<'_>,
+    playlist_id: String,
+    tracks: Vec<(String, String)>,
+) -> Result<(), String> {
+    let client = editable_playlist(&state, &playlist_id)?;
+    state
+        .it
+        .playlist_remove_many(client, &playlist_id, &tracks)
+        .await
+        .map_err(|e| e.to_string())?;
+    for (video_id, _) in &tracks {
+        state.db.remove_playlist_track(&playlist_id, video_id);
+    }
     Ok(())
 }
 

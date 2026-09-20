@@ -13,6 +13,7 @@
 		ArrowUpNarrowWideIcon,
 		ArrowDownWideNarrowIcon,
 		DashboardSquare02Icon,
+		PlayListAddIcon,
 		Share08Icon,
 		BookmarkAdd02Icon,
 		BookmarkCheck02Icon,
@@ -35,7 +36,7 @@
 	import * as api from '$lib/api';
 	import { ON_REPEAT_ID } from '$lib/api';
 	import type { BrowseItem, PlaylistPage, SongItem } from '$lib/api';
-	import { getCached, putCached, invalidateCached } from '$lib/pagecache';
+	import { getCached, putCached, invalidateCachedPrefix } from '$lib/pagecache';
 	import { thumb } from '$lib/thumb';
 	import { anchorMenu, fitMenu, NO_ANCHOR } from '$lib/menu';
 	import { rowWindow } from '$lib/rows';
@@ -61,6 +62,7 @@
 		isSynced,
 		playback,
 		openAddToPlaylist,
+		openAddManyToPlaylist,
 		openShare,
 		playFrom,
 		startRadio,
@@ -68,8 +70,10 @@
 		toggleSaved,
 		bumpLibraryTrackCount,
 		noteUnsavedFrom,
+		setRating,
 		patchLibraryPlaylist,
-		lastPlaylistAdd
+		lastPlaylistAdd,
+		lastPlaylistRemove
 	} from '$lib/player.svelte';
 
 	// `$state.raw`, not `$state`: a deep proxy makes every read of a row go through a trap and
@@ -451,6 +455,18 @@
 		fillSetVideoIds();
 	});
 
+	// Removed from THIS playlist somewhere else (the player's track menu, on a song playing out of
+	// it): drop the row here too. Same epoch guard as the add above.
+	let seenRemoveEpoch = lastPlaylistRemove.epoch;
+	$effect(() => {
+		if (lastPlaylistRemove.epoch === seenRemoveEpoch) return;
+		seenRemoveEpoch = lastPlaylistRemove.epoch;
+		if (!pl || lastPlaylistRemove.playlistId !== id) return;
+		const gone = lastPlaylistRemove.setVideoId;
+		pl = { ...pl, items: pl.items.filter((t) => t.set_video_id !== gone) };
+		cacheCurrent();
+	});
+
 	// Optimistic rows lack set_video_id, so "Remove from playlist" is hidden on them. Refetch and
 	// patch the real ids into place (merge, not replace — keeps loadMore pages and any row YouTube
 	// hasn't reflected yet). Retries because the add is eventually-consistent on YouTube's side.
@@ -490,6 +506,14 @@
 	// resurrects pre-mutation data (the optimistic-UI contract). context: plans/007.
 	function cacheCurrent() {
 		if (pl && loadedKey) putCached(loadedKey, pl);
+	}
+
+	// Same, for a write that removed rows: the entries for every *other* order this playlist was
+	// fetched in still hold them, and `fetchSorted` serves a hit without revalidating, so changing
+	// the sort would bring the removed tracks back.
+	function cacheAfterRemoval() {
+		invalidateCachedPrefix(`playlist:${id}`);
+		cacheCurrent();
 	}
 
 	// One page at a time, shared: the scroll sentinel and the "load the rest before playing" walk
@@ -681,6 +705,26 @@
 		enqueue(sortedItems, next, pl.title, sorting ? undefined : pl.continuation);
 	}
 
+	// Copying a playlist means all of it, not the pages scrolled so far, and nothing walks the rest
+	// for us here: the queue gets a continuation token the backend follows, an add has no such
+	// thing. So pull the pages in first and keep the menu row disabled while that runs.
+	let copying = $state(false);
+	async function saveToPlaylist() {
+		if (!pl?.items.length || copying) return;
+		const pid = id;
+		copying = true;
+		let whole: boolean;
+		try {
+			whole = await loadAll();
+		} finally {
+			copying = false;
+		}
+		if (!pl || pid !== id) return;
+		if (!whole) warnPartial('added');
+		menuOpen = false;
+		openAddManyToPlaylist(sortedItems);
+	}
+
 	// Untouched by the sort: the backend shuffles the whole playlist (continuation pages included),
 	// so what order it was handed is irrelevant.
 	function shufflePlay() {
@@ -736,7 +780,10 @@
 		pl = { ...pl, items: kept };
 		try {
 			if (isLiked) {
-				await api.rate(track.video_id, 'indifferent');
+				// Through the shared path, not `api.rate`: an unlike is a rating write wherever it
+				// is spelled as a removal, and the override, the player bar and the index all have
+				// to follow it.
+				await setRating(track, 'indifferent');
 				toast.success(t('toasts.removed_from_liked'));
 			} else {
 				await api.removeFromPlaylist(id, track.video_id, track.set_video_id!);
@@ -744,7 +791,53 @@
 				noteUnsavedFrom(id, track.video_id);
 				toast.success(t('toasts.removed_from_playlist'));
 			}
+			cacheAfterRemoval();
+		} catch (e) {
+			pl = { ...pl, items: prev }; // revert
 			cacheCurrent();
+			toast.error(String(e));
+		}
+	}
+
+	/** The bulk bar's Remove. One request for a normal playlist; Liked Music has only per-song
+	 *  unrate, so that one loops and keeps whichever rows failed. */
+	async function removeSelected(tracks: SongItem[]) {
+		if (!pl) return;
+		const targets = tracks.filter((t) => isLiked || t.set_video_id);
+		if (!targets.length) return;
+		const prev = pl.items;
+		const idOf = (row: SongItem) => (isLiked ? row.video_id : row.set_video_id) ?? '';
+		const gone = new Set(targets.map(idOf));
+		const failed = new Set<string>();
+		let lastError: unknown;
+		pl = { ...pl, items: prev.filter((row) => !gone.has(idOf(row))) };
+		try {
+			if (isLiked) {
+				for (const row of targets) {
+					try {
+						await setRating(row, 'indifferent');
+					} catch (e) {
+						lastError = e;
+						failed.add(idOf(row));
+					}
+				}
+				if (failed.size === targets.length) throw lastError;
+				if (failed.size) toast.error(String(lastError));
+				else toast.success(t('toasts.removed_from_liked'));
+			} else {
+				await api.removeManyFromPlaylist(
+					id,
+					targets.map((s) => [s.video_id, s.set_video_id!] as [string, string])
+				);
+				bumpLibraryTrackCount(id, -targets.length);
+				for (const s of targets) noteUnsavedFrom(id, s.video_id);
+				toast.success(t('toasts.removed_from_playlist'));
+			}
+			// A partial liked-music removal puts the rows that survived back where they were.
+			if (failed.size)
+				pl = { ...pl, items: prev.filter((row) => !gone.has(idOf(row)) || failed.has(idOf(row))) };
+			cacheAfterRemoval();
+			selection.clear();
 		} catch (e) {
 			pl = { ...pl, items: prev }; // revert
 			cacheCurrent();
@@ -755,7 +848,7 @@
 	async function deleteThisPlaylist() {
 		try {
 			await api.deletePlaylist(id);
-			invalidateCached(`playlist:${id}`);
+			invalidateCachedPrefix(`playlist:${id}`);
 			toast.success(t('toasts.playlist_deleted'));
 			goto('/library');
 		} catch (e) {
@@ -904,7 +997,11 @@
 					<TrackFilter bind:value={query} placeholder={t('common.search_this_playlist')} />
 				</div>
 			</div>
-			<TrackSelectionBar {selection} from={pl.title} />
+			<TrackSelectionBar
+				{selection}
+				from={pl.title}
+				onRemove={isLiked || editable ? removeSelected : undefined}
+			/>
 			<div
 				class="p-4 transition-opacity {resorting ? 'opacity-50' : ''}"
 				aria-busy={resorting}
@@ -1041,6 +1138,17 @@
 				onclick={() => run(() => startRadio('playlist', id, pl?.title))}
 			>
 				<HugeiconsIcon icon={Radio02Icon} class="h-4 w-4" /> {t('player.start_radio')}
+			</button>
+		{/if}
+		<!-- Copies the tracks into another of your playlists. On Repeat is built from local play
+		     counts, so there is nothing YouTube would take. -->
+		{#if !isOnRepeat}
+			<button
+				class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent/10 disabled:opacity-50"
+				onclick={saveToPlaylist}
+				disabled={copying || !pl?.items.length}
+			>
+				<HugeiconsIcon icon={PlayListAddIcon} class="h-4 w-4" /> {t('player.save_to_playlist')}
 			</button>
 		{/if}
 		<button

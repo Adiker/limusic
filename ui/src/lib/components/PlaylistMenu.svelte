@@ -17,12 +17,13 @@
 		BookmarkMinus02Icon,
 		BookPlusIcon,
 		DashboardSquare02Icon,
+		PlayListAddIcon,
 		Share08Icon,
 		UserBlock01Icon
 	} from '@hugeicons/core-free-icons';
 	import * as api from '$lib/api';
 	import type { BrowseItem } from '$lib/api';
-	import { enqueueItem, playItem } from '$lib/browse';
+	import { addItemToPlaylist, enqueueItem, playItem } from '$lib/browse';
 	import { anchorMenu, ctxHost, fitMenu, NO_ANCHOR, toBody } from '$lib/menu';
 	import { t } from '$lib/i18n.svelte';
 	import {
@@ -103,6 +104,20 @@
 		e.stopPropagation();
 		menuOpen = false;
 		playItem(item, shuffle);
+	}
+
+	// Same shape as `queue`: the tracks have to be fetched before the picker can be handed
+	// anything, so the menu stays open until it opens.
+	let adding = $state(false);
+	async function addAll() {
+		if (adding) return;
+		adding = true;
+		try {
+			await addItemToPlaylist(item);
+			menuOpen = false;
+		} finally {
+			adding = false;
+		}
 	}
 
 	let saving = $state(false);
@@ -261,6 +276,20 @@
 				onclick={(e) => run(e, () => startRadio(item.kind as 'artist' | 'album' | 'playlist', item.id, item.title))}
 			>
 				<HugeiconsIcon icon={Radio02Icon} class="h-4 w-4" /> {t('player.start_radio')}
+			</button>
+		{/if}
+		<!-- Copies the tracks into one of your playlists. An artist has no track list to copy, and
+		     local folders have nothing YouTube would accept. -->
+		{#if onYouTube && (item.kind === 'album' || item.kind === 'playlist')}
+			<button
+				class="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent/10 disabled:opacity-50"
+				disabled={adding}
+				onclick={(e) => {
+					e.stopPropagation();
+					addAll();
+				}}
+			>
+				<HugeiconsIcon icon={PlayListAddIcon} class="h-4 w-4" /> {t('player.save_to_playlist')}
 			</button>
 		{/if}
 		<button

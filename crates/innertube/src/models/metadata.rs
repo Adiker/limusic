@@ -560,13 +560,31 @@ pub(crate) fn parse_list_item(node: &Value) -> Option<SongItem> {
     })
 }
 
-/// The play count from an album row's third flex column ("53M plays" → "53M"). Playlist rows put
-/// the album name in that column instead, so the trailing "plays" is the discriminator — the
-/// locale is pinned to en (models::context), so it's always that word. Live-verified 2026-08.
+/// The play count from an album row's third flex column ("53M plays" → "53M"). Playlist and
+/// library rows put the album name in that column instead, so the two have to be told apart.
+///
+/// The discriminator used to be the trailing word "plays", which only held while the locale was
+/// pinned to en. The UI language now goes out as `hl` (#274), so it is structural instead: the
+/// album column links its album page and a play count links nothing, and a count opens with a
+/// digit in whatever numerals the locale writes ("53M plays", "9845만회 재생"). Live-verified
+/// 2026-09-20 in en and ko across an album page and five playlists; 773 search rows in en kept
+/// every play count and every album exactly as the old word match had them.
 pub(crate) fn play_count(node: &Value) -> Option<String> {
     let text = flex_column_text(node, 2)?;
-    let (count, unit) = text.trim().rsplit_once(' ')?;
-    unit.eq_ignore_ascii_case("plays").then(|| count.to_owned())
+    let text = text.trim();
+    if flex_column_links(node, 2) || !text.starts_with(char::is_numeric) {
+        return None;
+    }
+    // The unit word is noise; the number is the value. No space to cut at (Japanese writes
+    // "9845万回再生") leaves the whole string, which still reads as a count.
+    Some(text.rsplit_once(' ').map_or(text, |(count, _)| count).to_owned())
+}
+
+/// True when any run of the `i`th flex column navigates somewhere: what separates a linked album
+/// from the play count that shares that column. See [`play_count`].
+fn flex_column_links(node: &Value, i: usize) -> bool {
+    flex_runs(node, i)
+        .is_some_and(|runs| runs.iter().any(|r| r.get("navigationEndpoint").is_some()))
 }
 
 /// The album name from that same third flex column — the other thing it can hold. A playlist row's
@@ -860,6 +878,9 @@ fn subtitle_groups(runs: &[Value]) -> Vec<Group> {
 
 /// Result rows on an unfiltered search lead with the result type: "Song • Delara • 3:02". Nothing
 /// downstream wants that word, and taken as an artist it lands in the user's Last.fm scrobbles.
+///
+/// English only, and deliberately: YouTube localizes these words now that `hl` follows the UI
+/// language (#274). [`split_subtitle`] carries two structural tests for the rest.
 fn is_type_label(s: &str) -> bool {
     matches!(
         s,
@@ -890,9 +911,19 @@ fn split_subtitle(runs: Option<&Vec<Value>>) -> (String, Option<String>, Option<
     // Drop a leading type label so artist/album don't both shift one field to the right. A later
     // field linking an artist channel proves the first one isn't the artist; the word list covers
     // the rows where nothing is linked at all.
+    //
+    // Third test, for the rows where neither of those fires: `hl` follows the UI language now
+    // (#274), so the word list is blind to "노래 • 2:43". Two fields whose second is the length
+    // means there is no artist field at all (YouTube drops it when the query *is* the artist,
+    // #216), so the first one is the label. Checked against 773 live search rows in en: the only
+    // value this shape ever carried was "Song". A misread unlinked artist comes back from
+    // `/player` (`backfill_metadata`) on play, where a stray "노래" would have stuck for good, in
+    // the row and in the user's scrobbles.
     if groups.len() > 1
         && !groups[0].artist_link
-        && (is_type_label(&groups[0].text) || groups[1..].iter().any(|g| g.artist_link))
+        && (is_type_label(&groups[0].text)
+            || groups[1..].iter().any(|g| g.artist_link)
+            || (groups.len() == 2 && is_duration(&groups[1].text)))
     {
         groups.remove(0);
     }
@@ -1285,6 +1316,58 @@ mod tests {
         assert_eq!(plays(json!("The Album")).unwrap().album.as_deref(), Some("The Album"));
         assert_eq!(plays(json!("53M plays")).unwrap().album, None);
         assert_eq!(plays(json!("")).unwrap().album, None);
+    }
+
+    // #274: `hl` follows the UI language, so the word "plays" is gone in ten of the eleven
+    // locales. The column that opens with a digit and links nothing is the count; the one that
+    // links its album page is the album, whatever either of them says.
+    #[test]
+    fn a_localized_play_count_is_still_a_play_count() {
+        let row = |third: Value, link: bool| {
+            let mut run = json!({ "text": third });
+            if link {
+                run["navigationEndpoint"] =
+                    json!({ "browseEndpoint": { "browseId": "MPREalbum1" } });
+            }
+            json!({
+                "playlistItemData": { "videoId": "abc123" },
+                "flexColumns": [
+                    { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": "Song Title" }] } } },
+                    { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": "The Artist" }] } } },
+                    { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [run] } } }
+                ]
+            })
+        };
+        let ko = parse_list_item(&row(json!("9845만회 재생"), false)).unwrap();
+        assert_eq!(ko.play_count.as_deref(), Some("9845만회"));
+        assert_eq!(ko.album, None);
+        // No space to cut at: the whole string is the count rather than nothing at all.
+        let ja = parse_list_item(&row(json!("9845万回再生"), false)).unwrap();
+        assert_eq!(ja.play_count.as_deref(), Some("9845万回再生"));
+        // A linked column is the album even when the album is named after a year.
+        let album = parse_list_item(&row(json!("1989"), true)).unwrap();
+        assert_eq!(album.play_count, None);
+        assert_eq!(album.album.as_deref(), Some("1989"));
+    }
+
+    // #274 again, the other half: with `hl=ko` a row YouTube stripped the artist from reads
+    // "노래 • 2:43", and the word list cannot see that "노래" is the type label. Two fields whose
+    // second is the length have no artist field, so the first one goes.
+    #[test]
+    fn a_localized_type_label_is_not_an_artist() {
+        let row = json!({
+            "playlistItemData": { "videoId": "abc123" },
+            "flexColumns": [
+                { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": "Himmelen brenner" }] } } },
+                { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
+                    { "text": "노래" }, { "text": " \u{2022} " }, { "text": "2:43" }
+                ] } } }
+            ]
+        });
+        let s = parse_list_item(&row).unwrap();
+        assert_eq!(s.artists, "");
+        assert_eq!(s.duration.as_deref(), Some("2:43"));
+        assert_eq!(s.album, None);
     }
 
     // #216: search for an artist by name and YouTube drops the artist from the song rows it

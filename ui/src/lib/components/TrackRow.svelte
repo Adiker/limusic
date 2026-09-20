@@ -33,6 +33,8 @@
 		onAdd,
 		onRemove,
 		removeLabel = t('player.remove_from_playlist'),
+		playlistId,
+		queueIndex,
 		inLibraryList = false,
 		selection,
 		selectionKey
@@ -68,6 +70,10 @@
 		/** Adds a remove menu item (label via `removeLabel`). */
 		onRemove?: () => void;
 		removeLabel?: string;
+		/** The playlist this row is playing from — adds "Remove from this playlist" to its menu. */
+		playlistId?: string | null;
+		/** This row's index in the backend queue, where it is one (the queue panel). */
+		queueIndex?: number;
 		/** Optional list-owned selection; the key identifies this occurrence, not the song. */
 		selection?: TrackSelection;
 		selectionKey?: string;
@@ -346,6 +352,8 @@
 			{onAdd}
 			{onRemove}
 			{removeLabel}
+			{playlistId}
+			{queueIndex}
 			{inLibraryList}
 			triggerClass="cursor-pointer rounded-md p-1.5 text-muted-foreground transition hover:bg-accent/20 hover:text-foreground focus-visible:opacity-100 {compact
 				? ''

@@ -341,6 +341,13 @@ pub fn run() {
             let visitor_for_prewarm = visitor_data.clone();
             let session = Session { locale: Locale::default(), visitor_data, data_sync_id, cookie };
             let it = InnerTube::new(session, proxy.as_deref()).expect("build InnerTube");
+            // Shelf titles, mood chips and playlist subtitles are YouTube's text, so the UI's
+            // language has to go out with the request (#274). Persisted rather than pushed from the
+            // SPA at startup, because the first home fetch is already in flight by the time the
+            // webview could tell us; the SPA writes it whenever it changes (`set_setting`).
+            if let Some(hl) = db.get_setting("locale") {
+                it.set_locale(&hl);
+            }
             it.set_hide_videos(db.get_setting("hide_videos").as_deref() == Some("true"));
             // Read while `db` is still ours; the window is decorated further down, once the rest of
             // the setup that could fail is out of the way.
@@ -357,6 +364,7 @@ pub fn run() {
             // Before anything can play: the first track of a restored queue has to come out at the
             // level the user left, not at 100.
             let _ = player.set_volume(state::saved_volume(&db));
+            player.set_crossfade(state::saved_crossfade(&db));
             let events = player.take_events().expect("player events");
 
             // Phase 2 extraction stack: cipher + PoToken hidden webviews behind the orchestrator.
@@ -608,6 +616,7 @@ pub fn run() {
             commands::search,
             commands::search_all,
             commands::search_cards,
+            commands::search_videos,
             commands::play,
             commands::play_index,
             commands::remove_from_queue,
@@ -672,6 +681,7 @@ pub fn run() {
             commands::set_album_saved,
             commands::add_to_playlist,
             commands::remove_from_playlist,
+            commands::remove_many_from_playlist,
             commands::create_playlist,
             commands::edit_playlist_details,
             commands::set_playlist_cover,

@@ -29,7 +29,7 @@
 	import { asSong } from '$lib/browse';
 	import { t } from '$lib/i18n.svelte';
 
-	type Cached = { res: SearchResults; songs: SongItem[] };
+	type Cached = { res: SearchResults; songs: SongItem[]; videos: SongItem[] };
 
 	let query = $state(lastQuery);
 	let res = $state<SearchResults | null>(null);
@@ -37,6 +37,9 @@
 	// response gives a song row either its artist or its length, never both, so those rows land
 	// duration-less. The filtered endpoint returns "Artist • Album • 3:58" on every row.
 	let songs = $state<SongItem[]>([]);
+	// Videos have no unfiltered fallback: the mixed response's video rows are the ones YouTube
+	// already folded into `res.songs`, so an empty list here just hides the shelf.
+	let videos = $state<SongItem[]>([]);
 	let searched = $state('');
 	let searching = $state(false);
 	let error = $state<string | null>(null);
@@ -54,6 +57,7 @@
 		if (hit) {
 			res = hit.res;
 			songs = hit.songs;
+			videos = hit.videos;
 			searched = q;
 			searching = false;
 		} else {
@@ -63,17 +67,21 @@
 		try {
 			// In parallel, and the filtered one may fail on its own: the shelf falls back to the
 			// unfiltered rows rather than the whole search erroring out.
-			const [fresh, freshSongs] = await Promise.all([
+			const [fresh, freshSongs, freshVideos] = await Promise.all([
 				// The one search the user actually asked for, so this is the one that goes to
 				// YouTube signed in and lands in their search history (#203).
 				api.searchAll(q, true),
-				api.search(q, true).catch(() => [] as SongItem[])
+				// Not recorded: the unfiltered search above already wrote this query to the
+				// account's history, and recording it twice is two entries for one search.
+				api.search(q, false).catch(() => [] as SongItem[]),
+				api.searchVideos(q).catch(() => [] as SongItem[])
 			]);
 			if (latest !== q) return; // a newer search superseded this one
 			res = fresh;
 			songs = freshSongs;
+			videos = freshVideos;
 			searched = q;
-			putCached(key, { res: fresh, songs: freshSongs });
+			putCached(key, { res: fresh, songs: freshSongs, videos: freshVideos });
 		} catch (e) {
 			if (latest !== q) return;
 			if (!hit) error = String(e);
@@ -82,7 +90,7 @@
 		}
 	}
 
-	function showMore(cat: 'songs' | 'albums' | 'artists' | 'playlists') {
+	function showMore(cat: 'songs' | 'videos' | 'albums' | 'artists' | 'playlists') {
 		goto(`/search-more?${new URLSearchParams({ q: searched, cat }).toString()}`);
 	}
 
@@ -106,18 +114,24 @@
 
 	const songRows = $derived(songs.length ? songs : (res?.songs ?? []).map(asSong));
 	const previewSongs = $derived(songRows.slice(0, 6));
+	const previewVideos = $derived(videos.slice(0, 6));
 	const selection = trackSelection(() => previewSongs, () => previewSongs, () => `${auth.epoch}:${searched}`);
+	// A second list means a second selection: one shared scope would let a bulk action from the
+	// Songs bar act on video rows the user never checked.
+	const videoSelection = trackSelection(() => previewVideos, () => previewVideos, () => `${auth.epoch}:videos:${searched}`);
 
-	// Sections are horizontal card rows, except Songs which is a vertical list. `top` has no "show more".
+	// Sections are horizontal card rows, except Songs and Videos which are vertical lists (`rows`).
+	// `top` has no "show more".
 	const sections = $derived(
 		res
 			? [
-					{ key: 'top', label: t('common.top_results'), items: res.top, max: 4, more: false, list: false },
-					{ key: 'songs', label: t('common.songs'), items: res.songs, max: 6, more: true, list: true },
-					{ key: 'albums', label: t('common.albums'), items: res.albums, max: 5, more: true, list: false },
-					{ key: 'artists', label: t('common.artists'), items: res.artists, max: 3, more: true, list: false },
-					{ key: 'playlists', label: t('common.playlists'), items: res.playlists, max: 5, more: true, list: false }
-				].filter((s) => (s.list ? songRows.length : s.items.length))
+					{ key: 'top', label: t('common.top_results'), items: res.top, max: 4, more: false, list: false, rows: [] as SongItem[], sel: selection },
+					{ key: 'songs', label: t('common.songs'), items: res.songs, max: 6, more: true, list: true, rows: previewSongs, sel: selection },
+					{ key: 'videos', label: t('common.videos'), items: [] as SearchResults['songs'], max: 6, more: true, list: true, rows: previewVideos, sel: videoSelection },
+					{ key: 'albums', label: t('common.albums'), items: res.albums, max: 5, more: true, list: false, rows: [] as SongItem[], sel: selection },
+					{ key: 'artists', label: t('common.artists'), items: res.artists, max: 3, more: true, list: false, rows: [] as SongItem[], sel: selection },
+					{ key: 'playlists', label: t('common.playlists'), items: res.playlists, max: 5, more: true, list: false, rows: [] as SongItem[], sel: selection }
+				].filter((s) => (s.list ? s.rows.length : s.items.length))
 			: []
 	);
 
@@ -176,12 +190,13 @@
 							<h2 class="font-heading text-xl font-bold">{sec.label}</h2>
 							<div class="flex items-center gap-1">
 								{#if sec.list}
-									<TrackSelectButton {selection} />
+									<TrackSelectButton selection={sec.sel} />
 								{/if}
 								{#if sec.more}
 									<button
 										class="cursor-pointer text-xs font-semibold uppercase text-muted-foreground hover:text-foreground"
-										onclick={() => showMore(sec.key as 'songs' | 'albums' | 'artists' | 'playlists')}
+										onclick={() =>
+											showMore(sec.key as 'songs' | 'videos' | 'albums' | 'artists' | 'playlists')}
 									>
 										{t('common.show_more')}
 									</button>
@@ -189,12 +204,12 @@
 							</div>
 						</div>
 						{#if sec.list}
-							<TrackSelectionBar {selection} />
-							{#each previewSongs as song, i (JSON.stringify([song.video_id, i]))}
+							<TrackSelectionBar selection={sec.sel} />
+							{#each sec.rows as song, i (JSON.stringify([song.video_id, i]))}
 								<TrackRow
 									{song}
-									{selection}
-									selectionKey={selection.visibleKeys[i]}
+									selection={sec.sel}
+									selectionKey={sec.sel.visibleKeys[i]}
 									showPlayCount
 									onplay={() => playSong(song)}
 									onAdd={() => openAddToPlaylist(song)}

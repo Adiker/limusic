@@ -91,6 +91,9 @@ export interface QueueState {
 	repeat?: RepeatMode;
 	/** What seeded the queue (playlist/album title, "<song> Radio") — the "Next from" header. */
 	sourceName?: string | null;
+	/** The playlist the queue was started from, when it was one. What "Remove from this playlist"
+	 *  in the player's track menu writes to; absent for radios, single songs and guest queues. */
+	sourceId?: string | null;
 }
 
 export interface Account {
@@ -317,6 +320,9 @@ export interface ArtistPage {
 // account's YouTube search history, so a typeahead preview must stay anonymous (#203).
 export const search = (query: string, recordHistory = false) =>
 	invoke<SongItem[]>('search', { query, recordHistory });
+/** Video uploads only: covers, live sets and remixes with no official release. Empty when the
+ *  "hide music videos" setting is on. */
+export const searchVideos = (query: string) => invoke<SongItem[]>('search_videos', { query });
 /** Unfiltered search → categorized sections. */
 export const searchAll = (query: string, recordHistory = false) =>
 	invoke<SearchResults>('search_all', { query, recordHistory });
@@ -573,6 +579,10 @@ export const addToPlaylist = (playlistId: string, videoId: string) =>
 	invoke<boolean>('add_to_playlist', { playlistId, videoId });
 export const removeFromPlaylist = (playlistId: string, videoId: string, setVideoId: string) =>
 	invoke<void>('remove_from_playlist', { playlistId, videoId, setVideoId });
+
+/** Bulk removal: one request, all or nothing. `tracks` is [videoId, setVideoId] per row. */
+export const removeManyFromPlaylist = (playlistId: string, tracks: [string, string][]) =>
+	invoke<void>('remove_many_from_playlist', { playlistId, tracks });
 export const createPlaylist = (title: string) => invoke<string>('create_playlist', { title });
 /** Name / description / visibility, from the "Edit playlist" dialog. Leave a field out and
  *  YouTube is never told about it, so an untouched one can't be overwritten. */
@@ -621,6 +631,7 @@ export interface QueueIndex {
 	shuffle?: boolean;
 	repeat?: RepeatMode;
 	sourceName?: string | null;
+	sourceId?: string | null;
 	current: SongItem | null;
 }
 

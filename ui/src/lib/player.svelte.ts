@@ -17,7 +17,7 @@ import { clearCached, invalidateCached, LIBRARY_SONGS_KEY } from './pagecache';
 import * as pl from './personal';
 import type { Personal } from './personal';
 import { appearance } from './theme.svelte';
-import { t } from './i18n.svelte';
+import { currentLocale, pushLocaleToRust, t } from './i18n.svelte';
 
 export const playback = $state({
 	now: null as NowPlaying | null,
@@ -843,28 +843,46 @@ const rated = (r: Rating) =>
 /** Optimistic rating change, reverted if YouTube rejects it. `msg` overrides the toast, for the
  *  callers that clear a like by another name (out of Library ▸ Songs, which is that same list). */
 async function rate(song: SongItem, next: Rating, msg?: string) {
+	if (ratingOf(song) === next) return;
+	try {
+		await setRating(song, next);
+		toast.success(msg ?? rated(next));
+	} catch (e) {
+		toast.error(String(e));
+	}
+}
+
+/**
+ * The rating write and everything that has to move with it: the override every list and ⋯ menu
+ * reads, the player bar's own rating, the saved-in index and the Library ▸ Songs cache. A caller
+ * that skips this (the playlist page's unlike, which is a removal to the user) leaves the rest of
+ * the UI showing the old answer until a reload.
+ *
+ * Throws whatever the write threw, with the override already put back, so a caller removing
+ * several rows can tell which ones survived. It toasts nothing: that is the caller's, because one
+ * toast per row is not a bulk removal.
+ */
+export async function setRating(song: SongItem, next: Rating): Promise<void> {
 	const prev = ratingOf(song);
-	if (prev === next) return;
 	const isNow = playback.now?.videoId === song.video_id;
 	ratings[song.video_id] = next;
 	capOverrides(ratings);
 	if (isNow) playback.rating = next;
 	try {
 		await api.rate(song.video_id, next);
-		// Keep the index in step: it outlives this override on a reload, and the crawl that would
-		// otherwise correct it runs at most every six hours.
-		if (next === 'like') noteSavedIn(api.LIKED_MUSIC_ID, [song.video_id]);
-		else noteUnsavedFrom(api.LIKED_MUSIC_ID, song.video_id);
-		// Library ▸ Songs *is* the liked-videos browse, and its tab paints from the cache without
-		// revalidating, so a like from anywhere else has to drop it or the row is missing for 5 min.
-		invalidateCached(LIBRARY_SONGS_KEY);
-		toast.success(msg ?? rated(next));
-		if (next === 'dislike') dropDisliked(song.video_id, isNow);
 	} catch (e) {
 		ratings[song.video_id] = prev;
 		if (isNow) playback.rating = prev;
-		toast.error(String(e));
+		throw e;
 	}
+	// Keep the index in step: it outlives this override on a reload, and the crawl that would
+	// otherwise correct it runs at most every six hours.
+	if (next === 'like') noteSavedIn(api.LIKED_MUSIC_ID, [song.video_id]);
+	else noteUnsavedFrom(api.LIKED_MUSIC_ID, song.video_id);
+	// Library ▸ Songs *is* the liked-videos browse, and its tab paints from the cache without
+	// revalidating, so a like from anywhere else has to drop it or the row is missing for 5 min.
+	invalidateCached(LIBRARY_SONGS_KEY);
+	if (next === 'dislike') dropDisliked(song.video_id, isNow);
 }
 
 /** A disliked track shouldn't keep playing, or sit waiting to. Skip it if it's playing, and drop
@@ -1116,6 +1134,16 @@ export function openAddManyToPlaylist(songs: SongItem[]) {
 // Last successful add-to-playlist — the open playlist page appends these optimistically.
 export const lastPlaylistAdd = $state({ playlistId: '', songs: [] as SongItem[], epoch: 0 });
 
+// Last successful removal from a playlist made from somewhere that is *not* that playlist's page
+// (the player's track menu). The open page drops the row on it instead of waiting for a refetch.
+export const lastPlaylistRemove = $state({ playlistId: '', setVideoId: '', epoch: 0 });
+
+export function notePlaylistRemove(playlistId: string, setVideoId: string) {
+	lastPlaylistRemove.playlistId = playlistId;
+	lastPlaylistRemove.setVideoId = setVideoId;
+	lastPlaylistRemove.epoch++;
+}
+
 export function notePlaylistAdd(playlistId: string, songs: SongItem[]) {
 	lastPlaylistAdd.playlistId = playlistId;
 	// Strip per-context fields: set_video_id belongs to the source playlist, the queue markers to
@@ -1182,7 +1210,8 @@ export function initApp(mini = false): () => void {
 				playedFrom: q.playedFrom,
 				shuffle: q.shuffle,
 				repeat: q.repeat,
-				sourceName: q.sourceName
+				sourceName: q.sourceName,
+				sourceId: q.sourceId
 			};
 		}),
 		api.onQueueAppended((q) => {
@@ -1270,6 +1299,14 @@ export function initApp(mini = false): () => void {
 		.then((s) => {
 			prefs.musicVideos = s.music_videos === 'true';
 			prefs.discordRpc = s.discord_rpc === 'true';
+			// Half of what the app shows is YouTube's own text, and Rust asks for it in the language
+			// this setting holds (#274). It reads the setting at startup, before the SPA exists to
+			// tell it anything, so the two disagree on a fresh install, on a language taken from the
+			// system, and on the first launch after this shipped. Put it right and refetch: the pages
+			// already on screen were painted in the stale language.
+			if (s.locale !== currentLocale.id) {
+				pushLocaleToRust(currentLocale.id).then(refreshView);
+			}
 		})
 		.catch(() => {});
 	api.getAccount()

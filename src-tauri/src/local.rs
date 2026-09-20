@@ -28,7 +28,7 @@ const FOLDERS_SETTING: &str = "local_folders";
 /// Bumped whenever `read_track` starts producing different titles, artists or album keys. The scan
 /// normally trusts stored rows whose file hasn't changed; after a bump it re-reads everything once,
 /// so a library isn't left half-parsed by the old rules and half by the new ones.
-const SCAN_VERSION: &str = "5";
+const SCAN_VERSION: &str = "6";
 const SCAN_VERSION_SETTING: &str = "local_scan_version";
 
 /// Extensions we pick up. Playback itself is mpv, which decodes far more than this — the list is
@@ -236,7 +236,7 @@ fn read_track(file: &Path, path: &str, mtime: i64, covers_dir: &Path) -> LocalTr
     let tagged_album = album.is_some();
     let (album, album_key) = match album {
         Some(a) => {
-            let key = album_key(album_artist.as_ref().unwrap_or(&artist), &a);
+            let key = tagged_album_key(&a, album_artist.as_deref(), dir);
             (a, key)
         }
         None => {
@@ -302,6 +302,19 @@ pub fn forget_missing(db: &Db, path: &str) -> Vec<String> {
         ids.push(artist_id_of(gone));
     }
     ids
+}
+
+/// Which key groups a tagged album. An AlbumArtist tag names the owner, guests and all (issue
+/// #96). Without one the folder does: keying on the per-track artist splits a compilation into one
+/// album per performer, which is issue #268.
+///
+/// ponytail: an untagged multi-disc rip in Disc 1/Disc 2 subfolders lists as two albums. Tag
+/// AlbumArtist, or walk up a folder when the name reads like a disc, if anyone reports it.
+fn tagged_album_key(album: &str, album_artist: Option<&str>, dir: Option<&Path>) -> String {
+    match album_artist {
+        Some(aa) => album_key(aa, album),
+        None => folder_key(dir, album),
+    }
 }
 
 /// A stable, readable album id: `artist--album`, sanitized to a safe filename (it doubles as the
@@ -733,6 +746,26 @@ mod tests {
 
         let same = vec![track("/m/x/a.mp3", "Drake", "Views", "drake--views")];
         assert_eq!(albums_of(&same)[0].subtitle.as_deref(), Some("Drake • 1 song"));
+    }
+
+    #[test]
+    fn one_folder_of_one_album_is_one_album_whoever_performs_it() {
+        let dir = Path::new("/m/Guardians Vol. 2");
+        // No AlbumArtist tag: the folder groups them, so a compilation stays one album (#268).
+        assert_eq!(
+            tagged_album_key("Awesome Mix", None, Some(dir)),
+            tagged_album_key("Awesome Mix", None, Some(dir))
+        );
+        // Two different albums that share a title are still two albums.
+        assert_ne!(
+            tagged_album_key("Greatest Hits", None, Some(Path::new("/m/Queen"))),
+            tagged_album_key("Greatest Hits", None, Some(Path::new("/m/Abba")))
+        );
+        // A tagged AlbumArtist keeps the old id: it is persisted in Shortcuts.
+        assert_eq!(
+            tagged_album_key("Discovery", Some("Daft Punk"), Some(dir)),
+            "daft-punk--discovery"
+        );
     }
 
     #[test]

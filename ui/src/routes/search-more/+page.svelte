@@ -23,10 +23,13 @@
 
 	const q = $derived(page.url.searchParams.get('q') ?? '');
 	const cat = $derived(page.url.searchParams.get('cat') ?? 'songs');
+	// Songs and videos come back as track rows; every other category is a card grid.
+	const isList = $derived(cat === 'songs' || cat === 'videos');
 	const selection = trackSelection(() => songs, () => songs, () => `${auth.epoch}:${q}:${cat}`);
 	const label = $derived(
 		{
 			songs: t('common.songs'),
+			videos: t('common.videos'),
 			albums: t('common.albums'),
 			artists: t('common.artists'),
 			playlists: t('common.playlists')
@@ -48,8 +51,10 @@
 		error = null;
 		try {
 			let fresh: MoreResult;
-			if (category === 'songs') {
-				fresh = { songs: await api.search(query), cards: [] };
+			if (category === 'songs' || category === 'videos') {
+				const rows =
+					category === 'videos' ? await api.searchVideos(query) : await api.search(query);
+				fresh = { songs: rows, cards: [] };
 			} else {
 				fresh = {
 					songs: [],
@@ -79,13 +84,13 @@
 			<h1 class="mb-1 font-heading text-2xl font-bold">{label}</h1>
 			<p class="mb-6 text-sm text-muted-foreground">{t('common.results_for', { query: q })}</p>
 		</div>
-		{#if cat === 'songs'}
+		{#if isList}
 			<TrackSelectButton {selection} />
 		{/if}
 	</div>
 
 	{#if loading}
-		{#if cat === 'songs'}
+		{#if isList}
 			{#each Array(10) as _, i (i)}
 				<TrackRowSkeleton />
 			{/each}
@@ -98,7 +103,7 @@
 		{/if}
 	{:else if error}
 		<ErrorState message={error} onRetry={() => load(q, cat)} />
-	{:else if cat === 'songs'}
+	{:else if isList}
 		<div class="content-in">
 			<TrackSelectionBar {selection} />
 			{#each songs as song, i (JSON.stringify([song.video_id, i]))}

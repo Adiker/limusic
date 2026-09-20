@@ -249,6 +249,8 @@
 					<TrackMenu
 						song={currentSong}
 						linksOnly
+						playlistId={playback.queue.sourceId}
+						queueIndex={playback.queue.currentIndex}
 						onAdd={() => openAddToPlaylist(currentSong!)}
 						triggerClass="inline-flex size-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
 					/>

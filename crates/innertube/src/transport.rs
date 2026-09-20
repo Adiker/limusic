@@ -309,6 +309,23 @@ impl InnerTube {
         self.session.write().unwrap().visitor_data = vd;
     }
 
+    /// The language YouTube answers in (`hl`), from the UI's own language setting.
+    ///
+    /// Home shelf titles, mood chips, playlist subtitles and auto-playlist names are YouTube's
+    /// text, not ours, so a Korean UI left on `hl=en` reads half English (#274). `gl` stays where
+    /// it is: that picks *which* feed comes back, not the language of its labels, and a user who
+    /// switches the interface to Korean has not asked for a different catalogue.
+    ///
+    /// Ignores anything that is not tag-shaped. The value comes from the webview and ends up in a
+    /// request header, and a locale we do not recognize is better dropped than sent.
+    pub fn set_locale(&self, hl: &str) {
+        if hl.is_empty() || !hl.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            tracing::warn!(hl, "ignoring an unusable locale");
+            return;
+        }
+        self.session.write().unwrap().locale.hl = hl.to_owned();
+    }
+
     /// Build the request `context` for a client from the current session. Crate-internal — the
     /// endpoints facade calls it. Reads and drops the lock synchronously (no `.await` inside).
     pub(crate) fn context_for(&self, client: &YouTubeClient) -> crate::models::context::Context {
@@ -478,7 +495,6 @@ impl InnerTube {
         };
         set(&mut h, "content-type", "application/json");
         set(&mut h, "accept", "application/json");
-        set(&mut h, "accept-language", "en-US,en;q=0.9");
         set(&mut h, "x-goog-api-format-version", "1");
         set(&mut h, "x-youtube-client-name", &client.client_id);
         set(&mut h, "x-youtube-client-version", &client.client_version);
@@ -487,6 +503,7 @@ impl InnerTube {
         set(&mut h, "user-agent", &client.user_agent);
 
         let s = self.session.read().unwrap();
+        set(&mut h, "accept-language", &s.locale.accept_language());
         if let Some(vd) = &s.visitor_data {
             set(&mut h, "x-goog-visitor-id", vd);
         }
