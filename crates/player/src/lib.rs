@@ -93,8 +93,18 @@ struct Decks {
     /// The volume slider's percent, so a fade can scale the user's own level instead of
     /// overwriting it.
     volume: AtomicI64,
-    /// A track is loaded and paused on the idle deck, waiting to be faded in.
+    /// A track is loaded and paused on the idle deck, waiting to be faded in. Published by the
+    /// idle deck's own `FileLoaded`, never by `preload`: `loadfile` returns long before mpv has
+    /// the stream open, and a fade into a deck that is still opening plays silence over the
+    /// track going out.
     preloaded: AtomicBool,
+    /// Bumped whenever the preload is cancelled. A `loadfile` already in flight when that happens
+    /// still reaches `FileLoaded` a moment later; comparing this against `preload_armed` is how
+    /// that late event knows it is loading a track nobody wants any more, which used to hand the
+    /// next crossfade whatever the user had just skipped away from.
+    preload_gen: AtomicU64,
+    /// The generation the track currently loading on the idle deck was started under.
+    preload_armed: AtomicU64,
     /// Written only under the `pending` lock, so an `enqueue` racing the end of a fade cannot
     /// read "still fading", stash its URL, and have the ramp thread take `pending` a moment
     /// earlier: that leaves the URL stranded, loaded by nobody, while the app has already
@@ -242,6 +252,8 @@ impl Player {
             crossfade_ms: AtomicU64::new(0),
             volume: AtomicI64::new(100),
             preloaded: AtomicBool::new(false),
+            preload_gen: AtomicU64::new(0),
+            preload_armed: AtomicU64::new(0),
             fading: AtomicBool::new(false),
             fade_gen: AtomicU64::new(0),
             pending: Mutex::new(None),
@@ -353,6 +365,8 @@ impl Player {
     /// is hearing is not what changed), on for an explicit load.
     fn drop_preload(&self, cut_fade: bool) {
         *self.decks.pending.lock().unwrap() = None;
+        // Before anything else: a `loadfile` still in flight must not publish itself after this.
+        self.decks.preload_gen.fetch_add(1, Ordering::SeqCst);
         if cut_fade {
             self.cancel_fade();
         }
@@ -687,6 +701,18 @@ fn event_loop(mut ev: EventContext, deck: usize, decks: Arc<Decks>) {
                         }
                         None
                     }
+                    // The idle deck has its file open, so the fade has something to bring up.
+                    // A cancelled preload gets here too (mpv delivers the event before the
+                    // `stop`), which is what the generation check is for.
+                    Event::FileLoaded => {
+                        if !live()
+                            && decks.preload_armed.load(Ordering::SeqCst)
+                                == decks.preload_gen.load(Ordering::SeqCst)
+                        {
+                            decks.preloaded.store(true, Ordering::Release);
+                        }
+                        None
+                    }
                     Event::EndFile(reason) => match reason as i32 {
                         EOF => Some(PlayerEvent::TrackEnded),
                         // STOP/QUIT/REDIRECT are deliberate (loadfile replace, shutdown) — ignore.
@@ -754,8 +780,10 @@ fn preload(decks: &Decks, mpv: &Arc<Mpv>, url: &str) -> Result<(), Error> {
     }
     mpv.set_property("pause", true)?;
     mpv.set_property("volume", 0.0)?;
+    // Not `preloaded = true`: that waits for this deck's `FileLoaded` (see the field). Armed
+    // before the load, so a `drop_preload` landing during it invalidates this generation.
+    decks.preload_armed.store(decks.preload_gen.load(Ordering::SeqCst), Ordering::SeqCst);
     mpv.command("loadfile", &[&quoted(url), "replace"])?;
-    decks.preloaded.store(true, Ordering::Release);
     Ok(())
 }
 

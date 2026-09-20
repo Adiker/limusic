@@ -297,7 +297,12 @@
 	const autoplayOn = $derived(settings.autoplay !== 'false');
 	// Off by default: experimental, and it runs a second decoder while tracks overlap.
 	const crossfadeOn = $derived(settings.crossfade === 'true');
-	const crossfadeSecs = $derived(Number(settings.crossfade_secs ?? '5'));
+	// Clamped like the player clamps it (`set_crossfade`), so a stored value from anywhere but this
+	// slider cannot show a number the audio will not use.
+	const crossfadeSecs = $derived.by(() => {
+		const secs = Number(settings.crossfade_secs ?? '5');
+		return Number.isFinite(secs) ? Math.min(10, Math.max(1, secs)) : 5;
+	});
 	const hideVideosOn = $derived(settings.hide_videos === 'true');
 	// Off until the setting is turned on: still experimental, so nobody gets video they didn't ask
 	// for. Same test in `player.svelte.ts`, which hydrates `prefs` at launch.
