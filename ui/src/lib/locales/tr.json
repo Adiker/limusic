@@ -62,7 +62,8 @@
 		"shuffle_all": "Hepsini karıştır",
 		"play_all": "Hepsini oynat",
 		"top_result": "En iyi sonuç",
-		"all_results_for": "\"{query}\" sorgusu için bütün sonuçlar"
+		"all_results_for": "\"{query}\" sorgusu için bütün sonuçlar",
+		"refresh": "Yenile"
 	},
 	"nav": {
 		"home": "Ana Sayfa",
@@ -239,7 +240,9 @@
 			"data": "Veri ve depolama",
 			"data_hint": "Ağ ve önbellek dosyaları.",
 			"about": "Hakkında",
-			"about_hint": "Sürüm, güncellemeler ve değişiklikler."
+			"about_hint": "Sürüm, güncellemeler ve değişiklikler.",
+			"discord": "Discord",
+			"discord_hint": "Rich Presence kartınızın nasıl görüneceği."
 		},
 		"sections": {
 			"language": "Dil (Language)",
@@ -258,7 +261,12 @@
 			"report": "Sorun bildir",
 			"whats_new": "Yenilikler",
 			"blocked": "Engelli sanatçılar",
-			"support": "Destek"
+			"support": "Destek",
+			"scrobbling": "Scrobbling",
+			"discord_status": "Durum",
+			"discord_card": "Kart",
+			"discord_links": "Tıklanabilirlik",
+			"discord_buttons": "Düğmeler"
 		},
 		"general": {
 			"language": "Arayüz dili",
@@ -268,7 +276,7 @@
 			"autostart_hint": "Sistem açıldığında Limusic uygulamasını otomatik başlatın.",
 			"close_to_tray": "Sistem tepsisine küçült",
 			"close_to_tray_hint": "Pencere kapatıldığında arka planda çalışmaya devam etsin.",
-			"discord_rpc": "Discord Zengin Varlık",
+			"discord_rpc": "Discord Rich Presence",
 			"discord_rpc_hint": "Çalan şarkıyı Discord profilinizde gösterin.",
 			"update_banner": "Güncelleme bildirimleri",
 			"update_banner_hint": "Yeni bir Limusic sürümü çıktığında bildirim çubuğu gösterilsin.",
@@ -318,7 +326,9 @@
 			"app_icon_hint": "Bir PNG görev çubuğu, sistem tepsisi ve bu penceredeki simgenin yerini alır. Kısayollar ve dosya yöneticisi yüklü olanı kullanır.",
 			"app_icon_pick": "Seçin…",
 			"app_icon_dialog": "Bir uygulama simgesi seçin",
-			"app_icon_filter": "PNG görsel"
+			"app_icon_filter": "PNG görsel",
+			"zoom": "Arayüz ölçeği",
+			"zoom_hint": "Penceredeki her şeyi ölçeklendirir. Yakınlaştırma kısayolları da bunu değiştirir ve uygulama yeniden başlatıldığında hatırlanır."
 		},
 		"playback": {
 			"audio_quality": "Ses kalitesi",
@@ -345,7 +355,11 @@
 			"blocked_artists_remove": "{name} isimli sanatçının engelini kaldır",
 			"blocked_artists_show_all": "Engelli {count} sanatçıyı göster",
 			"blocked_artists_show_less": "Daha az göster",
-			"blocked_artists_copy": "JSON dosyasını kopyala"
+			"blocked_artists_copy": "JSON dosyasını kopyala",
+			"lastfm_primary_artist": "Yalnızca birincil sanatçıyı scrobble et",
+			"lastfm_primary_artist_hint": "Last.fm'e yalnızca ilk kredilendirilen sanatçıyı gönderir, böylece dinlemeleriniz gerçek sanatçı sayfasına işlenir. \"&\" ile birleştirilmiş isimler bütün olarak korunur.",
+			"lastfm_primary_strict": "\"&\" ile birleştirilmiş sanatçıları da kaldır",
+			"lastfm_primary_strict_hint": "\"Future & Metro Boomin\" \"Future\" olarak scrobble edilir. Adında \"&\" geçen ikili gruplar da kısaltılır."
 		},
 		"data": {
 			"clear_cache": "Görsel ve akış önbelleğini temizle",
@@ -377,6 +391,60 @@
 			"kofi": "Bana bir kahve ısmarla",
 			"kofi_hint": "Limusic ücretsiz ve ücretsiz kalacak. Bağışta bulunmak isteyenler Ko-fi'den yapabilirler.",
 			"kofi_button": "Ko-fi'yi aç"
+		},
+		"discord": {
+			"enable": "Rich Presence",
+			"enable_hint": "Şu anda çalan şarkıyı Discord profilinizde gösterir.",
+			"off_notice": "Rich Presence kapalı, bu yüzden bu profilinizde görünmüyor. Önizleme yine de yaptığınız değişiklikleri yansıtmaya devam eder.",
+			"show_paused": "Duraklatıldığında göster",
+			"show_paused_hint": "Parça duraklatıldığında kartı ekranda tutar. Discord'da duraklatma durumu olmadığından, ilerleme çubuğu çalışır durumda bırakılmak yerine kaldırılır.",
+			"hide_details": "Ayrıntıları gizle",
+			"hide_details_hint": "Yalnızca müzik çaldığını belirtir. Başlık, sanatçı, albüm, kapak resmi, ilerleme çubuğu ya da düğmeler cihazınızdan dışarı çıkmaz.",
+			"status_line": "Durum metni",
+			"status_line_hint": "Discord'un üye listesinde adınızın yanında gösterdiği şey. Aşağıdaki profil kartı her zaman uygulama adını gösterir.",
+			"status_app": "Uygulama adı",
+			"status_line1": "1. satır",
+			"status_line2": "2. satır",
+			"app_name": "Uygulama adı",
+			"app_name_hint": "Uygulama adının göründüğü her yerde \"Limusic\" yerine bunu kullanır. Değiştirmemek için boş bırakın.",
+			"app_name_placeholder": "Limusic",
+			"line1": "1. satır",
+			"line1_hint": "Kalın yazılı satır, başlığın hemen altında.",
+			"line2": "2. satır",
+			"line2_hint": "Onun altındaki daha küçük satır.",
+			"content_title": "Şarkı başlığı",
+			"content_artist": "Sanatçı",
+			"content_album": "Albüm",
+			"content_artist_album": "Sanatçı ve albüm",
+			"content_off": "Gizli",
+			"cover": "Albüm kapağı",
+			"cover_hint": "Parçanın yanında albüm kapağını gösterir.",
+			"badge": "Sağlayıcı rozeti",
+			"badge_hint": "Kapak resmini, Spotify ve Apple Music kartlarında olduğu gibi küçük bir Limusic simgesiyle işaretler.",
+			"line3": "3. satır",
+			"line3_hint": "Son satır. Discord bunu kapak resminin üzerine gelindiğinde gösterilen ipucu metni olarak da kullanır, bu yüzden albüm kapağının açık olması gerekir.",
+			"timestamps": "İlerleme çubuğu",
+			"timestamps_hint": "Parçanın altında geçen ve kalan zamanı göster.",
+			"links_hint": "Kartın bir bölümünü bağlantıya dönüştürür. Discord bunu YouTube Music'te açar ve hedef, o bölümde gösterilen içeriğe göre belirlenir: albümü gösteren bir satır albümü açar.",
+			"link_line1": "1. satır tıklanabilir",
+			"link_line2": "2. satır tıklanabilir",
+			"link_cover": "Albüm kapağı yıklanabilir",
+			"button1": "İlk düğme",
+			"button2": "İkinci düğme",
+			"buttons_hint": "Discord en fazla iki tane gösterir ve bunlar kendi profilinizde asla görünmez: yalnızca başkaları görebilir. Bu parça için hedefine ait bir bağlantısı olmayan düğme atlanır.",
+			"button_listen": "YouTube Music'te dinleyin",
+			"button_album": "Albümü görüntüle",
+			"button_artist": "Sanatçıyı görüntüle",
+			"button_app": "Limusic'i edin",
+			"button_off": "Hiçbiri",
+			"preview": "Önizle",
+			"preview_live": "Şimdi çalıyor",
+			"preview_sample": "Örnek parça",
+			"preview_paused": "Duraklatıldı, bu yüzden şu anda profilinizde görünmüyor. Ekranda tutmak için \"Duraklatıldığında göster\" seçeneğini açın.",
+			"reset": "Varsayılanlara dön",
+			"preview_status": "Üye listesi",
+			"preview_you": "Siz",
+			"preview_card": "Profil kartı"
 		}
 	},
 	"dialogs": {
@@ -422,7 +490,8 @@
 			"zoom_in": "Yakınlaştır",
 			"zoom_out": "Uzaklaştır",
 			"reset_zoom": "Yakınlaştırmayı sıfırla",
-			"show_this_list": "Bu listeyi göster"
+			"show_this_list": "Bu listeyi göster",
+			"refresh_page": "Sayfayı yenile"
 		},
 		"tempo_pitch": {
 			"title": "Tempo ve Perde Kontrolleri",
@@ -531,7 +600,8 @@
 		"expand_sidebar": "Yan paneli genişlet",
 		"collapse_sidebar": "Yan paneli daralt",
 		"show_artwork": "Kapak göster",
-		"show_video": "Video göster"
+		"show_video": "Video göster",
+		"zoom": "Arayüz ölçeği"
 	},
 	"lyrics": {
 		"title": "Şarkı sözleri",
