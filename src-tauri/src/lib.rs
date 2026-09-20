@@ -609,6 +609,7 @@ pub fn run() {
             commands::search,
             commands::search_all,
             commands::search_cards,
+            commands::search_videos,
             commands::play,
             commands::play_index,
             commands::remove_from_queue,

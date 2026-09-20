@@ -525,3 +525,32 @@ fn find_rows<'a>(root: &'a serde_json::Value, key: &str) -> Vec<&'a serde_json::
     walk(root, key, &mut out);
     out
 }
+
+/// Issues #209 / #266: the Videos shelf. `FILTER_SONG` cannot return a cover, a live set or a fan
+/// remix, so the shelf rides on a second search with `FILTER_VIDEO`, and the only thing that says
+/// that param is still the video filter is YouTube answering it with video rows. Live, so ignored:
+///   cargo test -p innertube video_search -- --ignored --nocapture
+#[tokio::test]
+#[ignore]
+async fn video_search_returns_video_rows() {
+    let it = InnerTube::new(Session::default(), None).unwrap();
+    let vd = it.fetch_visitor_data().await.ok();
+    let it = InnerTube::new(Session { visitor_data: vd, ..Session::default() }, None).unwrap();
+    let client = Clients::bundled().get(innertube::METADATA_CLIENT).unwrap().clone();
+
+    let videos = it.search_videos(&client, "daft punk").await.expect("video search");
+    let tagged = videos.items.iter().filter(|s| s.is_video).count();
+    eprintln!("video search: {} rows, {} tagged is_video", videos.items.len(), tagged);
+    for s in videos.items.iter().take(3) {
+        eprintln!("  {:?} - {:?} ({:?})", s.title, s.artists, s.duration);
+    }
+    assert!(!videos.items.is_empty(), "FILTER_VIDEO returned nothing — the param moved");
+    // Every row of a video-filtered search is a video. Anything less means `musicVideoType` moved
+    // and the "hide music videos" setting is leaking videos through this shelf.
+    assert_eq!(tagged, videos.items.len(), "a video-filtered row was not tagged is_video");
+
+    // The setting is a refusal to ask, not a filter on the rows: nothing to leak.
+    it.set_hide_videos(true);
+    let hidden = it.search_videos(&client, "daft punk").await.expect("hidden video search");
+    assert!(hidden.items.is_empty(), "hide_videos did not empty the video search");
+}

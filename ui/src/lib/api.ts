@@ -320,6 +320,9 @@ export interface ArtistPage {
 // account's YouTube search history, so a typeahead preview must stay anonymous (#203).
 export const search = (query: string, recordHistory = false) =>
 	invoke<SongItem[]>('search', { query, recordHistory });
+/** Video uploads only: covers, live sets and remixes with no official release. Empty when the
+ *  "hide music videos" setting is on. */
+export const searchVideos = (query: string) => invoke<SongItem[]>('search_videos', { query });
 /** Unfiltered search → categorized sections. */
 export const searchAll = (query: string, recordHistory = false) =>
 	invoke<SearchResults>('search_all', { query, recordHistory });

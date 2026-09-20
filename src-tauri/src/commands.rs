@@ -28,6 +28,15 @@ pub async fn search(
     Ok(result.items)
 }
 
+/// Search video uploads only: the Videos shelf and its "Show more" page (#209, #266). Never
+/// records history, the page's other searches already did.
+#[tauri::command]
+pub async fn search_videos(state: St<'_>, query: String) -> Result<Vec<SongItem>, String> {
+    let client = metadata_client(&state)?;
+    let result = state.it.search_videos(client, &query).await.map_err(|e| e.to_string())?;
+    Ok(result.items)
+}
+
 /// Unfiltered search → categorized sections for the search page. `record_history` as in [`search`].
 #[tauri::command]
 pub async fn search_all(

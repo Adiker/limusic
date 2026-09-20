@@ -20,6 +20,7 @@ use crate::transport::{Error, InnerTube};
 
 /// Search filter params (opaque base64). context/08.
 pub const FILTER_SONG: &str = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D";
+pub const FILTER_VIDEO: &str = "EgWKAQIQAWoKEAkQChAFEAMQBA%3D%3D";
 pub const FILTER_ALBUM: &str = "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D";
 pub const FILTER_ARTIST: &str = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D";
 pub const FILTER_COMMUNITY_PLAYLIST: &str = "EgeKAQQoAEABagoQAxAEEAoQCRAF";
@@ -141,6 +142,24 @@ impl InnerTube {
         let mut r = metadata::parse_search(&value);
         self.drop_video_songs(&mut r.items);
         Ok(r)
+    }
+
+    /// Search video uploads only (`FILTER_VIDEO`): the covers, live sets and remixes that never
+    /// got an official release, which `FILTER_SONG` cannot return by definition (#209, #266).
+    /// context/08.
+    pub async fn search_videos(
+        &self,
+        metadata_client: &YouTubeClient,
+        query: &str,
+    ) -> Result<SearchResult, Error> {
+        // Not a filter on the rows, a refusal to ask: with music videos hidden there is no such
+        // thing as a video search, and the caller's shelf disappears on an empty list.
+        if self.hide_videos() {
+            return Ok(SearchResult { items: Vec::new() });
+        }
+        // No history: the search page already recorded this query with its other two searches.
+        let value = self.search_raw(metadata_client, query, Some(FILTER_VIDEO), false).await?;
+        Ok(metadata::parse_search(&value))
     }
 
     /// Unfiltered search → categorized sections (top / songs / albums / artists / playlists).
