@@ -13,6 +13,7 @@
 		ArrowUpNarrowWideIcon,
 		ArrowDownWideNarrowIcon,
 		DashboardSquare02Icon,
+		PlayListAddIcon,
 		Share08Icon,
 		BookmarkAdd02Icon,
 		BookmarkCheck02Icon,
@@ -61,6 +62,7 @@
 		isSynced,
 		playback,
 		openAddToPlaylist,
+		openAddManyToPlaylist,
 		openShare,
 		playFrom,
 		startRadio,
@@ -694,6 +696,26 @@
 		enqueue(sortedItems, next, pl.title, sorting ? undefined : pl.continuation);
 	}
 
+	// Copying a playlist means all of it, not the pages scrolled so far, and nothing walks the rest
+	// for us here: the queue gets a continuation token the backend follows, an add has no such
+	// thing. So pull the pages in first and keep the menu row disabled while that runs.
+	let copying = $state(false);
+	async function saveToPlaylist() {
+		if (!pl?.items.length || copying) return;
+		const pid = id;
+		copying = true;
+		let whole: boolean;
+		try {
+			whole = await loadAll();
+		} finally {
+			copying = false;
+		}
+		if (!pl || pid !== id) return;
+		if (!whole) warnPartial('added');
+		menuOpen = false;
+		openAddManyToPlaylist(sortedItems);
+	}
+
 	// Untouched by the sort: the backend shuffles the whole playlist (continuation pages included),
 	// so what order it was handed is irrelevant.
 	function shufflePlay() {
@@ -1054,6 +1076,17 @@
 				onclick={() => run(() => startRadio('playlist', id, pl?.title))}
 			>
 				<HugeiconsIcon icon={Radio02Icon} class="h-4 w-4" /> {t('player.start_radio')}
+			</button>
+		{/if}
+		<!-- Copies the tracks into another of your playlists. On Repeat is built from local play
+		     counts, so there is nothing YouTube would take. -->
+		{#if !isOnRepeat}
+			<button
+				class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent/10 disabled:opacity-50"
+				onclick={saveToPlaylist}
+				disabled={copying || !pl?.items.length}
+			>
+				<HugeiconsIcon icon={PlayListAddIcon} class="h-4 w-4" /> {t('player.save_to_playlist')}
 			</button>
 		{/if}
 		<button

@@ -669,6 +669,7 @@
 	"toasts": {
 		"could_not_play": "Could not play — try opening it instead",
 		"could_not_queue": "Could not queue that — try opening it instead",
+		"could_not_add": "Could not add that, try opening it instead",
 		"could_not_load_playlist": "Could not load that playlist — try opening it instead",
 		"could_not_load_more": "Could not load more",
 		"could_not_copy_link": "Could not copy the link. Select it and press Ctrl+C.",
