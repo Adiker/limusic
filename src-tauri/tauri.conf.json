@@ -36,6 +36,7 @@
   },
   "bundle": {
     "active": true,
+    "category": "Music",
     "targets": ["deb", "rpm", "appimage"],
     "createUpdaterArtifacts": true,
     "icon": [
