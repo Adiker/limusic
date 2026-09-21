@@ -63,7 +63,8 @@
 		"play_all": "Lancer tout",
 		"top_result": "Meilleur résultat",
 		"all_results_for": "Tous les résultats pour \"{query}\"",
-		"refresh": "Actualiser"
+		"refresh": "Actualiser",
+		"videos": "Vidéos"
 	},
 	"nav": {
 		"home": "Accueil",
@@ -140,7 +141,8 @@
 		"add_to_playlist": "Ajouter à la playlist",
 		"pin_to_top": "Épingler en haut",
 		"unpin": "Désépingler",
-		"block_artist": "Bloquer l'artiste"
+		"block_artist": "Bloquer l'artiste",
+		"remove_from_this_playlist": "Retirer de cette playlist"
 	},
 	"home": {
 		"good_morning": "Bonne matinée",
@@ -195,7 +197,7 @@
 		"remove_from_library": "Retirer de votre bibliothèque",
 		"no_tracks_match_loading": "Aucun titre ne correspond à “{query}”{loading}.",
 		"still_loading": " encore, en chargement",
-		"saved_to_library": "Sauvegardé à la bibliothèque",
+		"saved_to_library": "Sauvegardé dans la bibliothèque",
 		"removed_from_library": "Retirer de la bibliothèque",
 		"every_song_saved": "Chaque chanson que vous avez sauvegardé, dans une liste",
 		"every_upload": "Chaque piste que vous avez mise en ligne sur YouTube Music",
@@ -359,7 +361,12 @@
 			"lastfm_primary_artist": "N'enregistrer que l'artiste principal",
 			"lastfm_primary_artist_hint": "Envoyer à Last.fm que le nom de l'artiste principal, afin que tes écoutes soient comptabilisées sur la bonne page d'artiste. Les noms séparés par \"&\" sont conservés tels quels.",
 			"lastfm_primary_strict": "Les artistes Drop sont également associés avec \"&\"",
-			"lastfm_primary_strict_hint": "\"Future & Metro Boomin\" est enregistré sous le nom \"Future\". Les duos dont le nom comporte le signe \"&\" sont également abrégés."
+			"lastfm_primary_strict_hint": "\"Future & Metro Boomin\" est enregistré sous le nom \"Future\". Les duos dont le nom comporte le signe \"&\" sont également abrégés.",
+			"crossfade": "Fondu enchaîné",
+			"crossfade_hint": "Fait en sorte que la fin de chaque piste s'enchaîne progressivement avec le début de la suivante. Ce processus nécessite l'exécution d'un deuxième décodeur audio pendant le chevauchement des pistes, ce qui entraîne une légère augmentation de la consommation de mémoire.",
+			"crossfade_duration": "Durée du fondu enchaîné",
+			"crossfade_duration_hint": "Combien de temps dure le chevauchement. Les titres courts s'estompent plus rapidement, ainsi, un fondu ne commence jamais avant que le précédent ne soit terminé.",
+			"crossfade_seconds": "{secs}s"
 		},
 		"data": {
 			"clear_cache": "Vider le cache des images et des flux",
@@ -684,7 +691,8 @@
 		"subscribed": "Abonné à {name}",
 		"unsubscribed": "Désabonné",
 		"signed_in_as": "Connecté en tant que {name}",
-		"switched_to": "Basculé vers {name}"
+		"switched_to": "Basculé vers {name}",
+		"could_not_add": "Impossible d'ajouter cela, essayez plutôt de l'ouvrir"
 	},
 	"history": {
 		"title": "Historique",
@@ -713,6 +721,8 @@
 		"pending": "Recherche de {count} titres sélectionnés dans les pages en cours de chargement.",
 		"local_playlist": "Les fichiers locaux ne peuvent pas être ajoutés à une playlist YouTube.",
 		"playlist_partial": "Ajout de {added} à {playlist} ; {duplicates} s'y trouvent déjà ; {remaining} n'est pas confirmé. {error}",
-		"account_changed": "L'ajout de titres a été interrompu en raison d'un changement de compte."
+		"account_changed": "L'ajout de titres a été interrompu en raison d'un changement de compte.",
+		"remove": "Retirer de cette playlist",
+		"remove_confirm": "Retirer {count} ?"
 	}
 }
