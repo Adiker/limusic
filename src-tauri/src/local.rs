@@ -467,6 +467,7 @@ fn albums_of(tracks: &[LocalTrack]) -> Vec<BrowseItem> {
                 )),
                 thumbnail: face.cover.clone(),
                 duration: None,
+                album_id: None,
                 artist_runs: Vec::new(),
                 play_count: None,
                 is_video: false,
@@ -519,6 +520,7 @@ fn artists_of(tracks: &[LocalTrack]) -> Vec<BrowseItem> {
                 // their own on disk, so a cover from their music is the closest thing.
                 thumbnail: ts.iter().find_map(|t| t.cover.clone()),
                 duration: None,
+                album_id: None,
                 artist_runs: Vec::new(),
                 play_count: None,
                 is_video: false,

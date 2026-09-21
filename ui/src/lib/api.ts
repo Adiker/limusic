@@ -140,6 +140,8 @@ export interface BrowseItem {
 	thumbnail?: string;
 	/** "3:47" — song items from a list-style shelf only (card shelves don't carry one). */
 	duration?: string;
+	/** Song cards only: the track's album (`MPRE…`), what puts "Go to album" in its menus. */
+	albumId?: string;
 	/** Song cards only: the artist line run by run, so a card that gets played keeps its links. */
 	artistRuns?: ArtistRun[];
 	/** Play count as YouTube abbreviates it ("2.5B") — search song rows only. */

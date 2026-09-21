@@ -599,7 +599,7 @@ fn album_column(node: &Value) -> Option<String> {
 
 /// The album's browseId (`MPRE…`): either the linked album run or the row menu's "Go to album"
 /// entry — whichever the renderer carries. Tolerant: first `MPRE…` browseId in the node. context/08.
-fn album_id(node: &Value) -> Option<String> {
+pub(crate) fn album_id(node: &Value) -> Option<String> {
     find_all(node, "browseId")
         .into_iter()
         .filter_map(Value::as_str)

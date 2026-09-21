@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::metadata::{
-    artist_runs, artists_from_runs, duration_from_runs, find_all, find_all_shallow, find_first_str,
-    first_artist_id, flex_column_text, flex_runs, is_explicit, is_upload_endpoint, is_upload_row,
-    is_video_endpoint, is_video_row, is_video_type, last_thumbnail, list_item_video_id,
-    parse_list_item, play_count, runs_text, runs_text_opt, ArtistRun, SongItem,
+    album_id, artist_runs, artists_from_runs, duration_from_runs, find_all, find_all_shallow,
+    find_first_str, first_artist_id, flex_column_text, flex_runs, is_explicit, is_upload_endpoint,
+    is_upload_row, is_video_endpoint, is_video_row, is_video_type, last_thumbnail,
+    list_item_video_id, parse_list_item, play_count, runs_text, runs_text_opt, ArtistRun, SongItem,
 };
 
 /// One clickable card in a home carousel or library grid. Flat + `kind`-tagged so the UI can
@@ -36,6 +36,10 @@ pub struct BrowseItem {
     /// of `subtitle` so the queue and the scrobbler still get a clean artist string.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<String>,
+    /// Song cards only: the track's album (`MPRE…`), carried into the SongItem a played card
+    /// becomes. Without it the ⋯ menu and the player bar offer no "Go to album" (issue #253).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub album_id: Option<String>,
     /// The `subtitle` artist line run by run, each tagged with its channel id when it links one.
     /// On a song card it is carried so a card that gets played (search rows, home shelves) reaches
     /// the player bar with the same navigable artists a track row has; on an album or playlist card
@@ -564,6 +568,7 @@ fn list_item_to_browse_item(node: &Value) -> Option<BrowseItem> {
             subtitle,
             thumbnail,
             duration: None,
+            album_id: None,
             artist_runs: Vec::new(),
             play_count: None,
             is_video: false,
@@ -583,6 +588,7 @@ fn list_item_to_browse_item(node: &Value) -> Option<BrowseItem> {
         subtitle,
         thumbnail,
         duration: duration_from_runs(runs),
+        album_id: album_id(node),
         artist_runs: runs.map(|r| artist_runs(r)).unwrap_or_default(),
         play_count: play_count(node),
         is_video: is_video_row(node),
@@ -619,6 +625,9 @@ fn card_shelf_main(card: &Value) -> Option<BrowseItem> {
             subtitle,
             thumbnail,
             duration: duration_from_runs(runs),
+            // The card's own menu only: the card also holds its related rows, and a search of
+            // the whole node would hand back one of their albums.
+            album_id: card.get("menu").and_then(album_id),
             artist_runs: runs.map(|r| artist_runs(r)).unwrap_or_default(),
             play_count: None,
             is_video: nav.is_some_and(is_video_endpoint),
@@ -638,6 +647,7 @@ fn card_shelf_main(card: &Value) -> Option<BrowseItem> {
         subtitle,
         thumbnail,
         duration: None,
+        album_id: None,
         artist_runs: Vec::new(),
         play_count: None,
         is_video: false,
@@ -923,6 +933,7 @@ fn parse_carousel_item(node: &Value) -> Option<BrowseItem> {
             subtitle: Some(song.artists).filter(|s| !s.is_empty()),
             thumbnail: song.thumbnail,
             duration: song.duration,
+            album_id: song.album_id,
             artist_runs: song.artist_runs,
             play_count: song.play_count,
             is_video: song.is_video,
@@ -959,6 +970,7 @@ fn parse_two_row_item(node: &Value) -> Option<BrowseItem> {
             subtitle,
             thumbnail,
             duration: duration_from_runs(runs),
+            album_id: album_id(node),
             artist_runs: runs.map(|r| artist_runs(r)).unwrap_or_default(),
             play_count: None,
             is_video: is_video_row(node),
@@ -979,6 +991,7 @@ fn parse_two_row_item(node: &Value) -> Option<BrowseItem> {
             subtitle,
             thumbnail,
             duration: None,
+            album_id: None,
             artist_runs: Vec::new(),
             play_count: None,
             is_video: false,
@@ -1004,6 +1017,7 @@ fn parse_two_row_item(node: &Value) -> Option<BrowseItem> {
         subtitle,
         thumbnail,
         duration: None,
+        album_id: None,
         artist_runs: runs.map(|r| artist_runs(r)).unwrap_or_default(),
         play_count: None,
         is_video: false,
@@ -1206,7 +1220,9 @@ mod tests {
                                     "text": { "runs": [{ "text": "Old Song" }] } } },
                                 { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
                                     { "text": "The Artist" }, { "text": " • " },
-                                    { "text": "The Album" }, { "text": " • " }, { "text": "3:47" }
+                                    { "text": "The Album", "navigationEndpoint": {
+                                        "browseEndpoint": { "browseId": "MPREb_old" } } },
+                                    { "text": " • " }, { "text": "3:47" }
                                 ] } } }
                             ]
                         } }
@@ -1252,6 +1268,8 @@ mod tests {
         assert_eq!(song.id, "vid123");
         assert_eq!(song.subtitle.as_deref(), Some("The Artist"));
         assert_eq!(song.duration.as_deref(), Some("3:47"));
+        // Dropping it here left Quick picks without "Go to album" (issue #253).
+        assert_eq!(song.album_id.as_deref(), Some("MPREb_old"));
         assert_eq!(home.continuation.as_deref(), Some("HOME_MORE"));
     }
 
