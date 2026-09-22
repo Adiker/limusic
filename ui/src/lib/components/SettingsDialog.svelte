@@ -297,6 +297,9 @@
 	const quality = $derived(settings.quality ?? 'HIGH');
 	const historyOn = $derived(settings.enable_history !== 'false');
 	const autoplayOn = $derived(settings.autoplay !== 'false');
+	// On unless turned off: loudness matching is what YTM does, and it's what most people want.
+	// Off gives the untouched master, limiter included (#298, #300).
+	const normalizeOn = $derived(settings.normalize_volume !== 'false');
 	// Off by default: experimental, and it runs a second decoder while tracks overlap.
 	const crossfadeOn = $derived(settings.crossfade === 'true');
 	// Clamped like the player clamps it (`set_crossfade`), so a stored value from anywhere but this
@@ -357,6 +360,12 @@
 	async function setAutoplay(on: boolean) {
 		settings.autoplay = on ? 'true' : 'false';
 		await api.setSetting('autoplay', settings.autoplay);
+	}
+
+	// Rust retunes the track that's already playing, so the difference is audible immediately.
+	async function setNormalize(on: boolean) {
+		settings.normalize_volume = on ? 'true' : 'false';
+		await api.setSetting('normalize_volume', settings.normalize_volume);
 	}
 
 	async function setCrossfade(on: boolean) {
@@ -728,6 +737,12 @@
 									control: qualityPicker
 								})}
 								{@render row({
+									title: t('settings.playback.normalize_volume'),
+									desc: t('settings.playback.normalize_volume_hint'),
+									control: normalizeSwitch,
+									tall: true
+								})}
+								{@render row({
 									title: t('settings.playback.autoplay'),
 									desc: t('settings.playback.autoplay_hint'),
 									control: autoplaySwitch
@@ -999,6 +1014,7 @@
 		checked={stickyShuffleOn}
 		onCheckedChange={setStickyShuffle}
 	/>{/snippet}
+{#snippet normalizeSwitch()}<Switch checked={normalizeOn} onCheckedChange={setNormalize} />{/snippet}
 {#snippet musicVideoSwitch()}<Switch checked={musicVideosOn} onCheckedChange={setMusicVideos} />{/snippet}
 {#snippet hideVideoSwitch()}<Switch checked={hideVideosOn} onCheckedChange={setHideVideos} />{/snippet}
 {#snippet lastfmPrimarySwitch()}<Switch

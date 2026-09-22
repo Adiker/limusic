@@ -309,9 +309,13 @@ struct QueueState {
     /// The client that served the primed lookahead track — promoted to `current_client` on a
     /// gapless advance so the failure feedback still knows the client.
     lookahead_client: Option<String>,
-    /// Loudness gain (dB) for the primed lookahead. mpv's `af` is global, so this can't ride along
-    /// with the appended entry — it's applied when the gapless advance is observed.
-    lookahead_gain: Option<Option<f64>>,
+    /// Raw `loudnessDb` of the currently-loaded track, kept so toggling normalization can retune
+    /// what is already playing instead of waiting for the next one (#298).
+    current_loudness_db: Option<f64>,
+    /// Raw `loudnessDb` for the primed lookahead. mpv's `af` is global, so the gain can't ride
+    /// along with the appended entry: it's computed and applied when the gapless advance is
+    /// observed. Outer `Option` is "a lookahead is primed", inner is "YouTube told us a loudness".
+    lookahead_loudness_db: Option<Option<f64>>,
     /// Watch-history ping for the current track + the primed lookahead's (promoted on a gapless
     /// advance, mirroring current/lookahead_client). context/01 §registerPlayback.
     playback_ping: Option<PlaybackPing>,
@@ -1621,8 +1625,9 @@ impl AppState {
             let mut q = self.queue.lock().await;
             // `af` is global in mpv and the appended entry couldn't carry its own, so the new track
             // is playing at the *previous* one's gain until this lands.
-            if let Some(gain) = q.lookahead_gain.take() {
-                if let Err(e) = self.player.set_gain(gain) {
+            if let Some(loudness) = q.lookahead_loudness_db.take() {
+                q.current_loudness_db = loudness;
+                if let Err(e) = self.player.set_gain(self.track_gain(loudness)) {
                     tracing::warn!(error = %e, "applying lookahead loudness gain failed");
                 }
             }
@@ -1809,7 +1814,7 @@ impl AppState {
             .map(|(_, pos)| pos);
         let stream_url = mpv_stream_url(&data);
         if let Err(e) =
-            self.player.load(&stream_url, &data.headers, loudness_gain(data.loudness_db), seek)
+            self.player.load(&stream_url, &data.headers, self.track_gain(data.loudness_db), seek)
         {
             self.emit_error(&item.video_id, &e.to_string());
             return false;
@@ -1827,6 +1832,7 @@ impl AppState {
         {
             let mut q = self.queue.lock().await;
             q.current_client = Some(data.stream_client.clone());
+            q.current_loudness_db = data.loudness_db;
             // Fresh play → fresh history state (context/01 §registerPlayback).
             q.playback_ping = data.playback_ping.clone();
             q.cpn = innertube::generate_cpn();
@@ -1964,7 +1970,7 @@ impl AppState {
         }
         q.lookahead_loaded = Some(next_idx);
         q.lookahead_client = Some(data.stream_client.clone());
-        q.lookahead_gain = Some(loudness_gain(data.loudness_db));
+        q.lookahead_loudness_db = Some(data.loudness_db);
         q.lookahead_playback_ping = data.playback_ping.clone();
         // Same backfill as start_current: a gapless advance emits this item straight from the
         // queue, so the repair has to land before it becomes the current track.
@@ -1977,6 +1983,24 @@ impl AppState {
     async fn current_item(&self) -> Option<SongItem> {
         let q = self.queue.lock().await;
         q.items.get(q.current).cloned()
+    }
+
+    /// [`loudness_gain`] for one track, honouring the `normalize_volume` setting. Off means mpv
+    /// gets no `af` at all, so the master plays exactly as mastered: no attenuation, no boost and
+    /// no limiter (#298). Every load path routes through here, so the switch cannot half-apply.
+    fn track_gain(&self, loudness_db: Option<f64>) -> Option<f64> {
+        (self.db.get_setting("normalize_volume").as_deref() != Some("false"))
+            .then(|| loudness_gain(loudness_db))
+            .flatten()
+    }
+
+    /// Retune what is already playing after the `normalize_volume` switch moved. The point of the
+    /// setting is hearing the same track both ways, so it cannot wait for the next track change.
+    pub(crate) async fn reapply_gain(&self) {
+        let loudness = self.queue.lock().await.current_loudness_db;
+        if let Err(e) = self.player.set_gain(self.track_gain(loudness)) {
+            tracing::warn!(error = %e, "reapplying loudness gain failed");
+        }
     }
 
     // --- events (context/11 UI contract) ----------------------------------------------------
@@ -2837,13 +2861,14 @@ impl AppState {
         if let Err(e) = self.player.load(
             &stream_url,
             &data.headers,
-            loudness_gain(data.loudness_db),
+            self.track_gain(data.loudness_db),
             (pos > 0.5).then_some(pos),
         ) {
             self.emit_error(&track.id, &e.to_string());
             return;
         }
         let _ = if playing { self.player.play() } else { self.player.pause() };
+        self.queue.lock().await.current_loudness_db = data.loudness_db;
         if let Some(item) = self.current_item().await {
             self.emit_now_playing(&item, "listen-together");
         }
@@ -3861,7 +3886,8 @@ fn history_threshold(duration: f64) -> f64 {
 /// they are lifted by at most [`MAX_BOOST_DB`].
 ///
 /// `None` means "no filter": on target (or no metadata), mpv gets its `af` cleared rather than a
-/// `volume=0dB` no-op in the chain.
+/// `volume=0dB` no-op in the chain. Callers go through [`AppState::track_gain`], which is where
+/// the user's `normalize_volume` switch turns the whole thing off.
 // ponytail: no peak data from YouTube, so the boost cap is a guess at how much limiting a dynamic
 // master tolerates. Lower MAX_BOOST_DB if classical/jazz sounds squashed.
 fn loudness_gain(loudness_db: Option<f64>) -> Option<f64> {
@@ -3896,9 +3922,10 @@ fn mpv_stream_url(data: &PlaybackData) -> String {
 /// Loudness target, matching YouTube Music's own player rather than the video site's -14.
 const TARGET_LUFS: f64 = -7.0;
 
-/// Most a quiet track is lifted toward [`TARGET_LUFS`]. The limiter absorbs the peaks, and past
-/// this it audibly flattens a dynamic master.
-const MAX_BOOST_DB: f64 = 6.0;
+/// Most a quiet track is lifted toward [`TARGET_LUFS`]. Every dB of boost is a dB the limiter may
+/// have to take back off the peaks, so this is a dynamics budget, not a loudness one: +6 flattened
+/// dynamic masters audibly (#298, #300), while +3 still closes most of the gap #237 reported.
+const MAX_BOOST_DB: f64 = 3.0;
 
 /// Fingerprint of a queue's track list: what `emit_queue` compares to decide whether the UI
 /// already has these rows. Hashes length, `video_id`, and every field the panel renders

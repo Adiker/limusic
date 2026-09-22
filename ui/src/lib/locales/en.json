@@ -368,6 +368,8 @@
 		"playback": {
 			"audio_quality": "Audio quality",
 			"audio_quality_hint": "Higher quality uses more bandwidth.",
+			"normalize_volume": "Volume normalization",
+			"normalize_volume_hint": "Even out how loud tracks play, so a quiet master is not buried by the one after it. Turn it off to hear every track exactly as it was mastered.",
 			"quality_low": "Low",
 			"quality_auto": "Auto",
 			"quality_high": "High",

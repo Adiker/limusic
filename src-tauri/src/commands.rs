@@ -202,10 +202,11 @@ pub async fn get_queue(state: St<'_>) -> Result<serde_json::Value, String> {
 /// `visitor_data`) and internal blobs (`queue_json`, `queue_index`, `queue_position`) never cross
 /// into the webview: they'd otherwise ship the login credential to the renderer on every open, and
 /// the webview can't overwrite them either.
-const UI_SETTINGS: [&str; 22] = [
+const UI_SETTINGS: [&str; 23] = [
     "volume",
     "proxy",
     "quality",
+    "normalize_volume",
     "enable_history",
     "disabled_stream_clients",
     "discord_rpc",
@@ -314,6 +315,11 @@ pub async fn set_setting(
     // to follow without waiting for the next track.
     if key == "discord_rpc_config" {
         state.set_discord_config(&value);
+    }
+    // Retune the track that's playing. Unlike crossfade below, this one has to apply to what the
+    // user is hearing right now: the switch exists so they can A/B the same loud section (#298).
+    if key == "normalize_volume" {
+        state.reapply_gain().await;
     }
     // Both halves are one player setting. Applies from the next track change: the transition the
     // user is already hearing keeps the length it started with.
