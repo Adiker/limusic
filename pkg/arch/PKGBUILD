@@ -19,7 +19,7 @@ depends=(
   'gst-plugins-good'
   'gst-libav'
 )
-makedepends=('base-devel' 'git' 'rust' 'nodejs' 'npm')
+makedepends=('base-devel' 'git' 'rustup' 'nodejs' 'npm')
 _source_repo="${LIMUSIC_SOURCE_REPO:-Adiker/limusic}"
 source=(
   "$pkgname-$pkgver.tar.gz::https://github.com/${_source_repo}/archive/refs/tags/v${pkgver}.tar.gz"
@@ -29,6 +29,9 @@ sha256sums=('SKIP' 'SKIP')
 
 build() {
   cd "$srcdir/$pkgname-$pkgver"
+
+  rustup toolchain install stable --profile minimal
+  export RUSTUP_TOOLCHAIN=stable
 
   local npm_prefix="$srcdir/.npm-global"
   npm_config_prefix="$npm_prefix" npm install --global pnpm@10 "@tauri-apps/cli@^2"

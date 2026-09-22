@@ -79,11 +79,13 @@ jobs:
             -v "$GITHUB_WORKSPACE:/workspace" \
             archlinux:latest bash -euo pipefail -c '
               pacman -Sy --noconfirm --needed \
-                base-devel git rust nodejs npm sudo
+                base-devel git rustup nodejs npm sudo
               npm install --global pnpm@10
               useradd --create-home builder
               printf "builder ALL=(ALL) NOPASSWD: ALL\n" > /etc/sudoers.d/builder
               chown -R builder:builder /workspace
+              # The PKGBUILD selects upstream stable with RUSTUP_TOOLCHAIN, avoiding Arch rustc's
+              # lld linker, which leaves the bundled QuickJS/SQLite archives unresolved here.
               su builder -c "cd /workspace/pkg/arch && makepkg --syncdeps --noconfirm --cleanbuild --clean"
             '
 
