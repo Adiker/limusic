@@ -464,11 +464,16 @@ impl Player {
     /// onto a 60 dB loudness range instead (see [`perceptual_to_mpv`]), so steps stay roughly
     /// the same size and the bottom of the slider is actually quiet rather than just near-floor.
     pub fn set_volume(&self, volume: i64) -> Result<(), Error> {
+        self.mpv().set_property("volume", perceptual_to_mpv(volume))?;
         // Remembered because a crossfade scales it on both decks, and because the deck that
         // fades in is not the one this was last set on.
         self.decks.volume.store(volume, Ordering::Relaxed);
-        self.mpv().set_property("volume", perceptual_to_mpv(volume))?;
         Ok(())
+    }
+
+    /// Current volume level (0-100).
+    pub fn volume(&self) -> i64 {
+        self.decks.volume.load(Ordering::Relaxed)
     }
 
     /// Route the audio bytes through a proxy (the app's `proxy` setting). Call before the first

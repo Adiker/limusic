@@ -173,6 +173,9 @@ pub async fn seek(state: St<'_>, position: f64) -> Result<(), String> {
 #[tauri::command]
 pub async fn set_volume(state: St<'_>, volume: i64) -> Result<(), String> {
     state.player.set_volume(volume).map_err(|e| e.to_string())?;
+    if volume > 0 {
+        crate::hotkeys::LAST_NONZERO_VOLUME.store(volume, std::sync::atomic::Ordering::Relaxed);
+    }
     // There is one volume and there can be two windows (the mini player). Without this the one
     // that didn't move the slider keeps showing the old level and lies about what you're hearing.
     let _ = state.app.emit("volume", volume);
@@ -357,6 +360,50 @@ pub async fn set_setting(
         res.map_err(|e| format!("autostart: {e}"))?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_global_hotkeys(
+    hotkeys: State<'_, Arc<crate::hotkeys::HotkeysManager>>,
+) -> Result<crate::hotkeys::HotkeysConfig, String> {
+    Ok(hotkeys.get_config())
+}
+
+/// A Wayland session, where the X11 grab the hotkeys use only fires if the compositor passes keys
+/// on to XWayland (KDE Plasma does, GNOME does not). The GDK backend doesn't matter, the session does.
+#[tauri::command]
+pub fn global_hotkeys_on_wayland() -> bool {
+    cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some()
+}
+
+#[tauri::command]
+pub async fn set_global_hotkeys(
+    app: tauri::AppHandle,
+    state: St<'_>,
+    hotkeys: State<'_, Arc<crate::hotkeys::HotkeysManager>>,
+    config: crate::hotkeys::HotkeysConfig,
+) -> Result<crate::hotkeys::HotkeyRegisterResult, String> {
+    let result = hotkeys.apply_config(&app, config);
+    // Saved even on partial failure: apply_config already made this the live config, and a
+    // combo another app holds shouldn't cost the user every other binding on the next launch.
+    crate::hotkeys::save_config(&state.db, &result.config);
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn reset_global_hotkeys(
+    app: tauri::AppHandle,
+    state: St<'_>,
+    hotkeys: State<'_, Arc<crate::hotkeys::HotkeysManager>>,
+) -> Result<crate::hotkeys::HotkeyRegisterResult, String> {
+    // Resets the bindings only: the default has hotkeys off, and the button is on the enabled page.
+    let default_config = crate::hotkeys::HotkeysConfig {
+        enabled: hotkeys.get_config().enabled,
+        ..Default::default()
+    };
+    let result = hotkeys.apply_config(&app, default_config);
+    crate::hotkeys::save_config(&state.db, &result.config);
+    Ok(result)
 }
 
 /// The streamable client keys the orchestrator tries, for the "disabled clients" setting. Names

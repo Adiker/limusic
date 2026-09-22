@@ -8,6 +8,7 @@ mod commands;
 mod db;
 mod diagnostics;
 mod discord;
+mod hotkeys;
 mod http;
 mod lastfm;
 mod listentogether;
@@ -290,6 +291,15 @@ pub fn run() {
                 .with_filter(|label| label == "main")
                 .build(),
         )
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if let Some(mgr) = app.try_state::<Arc<hotkeys::HotkeysManager>>() {
+                        mgr.handle_event(app, shortcut, event.state());
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -363,7 +373,12 @@ pub fn run() {
             }
             // Before anything can play: the first track of a restored queue has to come out at the
             // level the user left, not at 100.
-            let _ = player.set_volume(state::saved_volume(&db));
+            let volume = state::saved_volume(&db);
+            let _ = player.set_volume(volume);
+            if volume > 0 {
+                // The level a mute hotkey returns to, when the app muted before any change.
+                hotkeys::LAST_NONZERO_VOLUME.store(volume, std::sync::atomic::Ordering::Relaxed);
+            }
             player.set_crossfade(state::saved_crossfade(&db));
             let events = player.take_events().expect("player events");
 
@@ -436,6 +451,15 @@ pub fn run() {
             // System tray: playback controls + show/quit while running in the background.
             if let Err(e) = tray::init(&handle) {
                 tracing::warn!(error = %e, "tray init failed (continuing without tray)");
+            }
+
+            // System-wide global hotkeys for playback control
+            let hotkeys_cfg = hotkeys::load_config(&app_state.db);
+            let hotkeys_mgr = Arc::new(hotkeys::HotkeysManager::new(hotkeys_cfg.clone()));
+            app.manage(hotkeys_mgr.clone());
+            let reg_res = hotkeys_mgr.apply_config(&handle, hotkeys_cfg);
+            if !reg_res.success {
+                tracing::warn!(errors = ?reg_res.errors, "some global hotkeys could not be registered on startup");
             }
 
             // A custom app icon (#173) has to be pushed at each surface every launch, since only
@@ -638,6 +662,10 @@ pub fn run() {
             commands::forget_video_stream,
             commands::get_settings,
             commands::set_setting,
+            commands::get_global_hotkeys,
+            commands::global_hotkeys_on_wayland,
+            commands::set_global_hotkeys,
+            commands::reset_global_hotkeys,
             commands::get_stream_clients,
             commands::clear_caches,
             commands::set_app_icon,
