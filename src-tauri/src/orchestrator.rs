@@ -1,7 +1,7 @@
 //! The brain: videoId → a playable stream. Full context/06 algorithm.
 //!
 //! Phase 2: WEB_REMIX is the primary client (STS + PoToken + cipher/n-transform), with the
-//! direct-URL clients (VISIONOS → ANDROID_VR → IOS) as graceful fallback and rustypipe as the
+//! direct-URL client (VISIONOS) as graceful fallback and rustypipe as the
 //! last-ditch net. The context/06 critical behaviors are preserved: metadata from MAIN, the
 //! per-videoId WEB_REMIX failure memory, the HIGH two-pass, off-hot-path self-heal, and graceful
 //! PoToken/cipher degradation. Every client is HEAD-validated (see the note in `resolve`); for an
@@ -479,7 +479,9 @@ impl Orchestrator {
     /// must never be able to make audio slower or less reliable. A `None` here just means the view
     /// keeps the artwork.
     pub async fn resolve_video(&self, video_id: &str, max_height: i32) -> Option<String> {
-        for key in ["VISIONOS", "ANDROID_VR_1_65_10"] {
+        // VISIONOS alone: ANDROID_VR's video URLs are capped at the first mebibyte like its audio
+        // ones (issue #292), so it could only ever hand the view a stream that dies mid-clip.
+        for key in ["VISIONOS"] {
             let Some(client) = self.clients.get(key) else { continue };
             let resp = match self.it.player(client, video_id, None, None, None).await {
                 Ok(r) => r,

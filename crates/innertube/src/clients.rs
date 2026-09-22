@@ -88,12 +88,15 @@ pub const MAIN_CLIENT: &str = "WEB_REMIX";
 ///
 /// IOS is deliberately absent. Its googlevideo URLs are served ONLY for bounded-Range requests:
 /// a plain GET, a HEAD, or `Range: bytes=0-` (exactly what mpv opens a stream with) all 403,
-/// while `Range: bytes=0-2047` returns 206. Measured on 21 of 22 sampled videos. That is the same
-/// behavior already documented for rustypipe URLs in `state.rs`, and it reaches the user as
-/// "YouTube rejected the stream link". Metrolist's ANDROID_VR 1.65 build takes the slot instead
-/// (its URLs answer an open-ended Range with 206), matching Metrolist's own default chain.
-pub const STREAM_FALLBACK_ORDER: [&str; 3] =
-    ["VISIONOS", "ANDROID_VR_1_65_10", "ANDROID_VR_1_43_32"];
+/// while `Range: bytes=0-2047` returns 206. Measured on 21 of 22 sampled videos.
+///
+/// **ANDROID_VR 1.65 and 1.43 were removed 2026-09-22** (issue #292, KNOWN-ISSUES KI-11). Their
+/// URLs are now served only for ranges ending inside the first mebibyte: HEAD 403s, the tail of
+/// the file 403s, and so does the video stream. Both therefore lost every candidate to HEAD
+/// validation before reaching the user, at the cost of two `/player` round trips and two HEADs on
+/// every resolve that got this far. The client definitions stay in `clients.json`: if googlevideo
+/// serves them again (or we gain SABR), putting the keys back here is the whole change.
+pub const STREAM_FALLBACK_ORDER: [&str; 1] = ["VISIONOS"];
 
 /// The fallback order for one of the user's own uploads (issue #71). YouTube only streams a
 /// privately-owned track to an authenticated client, so every anonymous client in
