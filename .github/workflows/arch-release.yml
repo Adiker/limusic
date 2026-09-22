@@ -66,8 +66,8 @@ jobs:
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
-      # The Rust self-contained lld leaves bundled QuickJS/SQLite unresolved in this build; the
-      # PKGBUILD opts out of lld and uses the system linker.
+      # The upstream Linux release workflow already links these native archives successfully with
+      # mold; the PKGBUILD uses the same linker in the official Arch image.
       - name: Build in the official Arch Linux image
         env:
           LIMUSIC_SOURCE_REPO: ${{ github.repository }}
@@ -81,7 +81,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/workspace" \
             archlinux:latest bash -euo pipefail -c '
               pacman -Sy --noconfirm --needed \
-                base-devel git rustup nodejs npm sudo
+                base-devel git rustup nodejs npm mold sudo
               npm install --global pnpm@10
               useradd --create-home builder
               printf "builder ALL=(ALL) NOPASSWD: ALL\n" > /etc/sudoers.d/builder
