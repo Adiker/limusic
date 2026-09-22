@@ -3825,23 +3825,26 @@ fn history_threshold(duration: f64) -> f64 {
     }
 }
 
-/// Per-track loudness gain (dB) from YouTube's `loudnessDb` (context/03, context/14). Attenuate
-/// only toward reference loudness: loud masters get pulled down, quieter tracks aren't boosted,
-/// so there's no clipping and no limiter to add.
+/// Per-track loudness gain (dB) from YouTube's `loudnessDb` (context/03, context/14), toward the
+/// -7 LUFS target: loud masters get pulled down, quiet ones get lifted (#237). The player adds a
+/// limiter whenever the gain is positive, so a lifted track can't clip.
 ///
 /// `loudnessDb` is measured against **-14 LUFS** (YouTube's own response proves it:
 /// `perceptualLoudnessDb == loudnessDb - 14`, i.e. the track's absolute LUFS). Applying it raw
 /// normalizes to -14 like the *video* site, but YouTube **Music** only pulls down what exceeds
-/// **-7 LUFS**, so raw made us ~6 dB quieter than YTM web on a typical modern master and left
-/// most tracks attenuated that YTM never touches at all. Normalize to the same -7 target.
+/// **-7 LUFS**, so raw made us ~6 dB quieter than YTM web on a typical modern master. Normalize to
+/// the same -7 target.
 ///
-/// `None` means "no filter", and that's most tracks now: below the target there is nothing to
-/// attenuate, so mpv gets its `af` cleared rather than a `volume=0dB` no-op in the chain.
-// ponytail: attenuate-only, clamped to -24 dB. If quiet tracks feel too soft, allow positive gain
-// plus an `alimiter` af to catch the resulting peaks.
+/// YTM itself never boosts, which left older, quieter masters ~6 dB under their neighbours. Here
+/// they are lifted by at most [`MAX_BOOST_DB`].
+///
+/// `None` means "no filter": on target (or no metadata), mpv gets its `af` cleared rather than a
+/// `volume=0dB` no-op in the chain.
+// ponytail: no peak data from YouTube, so the boost cap is a guess at how much limiting a dynamic
+// master tolerates. Lower MAX_BOOST_DB if classical/jazz sounds squashed.
 fn loudness_gain(loudness_db: Option<f64>) -> Option<f64> {
-    let gain = TARGET_LUFS - (loudness_db? - 14.0);
-    (gain < -0.05).then(|| gain.max(-24.0))
+    let gain = (TARGET_LUFS - (loudness_db? - 14.0)).clamp(-24.0, MAX_BOOST_DB);
+    (gain.abs() >= 0.05).then_some(gain)
 }
 
 /// The URL to hand mpv for one resolved track: the loopback chunked proxy when it is up, otherwise
@@ -3870,6 +3873,10 @@ fn mpv_stream_url(data: &PlaybackData) -> String {
 
 /// Loudness target, matching YouTube Music's own player rather than the video site's -14.
 const TARGET_LUFS: f64 = -7.0;
+
+/// Most a quiet track is lifted toward [`TARGET_LUFS`]. The limiter absorbs the peaks, and past
+/// this it audibly flattens a dynamic master.
+const MAX_BOOST_DB: f64 = 6.0;
 
 /// Fingerprint of a queue's track list: what `emit_queue` compares to decide whether the UI
 /// already has these rows. Hashes length, `video_id`, and every field the panel renders
@@ -3919,6 +3926,7 @@ mod tests {
         merge_radio, next_index, parse_duration_ms, persist_fingerprint, put_url,
         queue_fingerprint, radio_seed_for, shuffle_new_queue, shuffle_upcoming, splice_radio_into,
         trim_played, unshuffled, upcoming_queued, QueueState, RepeatMode, VideoUrls, KEEP_PLAYED,
+        MAX_BOOST_DB,
     };
 
     /// The whole point of the video-URL map is answering a reopen without a round trip, so a live
@@ -4636,14 +4644,16 @@ mod tests {
     }
 
     #[test]
-    fn loudness_gain_attenuates_only_above_the_target() {
+    fn loudness_gain_moves_toward_the_target() {
         // "As It Was" measures loudnessDb 7.77 ⇒ -6.23 LUFS, 0.77 dB over the -7 target.
         assert_eq!(loudness_gain(Some(7.77)).map(|g| (g * 100.0).round()), Some(-77.0));
-        // Exactly on target, and everything below -7 LUFS, gets no filter at all — YTM doesn't
-        // touch these either. (Real values: "Levitating" 6.85, "Shape of You" 6.35, "bad guy" 0.11.)
-        for l in [7.0, 6.85, 6.35, 0.11, -5.0] {
-            assert_eq!(loudness_gain(Some(l)), None, "loudnessDb {l} should not attenuate");
-        }
+        // Exactly on target gets no filter at all.
+        assert_eq!(loudness_gain(Some(7.0)), None);
+        // Quieter masters are lifted: "Shape of You" 6.35 ⇒ +0.65 dB.
+        assert_eq!(loudness_gain(Some(6.35)).map(|g| (g * 100.0).round()), Some(65.0));
+        // ...but by no more than the cap ("bad guy" 0.11 would want +6.89).
+        assert_eq!(loudness_gain(Some(0.11)), Some(MAX_BOOST_DB));
+        assert_eq!(loudness_gain(Some(-5.0)), Some(MAX_BOOST_DB));
         // Extreme loudness clamps at −24 dB.
         assert_eq!(loudness_gain(Some(40.0)), Some(-24.0));
         // No metadata → no filter.
