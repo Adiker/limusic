@@ -155,6 +155,11 @@ fn new_mpv(cache_dir: &str) -> Result<Mpv, Error> {
     let mpv = Mpv::new()?;
     mpv.set_property("vid", "no")?; // audio only
     mpv.set_property("gapless-audio", "yes")?;
+    // mpv's native Matroska demuxer floors WebM DiscardPadding nanoseconds to Opus samples. For
+    // values one nanosecond below a sample boundary (YouTube emits 6,833,333 ns), that leaves one
+    // unwanted sample at EOF and an audible pop between otherwise-continuous tracks. FFmpeg's
+    // demuxer rounds the padding correctly without altering the stream bytes.
+    mpv.set_property("demuxer", "lavf")?;
     // Open the appended remote entry while the current track is still playing. `gapless-audio`
     // keeps the output device alive, but on its own does not guarantee that the next HTTP stream
     // and demuxer are ready before the buffered tail reaches the playlist boundary.
@@ -1076,6 +1081,11 @@ mod tests {
         assert!(
             p.mpv().get_property::<bool>("prefetch-playlist").unwrap(),
             "gapless lookahead prefetch is disabled"
+        );
+        assert_eq!(
+            p.mpv().get_property::<String>("demuxer").unwrap(),
+            "lavf",
+            "native Matroska demuxing reintroduces a boundary sample"
         );
 
         // Seek latency. A 12 MiB back buffer was pruned well before a long mix ended, so a backward
