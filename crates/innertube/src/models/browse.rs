@@ -14,7 +14,8 @@ use super::metadata::{
     album_id, artist_runs, artists_from_runs, duration_from_runs, find_all, find_all_shallow,
     find_first_str, first_artist_id, flex_column_text, flex_runs, is_explicit, is_upload_endpoint,
     is_upload_row, is_video_endpoint, is_video_row, is_video_type, last_thumbnail,
-    list_item_video_id, parse_list_item, play_count, runs_text, runs_text_opt, ArtistRun, SongItem,
+    list_item_video_id, parse_episode_item, parse_list_item, play_count, runs_text, runs_text_opt,
+    ArtistRun, SongItem,
 };
 
 /// One clickable card in a home carousel or library grid. Flat + `kind`-tagged so the UI can
@@ -403,9 +404,7 @@ pub fn parse_playlist(root: &Value) -> PlaylistPage {
     // thumbnails array it reaches first, so a header with only a `straplineThumbnail` would hand
     // every row the artist avatar. Issue #160.
     let cover = header.and_then(|h| h.get("thumbnail")).and_then(last_thumbnail);
-    let items = find_all_shallow(root, "musicResponsiveListItemRenderer")
-        .into_iter()
-        .filter_map(parse_list_item)
+    let items = playlist_rows(root, title.as_deref())
         .map(|mut it| {
             if it.thumbnail.is_none() {
                 it.thumbnail = cover.clone();
@@ -468,14 +467,28 @@ fn selected_sort(item: &Value) -> Option<PlaylistSort> {
     PlaylistSort::from_params(&urlencoding::decode(params).ok()?)
 }
 
+/// A playlist page's rows: tracks, or podcast episodes on a show page / Saved Episodes (#286).
+/// Shallow find: on an owned/editable playlist each track row embeds a nested copy of its own
+/// renderer (an add-suggestion edit command), so a deep find_all would return every track twice.
+/// An episode row names no show, so it takes `show` (the page title) as its artist.
+fn playlist_rows<'a>(
+    root: &'a Value,
+    show: Option<&'a str>,
+) -> impl Iterator<Item = SongItem> + 'a {
+    let tracks = find_all_shallow(root, "musicResponsiveListItemRenderer");
+    let episodes = find_all_shallow(root, "musicMultiRowListItemRenderer");
+    tracks.into_iter().filter_map(parse_list_item).chain(
+        episodes.into_iter().filter_map(parse_episode_item).map(move |mut it| {
+            it.artists = show.unwrap_or_default().to_owned();
+            it
+        }),
+    )
+}
+
 /// Parse a browse continuation response (more playlist tracks). context/08.
 pub fn parse_playlist_continuation(root: &Value) -> PlaylistContinuation {
-    // Shallow find: on an owned/editable playlist each track row embeds a nested copy of its own
-    // renderer (an add-suggestion edit command), so a deep find_all would return every track twice.
-    let items = find_all_shallow(root, "musicResponsiveListItemRenderer")
-        .into_iter()
-        .filter_map(parse_list_item)
-        .collect();
+    // ponytail: no header here, so episodes past the first page go without a show name.
+    let items = playlist_rows(root, None).collect();
     // A continuation response is mostly shelf already; the sweep stays as the fallback for the
     // `…ShelfContinuation` shapes that carry no `…ShelfRenderer` node to scope to.
     PlaylistContinuation {
@@ -2054,5 +2067,45 @@ mod tests {
         let root = json!({ "musicPlaylistShelfRenderer": { "contents": [] } });
         assert!(sort_menu(&root).is_none());
         assert!(parse_playlist(&root).sort_menu.is_none());
+    }
+
+    // A podcast show page (`MPSP…`) lists its episodes as multi-row items, not track rows; reading
+    // only the latter left every show empty (#286). Shape trimmed from a live response 2026-09-22.
+    #[test]
+    fn parses_podcast_episodes_on_a_show_page() {
+        let play = |id: &str| {
+            json!({ "watchEndpoint": { "videoId": id, "watchEndpointMusicSupportedConfigs": {
+                "watchEndpointMusicConfig": { "musicVideoType": "MUSIC_VIDEO_TYPE_PODCAST_EPISODE" } } } })
+        };
+        let episode = |id: &str, title: &str, length: &str| {
+            json!({ "musicMultiRowListItemRenderer": {
+                "thumbnail": { "musicThumbnailRenderer": { "thumbnail": { "thumbnails": [
+                    { "url": format!("https://i.ytimg.com/vi/{id}/hq720.jpg") } ] } } },
+                "overlay": { "musicItemThumbnailOverlayRenderer": { "content": {
+                    "musicPlayButtonRenderer": { "playNavigationEndpoint": play(id) } } } },
+                "onTap": play(id),
+                "title": { "runs": [{ "text": title }] },
+                "subtitle": { "runs": [{ "text": "48 views" }, { "text": " \u{2022} " }, { "text": "Apr 23, 2021" }] },
+                "playbackProgress": { "musicPlaybackProgressRenderer": {
+                    "durationText": { "runs": [{ "text": " \u{2022} " }, { "text": length }] } } }
+            } })
+        };
+        let root = json!({
+            "header": { "musicResponsiveHeaderRenderer": { "title": { "runs": [{ "text": "Lemonade Stand" }] } } },
+            "contents": { "musicShelfRenderer": { "contents": [
+                episode("xOXghljqUGw", "Ep. 5 We're Live!", "55 min"),
+                episode("LWEIDnrEl0A", "Ep. 4 Would You Rather", "1 hr 4 min"),
+            ] } }
+        });
+        let page = parse_playlist(&root);
+        let rows: Vec<_> =
+            page.items.iter().map(|s| (s.video_id.as_str(), s.duration.as_deref())).collect();
+        assert_eq!(rows, [("xOXghljqUGw", Some("55:00")), ("LWEIDnrEl0A", Some("1:04:00"))]);
+        let first = &page.items[0];
+        assert_eq!(first.title, "Ep. 5 We're Live!");
+        assert_eq!(first.artists, "Lemonade Stand");
+        assert!(first.thumbnail.as_deref().unwrap().contains("xOXghljqUGw"));
+        // A continuation has no header, so no show name, but the rows still come through.
+        assert_eq!(parse_playlist_continuation(&root).items.len(), 2);
     }
 }
