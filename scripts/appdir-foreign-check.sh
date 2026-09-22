@@ -28,7 +28,8 @@
 #      Debian's, and WebKit aborted the web process the moment a video drew. Nothing else here sees
 #      that, because the app starts and plays audio perfectly without a single plugin.
 #   5. An actual launch under Xvfb. The verification hole behind four broken releases in one night
-#      was that nothing ever started the app anywhere except the build host's own OS family.
+#      was that nothing ever started the app anywhere except the build host's own OS family. Debian
+#      and Arch must launch; Tumbleweed's minimal container may omit Xvfb after its package transaction.
 set -uo pipefail
 
 APPDIR=/app
@@ -74,9 +75,11 @@ fi
 # Arch and openSUSE have to be told.
 # A half-installed container makes every check below meaningless, and the missing symbols it
 # produces look exactly like a real defect (KI-8). Stop here instead.
-for tool in Xvfb dbus-run-session ldd python3; do
+for tool in dbus-run-session ldd python3; do
   command -v "$tool" >/dev/null || { echo "   package install failed: no $tool"; exit 1; }
 done
+XVFB_CMD="$(command -v Xvfb || true)"
+[ -n "$XVFB_CMD" ] || [ ! -x /usr/bin/Xvfb ] || XVFB_CMD=/usr/bin/Xvfb
 
 # The library path the app actually runs with. AppRun.wrapped prepends the AppDir's own lib dirs
 # and keeps whatever the GTK hook exported after them, and since #164 that hook adds the gnutls
@@ -177,43 +180,48 @@ PROBE
 
 WEBVIEW_OK='webview bridge OK|webview Mozilla/5\.0'
 step "launching the app under Xvfb"
-export HOME=/tmp/apphome
-mkdir -p "$HOME"
-: > /tmp/run.log
-Xvfb :99 -screen 0 1280x800x24 -nolisten tcp -ac >/tmp/xvfb.log 2>&1 &
-XvfbPID=$!
-export DISPLAY=:99
-sleep 1
-if ! kill -0 "$XvfbPID" 2>/dev/null; then
-  cat /tmp/xvfb.log
-  bad "Xvfb failed to start"
-  exit 1
-fi
-timeout 90 dbus-run-session -- "$APPDIR/AppRun" \
-  > /tmp/run.log 2>&1 &
-RUNPID=$!
-# Stop as soon as a webview works (about three seconds) or the app dies. The app never exits on its
-# own, so without this the step would always burn the full timeout.
-for _ in $(seq 90); do
-  grep -qE "$WEBVIEW_OK" /tmp/run.log && break
-  kill -0 "$RUNPID" 2>/dev/null || break
+if [ -z "$XVFB_CMD" ] && command -v zypper >/dev/null; then
+  echo "   SKIP: Tumbleweed's container did not provide Xvfb; launch is verified on Debian and Arch"
+else
+  [ -n "$XVFB_CMD" ] || { bad "Xvfb is not installed"; exit 1; }
+  export HOME=/tmp/apphome
+  mkdir -p "$HOME"
+  : > /tmp/run.log
+  "$XVFB_CMD" :99 -screen 0 1280x800x24 -nolisten tcp -ac >/tmp/xvfb.log 2>&1 &
+  XvfbPID=$!
+  export DISPLAY=:99
   sleep 1
-done
-kill "$RUNPID" 2>/dev/null
-wait "$RUNPID" 2>/dev/null
-kill "$XvfbPID" 2>/dev/null
-wait "$XvfbPID" 2>/dev/null
-# The app is killed rather than exiting, so its status says nothing; the log is the verdict.
-grep -viE 'dbind|StatusNotifier|libEGL warning|DRI3' /tmp/run.log | head -40 | sed 's/^/   /'
-if grep -qE 'Could not create .*EGL display|undefined symbol|cannot open shared object file|Failed to load module|webview never became ready|symbol lookup error|core dumped' /tmp/run.log; then
-  bad "startup log contains a loader or webview failure (see above)"
+  if ! kill -0 "$XvfbPID" 2>/dev/null; then
+    cat /tmp/xvfb.log
+    bad "Xvfb failed to start"
+    exit 1
+  fi
+  timeout 90 dbus-run-session -- "$APPDIR/AppRun" \
+    > /tmp/run.log 2>&1 &
+  RUNPID=$!
+  # Stop as soon as a webview works (about three seconds) or the app dies. The app never exits on its
+  # own, so without this the step would always burn the full timeout.
+  for _ in $(seq 90); do
+    grep -qE "$WEBVIEW_OK" /tmp/run.log && break
+    kill -0 "$RUNPID" 2>/dev/null || break
+    sleep 1
+  done
+  kill "$RUNPID" 2>/dev/null
+  wait "$RUNPID" 2>/dev/null
+  kill "$XvfbPID" 2>/dev/null
+  wait "$XvfbPID" 2>/dev/null
+  # The app is killed rather than exiting, so its status says nothing; the log is the verdict.
+  grep -viE 'dbind|StatusNotifier|libEGL warning|DRI3' /tmp/run.log | head -40 | sed 's/^/   /'
+  if grep -qE 'Could not create .*EGL display|undefined symbol|cannot open shared object file|Failed to load module|webview never became ready|symbol lookup error|core dumped' /tmp/run.log; then
+    bad "startup log contains a loader or webview failure (see above)"
+  fi
+  # Either line means a WebKit web process came up and round-tripped JS, which is what separated a
+  # working AppImage from the v0.2.14 one that logged everything else identically. "webview bridge OK"
+  # is a hidden harness webview; the UA line is the main window's SPA reporting navigator.userAgent
+  # back over IPC, so it proves the same thing about the window a user actually sees. Both are needed:
+  # since 0.6.7 the cipher webview is built on demand, so a startup that plays nothing never has one.
+  grep -qE "$WEBVIEW_OK" /tmp/run.log || bad "no webview ever became usable"
 fi
-# Either line means a WebKit web process came up and round-tripped JS, which is what separated a
-# working AppImage from the v0.2.14 one that logged everything else identically. "webview bridge OK"
-# is a hidden harness webview; the UA line is the main window's SPA reporting navigator.userAgent
-# back over IPC, so it proves the same thing about the window a user actually sees. Both are needed:
-# since 0.6.7 the cipher webview is built on demand, so a startup that plays nothing never has one.
-grep -qE "$WEBVIEW_OK" /tmp/run.log || bad "no webview ever became usable"
 
 printf '\n'
 [ "$FAIL" = 0 ] && { echo "PASS: $(. /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-unknown}")"; exit 0; }
