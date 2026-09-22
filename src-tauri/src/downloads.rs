@@ -61,7 +61,21 @@ pub async fn pick_download_parent(
             .or_else(|| std::env::var("HOME").ok().filter(|path| Path::new(path).is_dir()))
             .unwrap_or_else(|| ".".into());
         return tauri::async_runtime::spawn_blocking(move || {
-            let output = std::process::Command::new("kdialog")
+            let mut command = std::process::Command::new("kdialog");
+            // AppImage injects its private libraries and Qt plugins into the environment so its
+            // own process can run. kdialog is a host KDE program; inheriting those paths can make
+            // it load the AppImage's OpenSSL instead of the host one (for example, system
+            // libcurl may require symbols absent from the bundled libssl). Keep the cleanup local
+            // to this child process; LiMusic and the user's session retain their environment.
+            if std::env::var_os("APPIMAGE").is_some() || std::env::var_os("APPDIR").is_some() {
+                command
+                    .env_remove("LD_LIBRARY_PATH")
+                    .env_remove("QT_PLUGIN_PATH")
+                    .env_remove("QT_QPA_PLATFORM_PLUGIN_PATH")
+                    .env_remove("QML2_IMPORT_PATH");
+            }
+
+            let output = command
                 .arg("--getexistingdirectory")
                 .arg(&start_dir)
                 .arg("--title")
@@ -75,8 +89,22 @@ pub async fn pick_download_parent(
                     }
                 })?;
 
-            // kdialog exits non-zero when the user presses Cancel. That is a normal answer; a
-            // launch error above lets the UI use its portable fallback instead.
+            // kdialog uses exit code 1 when the user cancels. Other failures must reject the
+            // command so the UI can use its portable fallback instead of treating the failure as
+            // a cancellation and leaving the button apparently unresponsive.
+            if !output.status.success() && output.status.code() != Some(1) {
+                let detail = String::from_utf8_lossy(&output.stderr)
+                    .trim()
+                    .chars()
+                    .take(512)
+                    .collect::<String>();
+                return Err(if detail.is_empty() {
+                    format!("KDE folder picker failed with status {}", output.status)
+                } else {
+                    format!("KDE folder picker failed: {detail}")
+                });
+            }
+
             let path = String::from_utf8_lossy(&output.stdout).trim().to_owned();
             Ok((output.status.success() && !path.is_empty()).then_some(path))
         })
