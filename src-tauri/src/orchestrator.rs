@@ -168,10 +168,18 @@ impl Orchestrator {
         // with its TTL, so this is usually free; may be None (timeout / broken webview) —
         // degrade gracefully.
         let main_client = self.clients.get(MAIN_CLIENT);
-        let session_pot_owned = match (main_client, &visitor) {
-            (Some(c), Some(vd)) if c.use_web_po_tokens && !disabled.contains(MAIN_CLIENT) => {
-                self.potoken.get_session_po_token(vd).await
-            }
+        // The token belongs to the *session*, not to WEB_REMIX. Gating the mint on the main
+        // client was harmless while WEB_REMIX was the only thing that wanted one; with
+        // TVHTML5_SIMPLY in the chain it meant that turning WEB_REMIX off silently turned off
+        // every other PoToken client with it, and they then skipped themselves for want of a
+        // token that was sitting valid in the cache. So ask whether anything we are actually
+        // going to try wants one.
+        let wants_pot = std::iter::once(MAIN_CLIENT)
+            .chain(order.iter().copied())
+            .filter(|k| !disabled.contains(*k))
+            .any(|k| self.clients.get(k).is_some_and(|c| c.use_web_po_tokens));
+        let session_pot_owned = match &visitor {
+            Some(vd) if wants_pot => self.potoken.get_session_po_token(vd).await,
             _ => None,
         };
         let session_pot = session_pot_owned.as_deref();
@@ -268,6 +276,14 @@ impl Orchestrator {
                     continue;
                 }
                 let client_pot = if client.use_web_po_tokens { session_pot } else { None };
+                // A PoToken client with no token is a guaranteed UNPLAYABLE ("The page needs to
+                // be reloaded"), so spend nothing on it when minting degraded. The direct clients
+                // ahead of it need no token, which is what keeps the chain alive in that state
+                // (context/06 §graceful PoToken degradation).
+                if client.use_web_po_tokens && client_pot.is_none() {
+                    tracing::debug!(client = key, "no PoToken, skipping");
+                    continue;
+                }
                 let client_sts = if client.use_signature_timestamp { sts } else { None };
                 match self.it.player(client, video_id, playlist_id, client_sts, client_pot).await {
                     Ok(r) if r.playability_status.is_ok() => (key.to_owned(), r),

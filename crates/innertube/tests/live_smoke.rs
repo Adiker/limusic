@@ -28,6 +28,13 @@ async fn direct_clients_resolve_and_stream() {
     let mut any_ok = false;
     for key in STREAM_FALLBACK_ORDER {
         let client = clients.get(key).unwrap();
+        // A PoToken client cannot be resolved from this crate: it needs a minted token, a
+        // signature timestamp and the cipher, all of which live in the app. This test covers the
+        // direct half of the chain, which is the half that must keep working with those gone.
+        if client.use_web_po_tokens {
+            eprintln!("{key}: PoToken client, not testable here");
+            continue;
+        }
         let resp = match it.player(client, VIDEO_ID, None, None, None).await {
             Ok(r) => r,
             Err(e) => {
