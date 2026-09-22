@@ -170,6 +170,10 @@ pub struct Format {
 pub struct AudioTrack {
     #[serde(default)]
     pub is_auto_dubbed: Option<bool>,
+    /// Set on the video's own language track. A dubbed video lists every language at the same
+    /// qualities, so without this the bitrate tiebreak picks one at random (#286 follow-up).
+    #[serde(default)]
+    pub audio_is_default: Option<bool>,
 }
 
 impl Format {
@@ -177,9 +181,13 @@ impl Format {
     pub fn is_audio(&self) -> bool {
         self.width.is_none()
     }
-    /// Not an auto-dubbed foreign-language track. context/03.
+    /// The video's own audio, not a dub. context/03 checks only `isAutoDubbed`, which a human dub
+    /// and some auto dubs don't carry; `audioIsDefault` marks the original on every multi-track
+    /// response seen so far. A format with no `audioTrack` is the only track there is.
     pub fn is_original(&self) -> bool {
-        self.audio_track.as_ref().and_then(|t| t.is_auto_dubbed).is_none()
+        self.audio_track
+            .as_ref()
+            .is_none_or(|t| t.is_auto_dubbed.is_none() && t.audio_is_default == Some(true))
     }
     /// Direct, playable URL with no cipher required (present on the non-web fallback clients).
     pub fn direct_url(&self) -> Option<&str> {
@@ -227,6 +235,10 @@ pub fn find_format(data: &StreamingData, quality: AudioQuality) -> Option<&Forma
     if audio.is_empty() {
         return None;
     }
+    // A dubbed video lists every language at the same qualities, so the original is picked
+    // before anything else: a dub is never the better stream, at any bitrate.
+    let original: Vec<&Format> = audio.iter().copied().filter(|f| f.is_original()).collect();
+    let audio = if original.is_empty() { audio } else { original };
     match quality {
         AudioQuality::High | AudioQuality::Auto => audio.into_iter().max_by(|a, b| {
             a.quality_rank()
@@ -338,6 +350,26 @@ mod tests {
         assert_eq!(sd.expires_in_seconds, Some(21540));
         assert_eq!(sd.adaptive_formats[0].bitrate, 141210);
         assert!(find_format(&sd, AudioQuality::High).is_some());
+    }
+
+    /// A dubbed video lists each language at the same qualities; the higher-bitrate dub must not
+    /// win over the original, at either quality setting. Track shape from a live VISIONOS response.
+    #[test]
+    fn find_format_keeps_the_original_language() {
+        let json = r#"{
+            "playabilityStatus": { "status": "OK" },
+            "streamingData": { "adaptiveFormats": [
+                { "itag": 251, "url": "hi", "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 150000, "audioQuality": "AUDIO_QUALITY_MEDIUM",
+                  "audioTrack": { "displayName": "Hindi", "id": "hi.3" } },
+                { "itag": 251, "url": "en", "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 140000, "audioQuality": "AUDIO_QUALITY_MEDIUM",
+                  "audioTrack": { "displayName": "English original", "id": "en.4", "audioIsDefault": true } },
+                { "itag": 249, "url": "es", "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 90000, "audioQuality": "AUDIO_QUALITY_LOW",
+                  "audioTrack": { "displayName": "Spanish", "id": "es.3", "audioIsDefault": false, "isAutoDubbed": true } }
+            ] }
+        }"#;
+        let sd = serde_json::from_str::<PlayerResponse>(json).unwrap().streaming_data.unwrap();
+        assert_eq!(find_format(&sd, AudioQuality::High).unwrap().url.as_deref(), Some("en"));
+        assert_eq!(find_format(&sd, AudioQuality::Low).unwrap().url.as_deref(), Some("en"));
     }
 
     /// Video-only picker (plan 031): VP9 only, capped by height, 60fps preferred over the 30fps

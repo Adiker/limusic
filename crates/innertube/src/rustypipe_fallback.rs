@@ -74,14 +74,20 @@ fn pick_audio(streams: &[AudioStream], prefer_high: bool) -> Option<&AudioStream
             0
         }
     }
+    // A dubbed video lists every language at the same bitrates; keep to the original track
+    // (`track` is None when there is only one). Mirrors `Format::is_original`.
+    let original: Vec<&AudioStream> =
+        streams.iter().filter(|s| s.track.as_ref().is_none_or(|t| t.is_default)).collect();
+    let streams = if original.is_empty() { streams.iter().collect() } else { original };
     if prefer_high {
-        streams.iter().max_by(|a, b| {
+        streams.into_iter().max_by(|a, b| {
             codec_score(&a.mime).cmp(&codec_score(&b.mime)).then(a.bitrate.cmp(&b.bitrate))
         })
     } else {
-        let capped: Vec<&AudioStream> = streams.iter().filter(|s| s.bitrate <= 128_000).collect();
+        let capped: Vec<&AudioStream> =
+            streams.iter().copied().filter(|s| s.bitrate <= 128_000).collect();
         if capped.is_empty() {
-            streams.iter().min_by_key(|s| s.bitrate)
+            streams.into_iter().min_by_key(|s| s.bitrate)
         } else {
             capped.into_iter().max_by_key(|s| s.bitrate)
         }
