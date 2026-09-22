@@ -63,7 +63,8 @@
 		"play_all": "Tocar tudo",
 		"top_result": "Melhor resultado",
 		"all_results_for": "Todos os resultados para “{query}”",
-		"refresh": "Atualizar"
+		"refresh": "Atualizar",
+		"videos": "Vídeos"
 	},
 	"nav": {
 		"home": "Início",
@@ -140,7 +141,8 @@
 		"add_to_playlist": "Adicionar à playlist",
 		"pin_to_top": "Fixar no topo",
 		"unpin": "Desafixar",
-		"block_artist": "Bloquear artista"
+		"block_artist": "Bloquear artista",
+		"remove_from_this_playlist": "Remover desta playlist"
 	},
 	"home": {
 		"good_morning": "Bom dia",
@@ -359,7 +361,12 @@
 			"lastfm_primary_artist": "Incluir apenas o artista principal no scrobble",
 			"lastfm_primary_artist_hint": "Envia apenas o primeiro artista creditado ao Last.fm, para que suas reproduções sejam registradas na página do artista correto. Nomes unidos por \"&\" são mantidos inteiros.",
 			"lastfm_primary_strict": "Descartar também artistas unidos por \"&\"",
-			"lastfm_primary_strict_hint": "\"Future & Metro Boomin\" é registrado como \"Future\". Duplas com \"&\" no nome também são encurtadas."
+			"lastfm_primary_strict_hint": "\"Future & Metro Boomin\" é registrado como \"Future\". Duplas com \"&\" no nome também são encurtadas.",
+			"crossfade": "Crossfade",
+			"crossfade_hint": "Faz o final de cada faixa entrar suavemente no início da próxima. Durante a sobreposição das faixas, executa um segundo decodificador de áudio, o que consome um pouco mais de memória.",
+			"crossfade_duration": "Duração do crossfade",
+			"crossfade_duration_hint": "Quanto tempo dura a sobreposição. Faixas curtas têm um fade mais curto, para que um fade nunca comece antes que o anterior tenha terminado.",
+			"crossfade_seconds": "{secs}s"
 		},
 		"data": {
 			"clear_cache": "Limpar cache de imagens e streams",
@@ -684,7 +691,8 @@
 		"subscribed": "Inscrito em {name}",
 		"unsubscribed": "Inscrição cancelada",
 		"signed_in_as": "Conectado como {name}",
-		"switched_to": "Você alternou para {name}"
+		"switched_to": "Você alternou para {name}",
+		"could_not_add": "Não foi possível adicionar esse item, tente abri-lo em vez disso"
 	},
 	"history": {
 		"title": "Histórico",
@@ -713,6 +721,8 @@
 		"pending": "Localizando {count} faixas selecionadas nas páginas ainda carregando.",
 		"local_playlist": "Arquivos locais não podem ser adicionados a uma playlist do YouTube.",
 		"account_changed": "Interrompida a adição de músicas porque a conta foi alterada.",
-		"playlist_partial": "Total adicionado à {playlist}: {added}; Total de duplicatas: {duplicates}; Total não confirmado: {remaining}. {error}"
+		"playlist_partial": "Total adicionado à {playlist}: {added}; Total de duplicatas: {duplicates}; Total não confirmado: {remaining}. {error}",
+		"remove": "Remover desta playlist",
+		"remove_confirm": "Remover {count}?"
 	}
 }

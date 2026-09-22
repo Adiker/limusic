@@ -17,7 +17,9 @@
 		"pending": "Wyszukiwanie {count} zaznaczonych utworów na stronach, które wciąż się ładują.",
 		"local_playlist": "Plików lokalnych nie można dodawać do playlisty YouTube.",
 		"account_changed": "Przerwano dodawanie utworów, ponieważ konto zostało zmienione.",
-		"playlist_partial": "Dodano {added} do {playlist}; {duplicates} już tam było; {remaining} niepotwierdzonych. {error}"
+		"playlist_partial": "Dodano {added} do {playlist}; {duplicates} już tam było; {remaining} niepotwierdzonych. {error}",
+		"remove": "Usuń z tej playlisty",
+		"remove_confirm": "Usunąć {count}?"
 	},
 	"common": {
 		"loading": "Ładowanie...",
@@ -83,7 +85,8 @@
 		"shuffle_all": "Wymieszaj wszystko",
 		"play_all": "Odtwórz wszystko",
 		"top_result": "Najlepszy wynik",
-		"all_results_for": "Wszystkie wyniki dla „{query}”"
+		"all_results_for": "Wszystkie wyniki dla „{query}”",
+		"videos": "Filmy"
 	},
 	"nav": {
 		"home": "Strona główna",
@@ -160,7 +163,8 @@
 		"remove_dislike": "Usuń „nie lubię”",
 		"add_to_playlist": "Dodaj do playlisty",
 		"pin_to_top": "Przypnij",
-		"unpin": "Odepnij"
+		"unpin": "Odepnij",
+		"remove_from_this_playlist": "Remove from this playlista"
 	},
 	"home": {
 		"good_morning": "Dzień dobry",
@@ -388,7 +392,12 @@
 			"lastfm_primary_strict": "Pomijaj również wykonawców połączonych znakiem „&”",
 			"lastfm_primary_strict_hint": "„Future & Metro Boomin” zostanie zascrobblowane jako „Future”. Duety z „&” w nazwie również zostaną skrócone.",
 			"lyrics_provider": "Zsynchronizowane teksty (Boidu/LRCLIB)",
-			"lyrics_provider_hint": "Pobieraj teksty synchronizowane przez społeczność dla aktywnych utworów."
+			"lyrics_provider_hint": "Pobieraj teksty synchronizowane przez społeczność dla aktywnych utworów.",
+			"crossfade": "Crossfade",
+			"crossfade_hint": "Jeden utwór płynnie przechodzi w drugi. Zużywa trochę więcej pamięci, bo w tym momencie grają dwa utwory naraz.",
+			"crossfade_duration": "Czas trwania płynnego przejścia",
+			"crossfade_duration_hint": "Jak długo utwory się nakładają. Krótkie utwory mają krótsze przejścia, więc płynne przejście nigdy nie zaczyna się, zanim poprzedni utwór się nie skończy.",
+			"crossfade_seconds": "{secs}s"
 		},
 		"data": {
 			"clear_cache": "Wyczyść pamięć podręczną obrazów i strumieni",
@@ -544,8 +553,8 @@
 			"invite_code": "Kod zaproszenia",
 			"invite_placeholder": "Wklej zaproszenie przesłane przez znajomego",
 			"invite_hint": "Zaproszenie zawiera adres serwera; nie trzeba nic więcej konfigurować.",
-			"your_name": "Twoje imię",
-			"your_name_placeholder": "Twoje imię",
+			"your_name": "Twoja Nazwa",
+			"your_name_placeholder": "Nazwij się",
 			"join_button": "Dołącz do sesji",
 			"sync_server": "Serwer synchronizacji",
 			"sync_server_placeholder": "wss://twoja-maszyna.ts.net/ws",
@@ -713,6 +722,7 @@
 		"subscribed": "Zasubskrybowano {name}",
 		"unsubscribed": "Anulowano subskrypcję",
 		"signed_in_as": "Zalogowano jako {name}",
-		"switched_to": "Przełączono na {name}"
+		"switched_to": "Przełączono na {name}",
+		"could_not_add": "Nie udało się tego dodać. Spróbuj to otworzyć"
 	}
 }
