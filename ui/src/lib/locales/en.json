@@ -247,6 +247,27 @@
 		"on_repeat_subtitle": "{count} songs you've played most this month",
 		"songs_count": "{count} songs"
 	},
+	"downloads": {
+		"title": "Downloaded",
+		"choose_folder": "Choose folder",
+		"folder_updated": "Downloads folder updated",
+		"no_folder": "No downloads folder configured",
+		"configure_hint": "Choose a folder to start building your offline library.",
+		"storage_unavailable": "The downloads drive is unavailable. Playback will fall back to streaming when online.",
+		"queue": "Download queue",
+		"collections": "Albums and playlists",
+		"songs": "Songs",
+		"empty": "No downloaded songs yet.",
+		"pause": "Pause",
+		"resume": "Resume",
+		"retry": "Retry",
+		"remove": "Remove",
+		"remove_all": "Remove all",
+		"remove_all_confirm": "Remove all downloads? This cannot be undone.",
+		"remove_collection_confirm": "Remove this downloaded collection? Songs used by another collection or downloaded separately will stay."
+		,"collection_started": "Download added to the queue",
+		"collection_partial": "Only the first 100 playlist pages were added; the collection is partial."
+	},
 	"local": {
 		"scanning": "Scanning folder...",
 		"rescan": "Rescan",
@@ -443,7 +464,10 @@
 		"data": {
 			"clear_cache": "Clear image and stream cache",
 			"clear_cache_hint": "Frees up disk space by clearing cached thumbnails and audio chunks.",
-			"clear_cache_button": "Clear cache now"
+			"clear_cache_button": "Clear cache now",
+			"download_quality": "Download quality",
+			"download_quality_hint": "Applies to new downloads. Existing files keep their quality.",
+			"download_folder": "Download folder"
 		},
 		"about": {
 			"description": "A beautiful, fast, and lightweight desktop music player powered by Tauri and Svelte.",

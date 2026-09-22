@@ -118,10 +118,19 @@ pub fn scan(db: &Db, covers_dir: &Path) -> LocalLibrary {
     let reparse = db.get_setting(SCAN_VERSION_SETTING).as_deref() != Some(SCAN_VERSION);
     let mut found: HashSet<String> = HashSet::new();
     let mut fresh: Vec<LocalTrack> = Vec::new();
+    // The managed offline tree may sit below a watched Music/Downloads folder. It is app data,
+    // not user-owned Local Music, so never index its WebM/M4A files as duplicate local songs.
+    let managed_downloads =
+        crate::downloads::managed_dir(db).and_then(|p| p.canonicalize().ok().or(Some(p)));
 
     let mut seen_dirs: HashSet<PathBuf> = HashSet::new();
     for folder in folders(db) {
         walk(Path::new(&folder), 0, &mut seen_dirs, &mut |file| {
+            if managed_downloads.as_ref().is_some_and(|root| {
+                file.canonicalize().map(|p| p.starts_with(root)).unwrap_or(false)
+            }) {
+                return;
+            }
             let path = file.to_string_lossy().to_string();
             let mtime = mtime_of(file);
             found.insert(path.clone());
@@ -620,6 +629,7 @@ pub fn playback_data(video_id: &str, path: &str) -> Result<crate::orchestrator::
         video_id: video_id.to_owned(),
         stream_url: path.to_owned(),
         itag: 0,
+        mime_type: None,
         headers: HashMap::new(),
         // Never expires, and never enters the URL cache (see `AppState::resolve`).
         expires_in_seconds: i64::MAX / 2,

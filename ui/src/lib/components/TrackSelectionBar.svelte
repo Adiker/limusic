@@ -10,7 +10,7 @@
 		Cancel01Icon
 	} from '@hugeicons/core-free-icons';
 	import { Button } from './ui/button';
-	import { enqueue, openAddManyToPlaylist, ui } from '$lib/player.svelte';
+	import { enqueue, openAddManyToPlaylist, queueDownloads, toast, ui } from '$lib/player.svelte';
 	import { isLocalId, type SongItem } from '$lib/api';
 	import { t } from '$lib/i18n.svelte';
 	import type { TrackSelection } from '$lib/selection.svelte';
@@ -65,6 +65,19 @@
 			busy = false;
 		}
 	}
+
+	async function download() {
+		if (blocked || !selection.count || !canAdd) return;
+		busy = true;
+		try {
+			await queueDownloads([...selection.songs]);
+		} catch (e) {
+			// The shared player store owns normal toasts; this branch is only for a missing folder or
+			// another backend validation error that prevented enqueueing.
+			toast.error(String(e));
+		}
+		finally { busy = false; }
+	}
 </script>
 
 <!-- Floating, like the update banner and the toast above it, rather than a strip wedged between the
@@ -106,6 +119,11 @@
 						title={t('player.add_to_playlist')} aria-label={t('player.add_to_playlist')}
 						onclick={() => openAddManyToPlaylist([...selection.songs])}>
 						<HugeiconsIcon icon={PlayListAddIcon} class="h-4 w-4" />
+					</Button>
+				{/if}
+				{#if canAdd}
+					<Button variant="ghost" size="sm" disabled={blocked} onkeydown={onKey} onclick={download}>
+						{t('downloads.title')}
 					</Button>
 				{/if}
 				{#if onRemove}

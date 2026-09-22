@@ -18,6 +18,7 @@ use tokio::sync::Mutex;
 
 use crate::db::{now_secs, Db, StoredAccount};
 use crate::discord::DiscordHandle;
+use crate::downloads::DownloadManager;
 use crate::listentogether::{LtSession, SyncCommand};
 use crate::media::MediaHandle;
 use crate::orchestrator::{Orchestrator, PlaybackData, PlaybackPing, ResolveError};
@@ -50,6 +51,8 @@ pub struct AppState {
     discord: Option<DiscordHandle>,
     /// Last.fm scrobbler. Same feed again; parks until a session key is set (titlebar button).
     pub lastfm: crate::lastfm::LastfmHandle,
+    /// Persistent offline library and its bounded download workers.
+    pub downloads: Arc<DownloadManager>,
     queue: Mutex<QueueState>,
     /// Bumped on every explicit `play`/jump so superseded async resolves discard their result
     /// (cancellation without JoinHandle bookkeeping). context/06 §6.
@@ -379,6 +382,7 @@ impl AppState {
         media: Option<MediaHandle>,
         discord: Option<DiscordHandle>,
         lastfm: crate::lastfm::LastfmHandle,
+        downloads: Arc<DownloadManager>,
     ) -> Self {
         AppState {
             it,
@@ -392,6 +396,7 @@ impl AppState {
             media,
             discord,
             lastfm,
+            downloads,
             queue: Mutex::new(QueueState::default()),
             auth: tokio::sync::Mutex::default(),
             history_pinged: AtomicBool::new(false),
@@ -1026,6 +1031,12 @@ impl AppState {
                 ResolveError::LocalMissing(path.to_owned())
             });
         }
+        // A complete offline copy is the source of truth for downloaded tracks. It intentionally
+        // bypasses the URL cache and YouTube history registration: playback can remain fully
+        // offline even when a cached googlevideo URL would otherwise be available.
+        if let Some(data) = crate::downloads::playback_data(&self.db, video_id) {
+            return Ok(data);
+        }
         // Latency cache first (context/11) — honor expiry, never a source of truth.
         //
         // The URL has to outlive the *track*, not just the load. googlevideo keeps serving a
@@ -1042,6 +1053,7 @@ impl AppState {
                 video_id: video_id.to_owned(),
                 stream_url: c.url,
                 itag: c.itag,
+                mime_type: None,
                 headers: Default::default(),
                 expires_in_seconds: c.expires_at - now,
                 loudness_db: c.loudness_db,

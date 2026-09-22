@@ -10,6 +10,7 @@ use innertube::{
 use tauri::{Emitter, State};
 
 use crate::blocked::BlockedArtist;
+use crate::downloads::{CollectionRequest, DownloadCollection, DownloadLibrary};
 use crate::state::{AppState, ON_REPEAT_ID, ON_REPEAT_LIMIT, ON_REPEAT_WINDOW_SECS};
 
 type St<'a> = State<'a, Arc<AppState>>;
@@ -202,7 +203,7 @@ pub async fn get_queue(state: St<'_>) -> Result<serde_json::Value, String> {
 /// `visitor_data`) and internal blobs (`queue_json`, `queue_index`, `queue_position`) never cross
 /// into the webview: they'd otherwise ship the login credential to the renderer on every open, and
 /// the webview can't overwrite them either.
-const UI_SETTINGS: [&str; 22] = [
+const UI_SETTINGS: [&str; 23] = [
     "volume",
     "proxy",
     "quality",
@@ -225,6 +226,7 @@ const UI_SETTINGS: [&str; 22] = [
     "crossfade",
     "crossfade_secs",
     "locale",
+    "download_quality",
 ];
 
 /// Resolve the music video for `video_id` and hand back a `limusicvideo://` URL the player view
@@ -291,6 +293,9 @@ pub async fn get_settings(state: St<'_>) -> Result<serde_json::Value, String> {
         .map(|(k, v)| (k, serde_json::Value::String(v)))
         .collect();
     map.insert("native_chrome".into(), native_chrome(&state.db).into());
+    map.entry("download_quality").or_insert_with(|| {
+        serde_json::Value::String(crate::downloads::download_quality(&state.db))
+    });
     Ok(serde_json::Value::Object(map))
 }
 
@@ -531,6 +536,117 @@ pub async fn app_icon_path(app: tauri::AppHandle) -> Result<Option<String>, Stri
 pub async fn clear_caches(state: St<'_>) -> Result<(), String> {
     state.clear_caches();
     Ok(())
+}
+
+// --- offline downloads ---------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn get_downloads(state: St<'_>) -> Result<DownloadLibrary, String> {
+    Ok(crate::downloads::snapshot(&state.db))
+}
+
+#[tauri::command]
+pub async fn download_tracks(state: St<'_>, items: Vec<SongItem>) -> Result<(), String> {
+    if crate::downloads::parent(&state.db).is_none() {
+        return Err("Choose a downloads folder first".into());
+    }
+    state.downloads.enqueue(items).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn download_collection(state: St<'_>, request: CollectionRequest) -> Result<(), String> {
+    if crate::downloads::parent(&state.db).is_none() {
+        return Err("Choose a downloads folder first".into());
+    }
+    state.downloads.enqueue_collection(request).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_download_collection(
+    state: St<'_>,
+    id: String,
+) -> Result<DownloadCollection, String> {
+    let collection =
+        state.db.get_download_collection(&id).ok_or("download collection not found")?;
+    Ok(DownloadCollection {
+        id: collection.id.clone(),
+        kind: collection.kind,
+        title: collection.title,
+        subtitle: collection.subtitle,
+        thumbnail: collection.thumbnail,
+        state: collection.state,
+        error: collection.error,
+        items: state
+            .db
+            .download_collection_tracks(&id)
+            .into_iter()
+            .filter_map(|t| serde_json::from_str(&t.song_json).ok())
+            .collect(),
+    })
+}
+
+#[tauri::command]
+pub async fn pause_download(state: St<'_>, video_id: String) -> Result<(), String> {
+    state.downloads.pause(&video_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn resume_download(state: St<'_>, video_id: String) -> Result<(), String> {
+    state.downloads.retry(&video_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn retry_download(state: St<'_>, video_id: String) -> Result<(), String> {
+    state.downloads.retry(&video_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_download(state: St<'_>, video_id: String) -> Result<(), String> {
+    state.downloads.cancel(&video_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_download(state: St<'_>, video_id: String) -> Result<(), String> {
+    state.downloads.remove(&video_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn remove_download_collection(state: St<'_>, id: String) -> Result<(), String> {
+    state.downloads.remove_collection(&id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn clear_downloads(state: St<'_>) -> Result<(), String> {
+    state.downloads.clear().await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn set_download_parent(state: St<'_>, path: String) -> Result<(), String> {
+    state.downloads.set_parent(&path).await
+}
+
+/// Select the managed download parent with a desktop-native picker where available. On KDE this
+/// uses kdialog so users do not get a GTK-looking folder chooser from the Tauri fallback.
+#[tauri::command]
+pub async fn pick_download_parent(
+    initial: Option<String>,
+    title: String,
+) -> Result<Option<String>, String> {
+    crate::downloads::pick_download_parent(initial, title).await
+}
+
+#[tauri::command]
+pub async fn set_download_quality(state: St<'_>, quality: String) -> Result<(), String> {
+    crate::downloads::set_download_quality(&state.db, &quality)
 }
 
 // --- auth (context/15) ---------------------------------------------------------------------

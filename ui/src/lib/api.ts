@@ -62,6 +62,53 @@ export interface SongItem {
 	is_upload?: boolean;
 }
 
+// App-managed offline library. Paths never leave Rust except for display; audio is resolved by
+// the normal playback command after Rust has verified a complete managed file.
+export type DownloadState = 'queued' | 'resolving' | 'downloading' | 'paused' | 'completed' | 'failed';
+export interface DownloadItem {
+	song: SongItem;
+	state: DownloadState | string;
+	quality: 'LOW' | 'HIGH' | string;
+	mimeType?: string;
+	sizeBytes: number;
+	downloadedBytes: number;
+	error?: string;
+}
+export interface DownloadCollection {
+	id: string;
+	kind: string;
+	title: string;
+	subtitle?: string;
+	thumbnail?: string;
+	state: DownloadState | string;
+	error?: string;
+	items: SongItem[];
+}
+export interface DownloadLibrary {
+	parent?: string;
+	managedDir?: string;
+	storageAvailable?: boolean;
+	bytes: number;
+	items: DownloadItem[];
+	collections: DownloadCollection[];
+}
+export interface DownloadProgress {
+	videoId: string;
+	state: DownloadState | string;
+	downloadedBytes: number;
+	sizeBytes: number;
+	error?: string;
+}
+export interface DownloadCollectionRequest {
+	id: string;
+	kind: string;
+	title: string;
+	subtitle?: string;
+	thumbnail?: string;
+	items: SongItem[];
+	continuation?: string;
+}
+
 export interface NowPlaying {
 	videoId: string;
 	title: string;
@@ -577,6 +624,27 @@ export const addLocalFolder = (path: string) => invoke<LocalLibrary>('add_local_
 export const removeLocalFolder = (path: string) =>
 	invoke<LocalLibrary>('remove_local_folder', { path });
 
+// --- offline downloads ----------------------------------------------------------------------
+export const getDownloads = () => invoke<DownloadLibrary>('get_downloads');
+export const downloadTracks = (items: SongItem[]) => invoke<void>('download_tracks', { items });
+export const downloadCollection = (request: DownloadCollectionRequest) =>
+	invoke<void>('download_collection', { request });
+export const getDownloadCollection = (id: string) =>
+	invoke<DownloadCollection>('get_download_collection', { id });
+export const pauseDownload = (videoId: string) => invoke<void>('pause_download', { videoId });
+export const resumeDownload = (videoId: string) => invoke<void>('resume_download', { videoId });
+export const retryDownload = (videoId: string) => invoke<void>('retry_download', { videoId });
+export const cancelDownload = (videoId: string) => invoke<void>('cancel_download', { videoId });
+export const removeDownload = (videoId: string) => invoke<void>('remove_download', { videoId });
+export const removeDownloadCollection = (id: string) =>
+	invoke<void>('remove_download_collection', { id });
+export const clearDownloads = () => invoke<void>('clear_downloads');
+export const setDownloadParent = (path: string) => invoke<void>('set_download_parent', { path });
+export const pickDownloadParent = (initial: string | undefined, title: string) =>
+	invoke<string | null>('pick_download_parent', { initial: initial ?? null, title });
+export const setDownloadQuality = (quality: 'LOW' | 'HIGH') =>
+	invoke<void>('set_download_quality', { quality });
+
 // --- blocked artists (blocked.rs, plan 046) ---------------------------------------------------
 /** One entry in the block list. `id` is the channel browseId when the blocked row linked one. */
 export interface BlockedArtist {
@@ -702,6 +770,10 @@ export const onAccountSelectionRequired = (cb: () => void): Promise<UnlistenFn> 
  */
 export const onLocalChanged = (cb: (removed: string[]) => void): Promise<UnlistenFn> =>
 	listen<{ removed: string[] }>('local-changed', (e) => cb(e.payload.removed));
+export const onDownloadsChanged = (cb: (library: DownloadLibrary) => void): Promise<UnlistenFn> =>
+	listen<DownloadLibrary>('downloads-changed', (e) => cb(e.payload));
+export const onDownloadProgress = (cb: (progress: DownloadProgress) => void): Promise<UnlistenFn> =>
+	listen<DownloadProgress>('download-progress', (e) => cb(e.payload));
 export const onLoginError = (cb: (msg: string) => void): Promise<UnlistenFn> =>
 	listen<string>('login-error', (e) => cb(e.payload));
 export const onLoginDone = (cb: () => void): Promise<UnlistenFn> =>

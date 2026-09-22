@@ -26,6 +26,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import LibrarySongs from '$lib/components/LibrarySongs.svelte';
 	import LocalMusic from '$lib/components/LocalMusic.svelte';
+	import Downloads from '$lib/components/Downloads.svelte';
 	import MediaCard from '$lib/components/MediaCard.svelte';
 	import MediaCardSkeleton from '$lib/components/MediaCardSkeleton.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
@@ -250,6 +251,9 @@
 			<Tabs.Trigger value="local">
 				<HugeiconsIcon icon={DriveIcon} class="h-4 w-4" /> {t('library.local_tab')}
 			</Tabs.Trigger>
+			<Tabs.Trigger value="downloads">
+				<HugeiconsIcon icon={CloudSyncIcon} class="h-4 w-4" /> {t('downloads.title')}
+			</Tabs.Trigger>
 		</Tabs.List>
 		<!-- Every branch below is gated on `tab`, because bits-ui never unmounts an inactive panel: it
 		     renders every one and hides the inactive ones. Left alone, opening Library builds each card twice
@@ -324,7 +328,8 @@
 			{/if}
 		</Tabs.Content>
 		<Tabs.Content value="local">{#if tab === 'local'}<LocalMusic />{/if}</Tabs.Content>
-		{#if tab === 'local' || tab === 'songs' || tab === 'uploads'}
+		<Tabs.Content value="downloads">{#if tab === 'downloads'}<Downloads />{/if}</Tabs.Content>
+		{#if tab === 'local' || tab === 'songs' || tab === 'uploads' || tab === 'downloads'}
 			<!-- nothing else: the grid states below have no bearing on these three -->
 		{:else if loading}
 			<div class="card-grid">

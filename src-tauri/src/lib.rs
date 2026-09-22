@@ -8,6 +8,7 @@ mod commands;
 mod db;
 mod diagnostics;
 mod discord;
+mod downloads;
 mod hotkeys;
 mod http;
 mod lastfm;
@@ -35,6 +36,7 @@ use tauri::{Emitter, Manager};
 
 use cipher::{CipherDeobfuscator, PlayerConfigStore};
 use db::Db;
+use downloads::DownloadManager;
 use orchestrator::Orchestrator;
 use potoken::PoTokenGenerator;
 use state::AppState;
@@ -418,6 +420,7 @@ pub fn run() {
                 .filter(|u| !u.is_empty())
                 .unwrap_or_else(|| "wss://fedora-1.tail9c4985.ts.net/ws".into());
             let (lt, lt_sync_rx) = listentogether::LtSession::new(handle.clone(), lt_url);
+            let downloads = DownloadManager::new(db.clone(), handle.clone(), orchestrator.clone());
 
             let app_state = Arc::new(AppState::new(
                 it,
@@ -431,6 +434,7 @@ pub fn run() {
                 media,
                 discord,
                 lastfm,
+                downloads,
             ));
             app.manage(app_state.clone());
 
@@ -447,6 +451,8 @@ pub fn run() {
             // Local music artwork reaches the webview over the asset protocol, whose configured
             // scope is empty — the folders it may read are the ones the user picked (local.rs).
             local::allow_music_paths(&handle, &app_state.db);
+            downloads::allow_paths(&handle, &app_state.db);
+            app_state.downloads.resume_queued();
 
             // System tray: playback controls + show/quit while running in the background.
             if let Err(e) = tray::init(&handle) {
@@ -668,6 +674,20 @@ pub fn run() {
             commands::reset_global_hotkeys,
             commands::get_stream_clients,
             commands::clear_caches,
+            commands::get_downloads,
+            commands::download_tracks,
+            commands::download_collection,
+            commands::get_download_collection,
+            commands::pause_download,
+            commands::resume_download,
+            commands::retry_download,
+            commands::cancel_download,
+            commands::remove_download,
+            commands::remove_download_collection,
+            commands::clear_downloads,
+            commands::set_download_parent,
+            commands::pick_download_parent,
+            commands::set_download_quality,
             commands::set_app_icon,
             commands::app_icon_path,
             commands::get_account,

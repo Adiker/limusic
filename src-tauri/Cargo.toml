@@ -50,6 +50,7 @@ souvlaki = { version = "0.8.3", default-features = false, features = ["use_zbus"
 listen-protocol = { workspace = true }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures-util = { workspace = true }
+fs2 = "0.4"
 rand = { workspace = true }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 discord-rich-presence = "1.1.0"

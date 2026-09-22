@@ -26,7 +26,7 @@
 	import { HELP_COMBO } from '$lib/shortcuts';
 	import { copyText } from '$lib/clipboard';
 	import * as api from '$lib/api';
-	import { blocked, prefs, refreshView, ui, toast, unblockArtist } from '$lib/player.svelte';
+	import { blocked, pickDownloadFolder, prefs, refreshView, ui, toast, unblockArtist } from '$lib/player.svelte';
 	import { win } from '$lib/win.svelte';
 	import ColorPicker from '$lib/components/ColorPicker.svelte';
 	import Changelog from '$lib/components/Changelog.svelte';
@@ -180,6 +180,7 @@
 		LOCALES.find((l) => l.id === currentLocale.id)?.nativeLabel ?? currentLocale.id
 	);
 	let settings = $state<Record<string, string>>({});
+	let downloadLibrary = $state<api.DownloadLibrary | null>(null);
 	let clients = $state<string[]>([]);
 	let proxyInput = $state('');
 	/// How many blocked artists the section shows before the "show all" toggle. The list is never
@@ -284,9 +285,10 @@
 
 	async function load() {
 		try {
-			const [s, c] = await Promise.all([api.getSettings(), api.getStreamClients()]);
+			const [s, c, d] = await Promise.all([api.getSettings(), api.getStreamClients(), api.getDownloads()]);
 			settings = s;
 			clients = c;
+			downloadLibrary = d;
 			proxyInput = s.proxy ?? '';
 		} catch (e) {
 			toast.error(String(e));
@@ -295,6 +297,7 @@
 	}
 
 	const quality = $derived(settings.quality ?? 'HIGH');
+	const downloadQuality = $derived(settings.download_quality ?? 'HIGH');
 	const historyOn = $derived(settings.enable_history !== 'false');
 	const autoplayOn = $derived(settings.autoplay !== 'false');
 	// Off by default: experimental, and it runs a second decoder while tracks overlap.
@@ -347,6 +350,34 @@
 		// Cached URLs are keyed by video only, so clear them to apply the new quality everywhere.
 		await api.clearCaches();
 		toast.success(t('toasts.quality_updated'));
+	}
+
+	async function setDownloadQuality(q: 'LOW' | 'HIGH') {
+		settings.download_quality = q;
+		await api.setDownloadQuality(q);
+	}
+
+	async function chooseDownloadFolder() {
+		const path = await pickDownloadFolder(downloadLibrary?.parent);
+		if (!path) return;
+		try {
+			await api.setDownloadParent(path);
+			downloadLibrary = await api.getDownloads();
+			toast.success(t('downloads.folder_updated'));
+		} catch (e) {
+			toast.error(String(e));
+		}
+	}
+
+	async function removeAllDownloads() {
+		if (!confirm(t('downloads.remove_all_confirm'))) return;
+		try {
+			await api.clearDownloads();
+			downloadLibrary = await api.getDownloads();
+			toast.success(t('downloads.empty'));
+		} catch (e) {
+			toast.error(String(e));
+		}
 	}
 
 	async function setHistory(on: boolean) {
@@ -842,9 +873,24 @@
 							<h3 class={LABEL}>{t('settings.sections.storage')}</h3>
 							<div class={CARD}>
 								{@render row({
+									title: t('settings.data.download_quality'),
+									desc: t('settings.data.download_quality_hint'),
+									control: downloadQualityPicker
+								})}
+								{@render row({
+									title: t('settings.data.download_folder'),
+									desc: downloadLibrary?.managedDir ?? t('downloads.no_folder'),
+									control: downloadFolderPicker
+								})}
+								{@render row({
 									title: t('settings.data.clear_cache'),
 									desc: t('settings.data.clear_cache_hint'),
 									control: clearButton
+								})}
+								{@render row({
+									title: t('downloads.remove_all'),
+									desc: t('downloads.remove_all_confirm'),
+									control: removeAllDownloadsButton
 								})}
 							</div>
 						</section>
@@ -1304,6 +1350,31 @@
 	<Button variant="destructive" size="sm" onclick={doClearCaches} disabled={clearing}>
 		{clearing ? t('common.loading') : t('settings.data.clear_cache_button')}
 	</Button>
+{/snippet}
+
+{#snippet downloadQualityPicker()}
+	<div class="flex rounded-lg bg-muted p-0.5">
+		{#each ['LOW', 'HIGH'] as q}
+			<button
+				type="button"
+				onclick={() => setDownloadQuality(q as 'LOW' | 'HIGH')}
+				aria-pressed={downloadQuality === q}
+				class="cursor-pointer rounded-md px-3.5 py-1.5 text-xs font-medium transition-colors {downloadQuality === q
+					? 'bg-background text-foreground shadow-sm'
+					: 'text-muted-foreground hover:text-foreground'}"
+			>
+				{q}
+			</button>
+		{/each}
+	</div>
+{/snippet}
+
+{#snippet downloadFolderPicker()}
+	<Button variant="outline" size="sm" onclick={chooseDownloadFolder}>{t('downloads.choose_folder')}</Button>
+{/snippet}
+
+{#snippet removeAllDownloadsButton()}
+	<Button variant="destructive" size="sm" onclick={removeAllDownloads}>{t('downloads.remove_all')}</Button>
 {/snippet}
 
 {#snippet copyDiagButton()}

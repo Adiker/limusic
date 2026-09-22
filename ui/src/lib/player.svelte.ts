@@ -2,6 +2,7 @@
 // `playback`/`auth` and read them reactively; the Rust side drives them via Tauri events.
 // context/11 UI contract — this module only calls commands / subscribes to events.
 import { browser } from '$app/environment';
+import { open as openFolder } from '@tauri-apps/plugin-dialog';
 import * as api from './api';
 import type {
 	Account,
@@ -59,6 +60,79 @@ export const prefs = $state({
 	 *  each drew its own indicator, so turning it off in one left the other stale. One owner. */
 	discordRpc: false
 });
+
+/** App-managed offline library. The complete snapshot is sent only for structural changes;
+ * progress events patch one row so a large playlist does not churn the whole Library view. */
+export const downloads = $state({
+	library: null as api.DownloadLibrary | null,
+	loading: false,
+	error: null as string | null
+});
+
+export async function loadDownloads() {
+	downloads.loading = true;
+	downloads.error = null;
+	try {
+		downloads.library = await api.getDownloads();
+	} catch (e) {
+		downloads.error = String(e);
+	} finally {
+		downloads.loading = false;
+	}
+}
+
+/** Pick the download parent with KDE's native Qt chooser when the app is running on Plasma. The
+ * Tauri dialog remains a portable fallback for other desktops and for systems without kdialog. */
+export async function pickDownloadFolder(initial?: string): Promise<string | null> {
+	try {
+		return await api.pickDownloadParent(initial, t('downloads.choose_folder'));
+	} catch {
+		const path = await openFolder({
+			directory: true,
+			multiple: false,
+			title: t('downloads.choose_folder')
+		});
+		return typeof path === 'string' ? path : null;
+	}
+}
+
+export async function queueDownloads(items: SongItem[]) {
+	if (!items.length) return;
+	try {
+		await api.downloadTracks(items);
+	} catch (error) {
+		// The first Download action is also the folder setup flow. Keep it here so songs, cards and
+		// bulk selection all behave alike instead of each menu growing its own picker logic.
+		if (!String(error).toLowerCase().includes('folder')) throw error;
+		const path = await pickDownloadFolder(downloads.library?.parent);
+		if (!path) return;
+		await api.setDownloadParent(path);
+		await api.downloadTracks(items);
+	}
+	await loadDownloads();
+}
+
+export async function queueDownloadCollection(request: api.DownloadCollectionRequest) {
+	try {
+		await api.downloadCollection(request);
+	} catch (error) {
+		if (!String(error).toLowerCase().includes('folder')) throw error;
+		const path = await pickDownloadFolder(downloads.library?.parent);
+		if (!path) return;
+		await api.setDownloadParent(path);
+		await api.downloadCollection(request);
+	}
+	await loadDownloads();
+}
+
+function patchDownloadProgress(p: api.DownloadProgress) {
+	const item = downloads.library?.items.find((entry) => entry.song.video_id === p.videoId);
+	if (!item) return;
+	item.state = p.state;
+	item.downloadedBytes = p.downloadedBytes;
+	item.sizeBytes = p.sizeBytes;
+	item.error = p.error;
+}
 
 /** videoId → the in-flight or settled loopback URL for its music video (null when it has none).
  *
@@ -1248,6 +1322,8 @@ export function initApp(mini = false): () => void {
 		api.onPlaybackNotice((msg) => toast(msg)), // auto-skipped an unplayable track
 		api.onCoverError((msg) => toast.error(msg)), // playlist artwork YouTube wouldn't take
 		api.onLocalChanged(forgetLocal), // a local file turned out to be gone — drop it everywhere
+		api.onDownloadsChanged((library) => (downloads.library = library)),
+		api.onDownloadProgress(patchDownloadProgress),
 		api.onAuthChanged((a) => {
 			auth.account = a;
 			resetLibraryForAccount();
@@ -1312,6 +1388,7 @@ export function initApp(mini = false): () => void {
 			}
 		})
 		.catch(() => {});
+	loadDownloads();
 	api.getAccount()
 		.then((a) => {
 			auth.account = a;

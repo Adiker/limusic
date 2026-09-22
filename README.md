@@ -43,6 +43,8 @@ YouTube Music client, and grew from there.
 - **Music videos**: optional, the video plays where the artwork sits, with the same gapless audio behind it
 - **Mini Player and theater mode**: shrink to a strip that keeps playing, or go fullscreen with cover and lyrics side by side
 - **Local Music**: play your own files, with all metadata still intact
+- **Offline Downloads (fork-only)**: keep app-managed copies of songs, albums and playlists in a
+  separate Downloaded library; downloads resume after restart and take priority over streaming
 - **Last.fm scrobbling**: connect once from the title bar, every play is scrobbled
 - **Discord Rich Presence**: artwork, live progress bar, one click to toggle
 - **OS media keys** and now-playing integration (MPRIS on Linux, SMTC on Windows, plus playback buttons on the Windows taskbar preview)
@@ -95,6 +97,20 @@ Community-maintained repositories, packaged and updated by their maintainers rat
 | Linux (Arch) | [AUR](https://aur.archlinux.org/packages/limusic-bin) | `yay -S limusic-bin`. Maintained by [@xiryuudev](https://github.com/xiryuudev), updates through pacman |
 | Linux (Fedora COPR) | [COPR](https://copr.fedorainfracloud.org/coprs/oguzkarayemis/limusic/) | `sudo dnf copr enable oguzkarayemis/limusic` then `sudo dnf install limusic`. Maintained by [@oguzkarayemis](https://github.com/oguzkarayemis), updates through dnf |
 | Linux (openSUSE Tumbleweed) | [OBS](https://build.opensuse.org/package/show/home:itachi_re/limusic) | `sudo zypper ar -p 100 https://download.opensuse.org/repositories/home:/itachi_re/openSUSE_Tumbleweed/home:itachi_re.repo` then `sudo zypper install limusic`. Maintained by [@itachi-re](https://github.com/itachi-re), updates through zypper. The repo carries the maintainer's other packages too, so `-p 100` keeps it below the distro repos |
+
+---
+
+## Offline Downloads (fork-only)
+
+This fork keeps downloads inside LiMusic rather than exporting files. Open **Library → Downloaded**
+or use **Download** from a song, album, playlist, or multi-selection. The first download asks for a
+parent folder and creates a managed `LiMusic Downloads` directory containing audio and artwork;
+metadata and collection order stay in SQLite. `HIGH`/`LOW` download quality is independent of
+streaming quality, and changing the folder migrates complete and partial files before activating it.
+
+Downloads are not sent to upstream Limusic. They are available after sign-out and are used before a
+network stream whenever a complete file is present. **Clear cache** does not remove them; use
+**Remove all downloads** when that is intended.
 
 ---
 

@@ -41,6 +41,7 @@
         playFrom,
         startRadio,
         toast,
+        queueDownloadCollection,
         noteLibrary,
         toggleSaved,
     } from "$lib/player.svelte";
@@ -72,6 +73,16 @@
     // Playing, shuffling and Shortcuts all work exactly the same.
     const isLocal = $derived(api.isLocalId(id));
     const nowId = $derived(playback.now?.videoId);
+
+    async function downloadThisAlbum() {
+        if (!album) return;
+        try {
+            await queueDownloadCollection({ id, kind: 'album', title: album.title ?? t('common.album_singular'), subtitle: album.subtitle, thumbnail: album.thumbnail, items: album.items });
+            toast.success(t('downloads.collection_started'));
+        } catch (e) {
+            toast.error(String(e));
+        }
+    }
 
     async function load(aid: string) {
         const key = `album:${aid}`;
@@ -349,6 +360,11 @@
                 >
                     <HugeiconsIcon icon={ShuffleIcon} class="h-4 w-4" /> {t("common.shuffle")}
                 </button>
+                <button
+                    class="flex cursor-pointer items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-semibold transition hover:bg-accent/10 disabled:opacity-50"
+                    onclick={downloadThisAlbum}
+                    disabled={!album.items.length}
+                >↓ {t('downloads.title')}</button>
                 <!-- Local albums are already in the Local tab; everything else is savable, signed
                      in or not. -->
                 {#if !isLocal}

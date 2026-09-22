@@ -73,7 +73,8 @@
 		setRating,
 		patchLibraryPlaylist,
 		lastPlaylistAdd,
-		lastPlaylistRemove
+		lastPlaylistRemove,
+		queueDownloadCollection
 	} from '$lib/player.svelte';
 
 	// `$state.raw`, not `$state`: a deep proxy makes every read of a row go through a trap and
@@ -87,10 +88,33 @@
 	let error = $state<string | null>(null);
 	let loadingMore = $state(false);
 	let moreError = $state(false);
+	let downloadingCollection = $state(false);
 	let inflight: Promise<void> | null = null;
 	let confirmingDelete = $state(false);
 	// A random song's cover, the hero backdrop when the playlist has no cover of its own.
 	let bgImage = $state<string | null>(null);
+
+	async function downloadThisPlaylist() {
+		if (!pl || downloadingCollection) return;
+		downloadingCollection = true;
+		try {
+			let items = [...pl.items];
+			let token = pl.continuation;
+			await queueDownloadCollection({ id, kind: 'playlist', title: pl.title ?? t('common.playlist_singular'), subtitle: pl.subtitle, thumbnail: pl.thumbnail, items, continuation: token });
+			for (let pageNo = 0; token && pageNo < 100; pageNo++) {
+				const more = await api.getPlaylistMore(token);
+				items = [...items, ...more.items];
+				token = more.continuation;
+				await queueDownloadCollection({ id, kind: 'playlist', title: pl.title ?? t('common.playlist_singular'), subtitle: pl.subtitle, thumbnail: pl.thumbnail, items, continuation: token });
+			}
+			toast.success(t('downloads.collection_started'));
+			if (token) toast(t('downloads.collection_partial'));
+		} catch (e) {
+			toast.error(String(e));
+		} finally {
+			downloadingCollection = false;
+		}
+	}
 
 	// ⋯ options menu, positioned `fixed` at the button so it isn't clipped (matches TrackRow).
 	let menuOpen = $state(false);
@@ -944,6 +968,9 @@
 							>
 								<HugeiconsIcon icon={PlayIcon} class="h-4 w-4" />
 								{preparing || resorting ? t('common.sorting') : t('player.play')}
+							</Button>
+							<Button variant="outline" size="sm" onclick={downloadThisPlaylist} disabled={downloadingCollection || !pl.items.length}>
+								{downloadingCollection ? t('common.loading') : `↓ ${t('downloads.title')}`}
 							</Button>
 							{#if confirmingDelete}
 								<div class="flex items-center gap-2 rounded-lg border border-destructive/40 px-2 py-1">

@@ -48,7 +48,9 @@
 		toast,
 		startRadio,
 		toggleRating,
-		toggleSongLibrary
+		toggleSongLibrary,
+		downloads,
+		queueDownloads
 	} from '$lib/player.svelte';
 	import { t } from '$lib/i18n.svelte';
 	import { invalidateCachedPrefix } from '$lib/pagecache';
@@ -136,6 +138,15 @@
 	// A local file has no YouTube identity: liking it or putting it in a YTM playlist is not a
 	// thing, so those items don't show. Queue, shortcuts and go-to-album work normally.
 	const isLocal = $derived(api.isLocalId(song.video_id));
+	const offline = $derived(downloads.library?.items.find((item) => item.song.video_id === song.video_id));
+	async function toggleDownload() {
+		try {
+			if (offline) await api.removeDownload(song.video_id);
+			else await queueDownloads([song]);
+		} catch (e) {
+			toast.error(String(e));
+		}
+	}
 	// "Remove from this playlist", for a row playing out of a playlist (issue #270). What the three
 	// conditions are and why is in `removableFromPlaylist` (queue.ts), where they are checkable.
 	const removable = $derived(removableFromPlaylist(song, playlistId, savedIn.map));
@@ -274,6 +285,15 @@
 					class="h-4 w-4"
 				/>
 				{inLib ? t('library.remove_from_library') : t('library.save_to_library')}
+			</button>
+		{/if}
+		{#if !isLocal}
+			<button
+				class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent/10"
+				onclick={(e) => run(e, () => void toggleDownload())}
+			>
+				<span class="w-4 text-center" aria-hidden="true">{offline?.state === 'completed' ? '✓' : '↓'}</span>
+				{offline ? t('downloads.remove') : t('downloads.title')}
 			</button>
 		{/if}
 		{#if song.artist_id}

@@ -8,6 +8,49 @@ use rusqlite::Connection;
 
 pub struct Db(Mutex<Connection>);
 
+/// A persisted offline download. Paths are relative to the managed download directory; keeping
+/// them relative is what makes a storage-folder migration atomic (the database never has to be
+/// rewritten halfway through a copy).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadRow {
+    pub video_id: String,
+    pub song_json: String,
+    pub relative_path: String,
+    pub part_path: String,
+    pub artwork_path: Option<String>,
+    pub state: String,
+    pub quality: String,
+    pub mime_type: Option<String>,
+    pub size_bytes: i64,
+    pub downloaded_bytes: i64,
+    pub error: Option<String>,
+    pub updated_at: i64,
+    pub standalone: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadCollectionRow {
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub thumbnail: Option<String>,
+    pub continuation: Option<String>,
+    pub state: String,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadCollectionTrack {
+    pub collection_id: String,
+    pub video_id: String,
+    pub position: i64,
+    pub song_json: String,
+}
+
 /// The stored-account key (multi-account support): a stable per-Google-account identifier derived
 /// from the long-lived `SAPISID` cookie value, the one piece of the jar Google does not rotate.
 /// Versioned MD5 (the `md-5` crate is already here for the Last.fm signature), hex-encoded,
@@ -135,6 +178,41 @@ impl Db {
                 visitor_data           TEXT,
                 added_at               INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS downloads (
+                video_id          TEXT PRIMARY KEY,
+                song_json         TEXT NOT NULL,
+                relative_path     TEXT NOT NULL,
+                part_path         TEXT NOT NULL,
+                artwork_path      TEXT,
+                state             TEXT NOT NULL,
+                quality           TEXT NOT NULL,
+                mime_type         TEXT,
+                size_bytes        INTEGER NOT NULL DEFAULT 0,
+                downloaded_bytes  INTEGER NOT NULL DEFAULT 0,
+                error             TEXT,
+                updated_at        INTEGER NOT NULL,
+                standalone        INTEGER NOT NULL DEFAULT 1
+            );
+            CREATE TABLE IF NOT EXISTS download_collection (
+                id             TEXT PRIMARY KEY,
+                kind           TEXT NOT NULL,
+                title          TEXT NOT NULL,
+                subtitle       TEXT,
+                thumbnail      TEXT,
+                continuation   TEXT,
+                state          TEXT NOT NULL,
+                error          TEXT
+            );
+            CREATE TABLE IF NOT EXISTS download_collection_track (
+                collection_id TEXT NOT NULL,
+                video_id      TEXT NOT NULL,
+                position      INTEGER NOT NULL,
+                song_json     TEXT NOT NULL,
+                PRIMARY KEY (collection_id, video_id),
+                FOREIGN KEY (collection_id) REFERENCES download_collection(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS download_collection_track_video
+                ON download_collection_track(video_id);
             "#,
         )?;
         // Migrate pre-Phase-4 DBs that predate the loudness_db column. Errors ("duplicate column")
@@ -143,6 +221,8 @@ impl Db {
         // Same for the AlbumArtist tag, which older scans read but never stored. The SCAN_VERSION
         // bump in local.rs is what refills it; this only makes the column exist.
         let _ = conn.execute("ALTER TABLE local_tracks ADD COLUMN album_artist TEXT", []);
+        let _ = conn
+            .execute("ALTER TABLE downloads ADD COLUMN standalone INTEGER NOT NULL DEFAULT 1", []);
         // Same one-shot for the music-video verdict, except the rows that predate it have to go:
         // a cache hit skips `/player`, so a NULL there reads as "no music video" for as long as
         // the URL lives (hours). `execute` succeeds only on the launch that adds the column, so
@@ -277,6 +357,244 @@ impl Db {
     pub fn delete_setting(&self, key: &str) {
         let conn = self.0.lock().unwrap();
         let _ = conn.execute("DELETE FROM settings WHERE key = ?1", [key]);
+    }
+
+    // --- offline downloads -----------------------------------------------------------------
+
+    pub fn get_download(&self, video_id: &str) -> Option<DownloadRow> {
+        let conn = self.0.lock().unwrap();
+        conn.query_row(
+            "SELECT video_id, song_json, relative_path, part_path, artwork_path, state, quality,
+                    mime_type, size_bytes, downloaded_bytes, error, updated_at, standalone
+             FROM downloads WHERE video_id = ?1",
+            [video_id],
+            |r| {
+                Ok(DownloadRow {
+                    video_id: r.get(0)?,
+                    song_json: r.get(1)?,
+                    relative_path: r.get(2)?,
+                    part_path: r.get(3)?,
+                    artwork_path: r.get(4)?,
+                    state: r.get(5)?,
+                    quality: r.get(6)?,
+                    mime_type: r.get(7)?,
+                    size_bytes: r.get(8)?,
+                    downloaded_bytes: r.get(9)?,
+                    error: r.get(10)?,
+                    updated_at: r.get(11)?,
+                    standalone: r.get::<_, i64>(12).unwrap_or(1) != 0,
+                })
+            },
+        )
+        .ok()
+    }
+
+    pub fn list_downloads(&self) -> Vec<DownloadRow> {
+        let conn = self.0.lock().unwrap();
+        let mut out = Vec::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT video_id, song_json, relative_path, part_path, artwork_path, state, quality,
+                    mime_type, size_bytes, downloaded_bytes, error, updated_at, standalone
+             FROM downloads ORDER BY updated_at DESC",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |r| {
+                Ok(DownloadRow {
+                    video_id: r.get(0)?,
+                    song_json: r.get(1)?,
+                    relative_path: r.get(2)?,
+                    part_path: r.get(3)?,
+                    artwork_path: r.get(4)?,
+                    state: r.get(5)?,
+                    quality: r.get(6)?,
+                    mime_type: r.get(7)?,
+                    size_bytes: r.get(8)?,
+                    downloaded_bytes: r.get(9)?,
+                    error: r.get(10)?,
+                    updated_at: r.get(11)?,
+                    standalone: r.get::<_, i64>(12).unwrap_or(1) != 0,
+                })
+            }) {
+                out.extend(rows.flatten());
+            }
+        }
+        out
+    }
+
+    pub fn upsert_download(&self, row: &DownloadRow) {
+        let conn = self.0.lock().unwrap();
+        let _ = conn.execute(
+            "INSERT INTO downloads(video_id, song_json, relative_path, part_path, artwork_path,
+                                    state, quality, mime_type, size_bytes, downloaded_bytes, error, updated_at, standalone)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             ON CONFLICT(video_id) DO UPDATE SET song_json=excluded.song_json,
+                 relative_path=excluded.relative_path, part_path=excluded.part_path,
+                 artwork_path=excluded.artwork_path, state=excluded.state, quality=excluded.quality,
+                 mime_type=excluded.mime_type, size_bytes=excluded.size_bytes,
+                 downloaded_bytes=excluded.downloaded_bytes, error=excluded.error,
+                 updated_at=excluded.updated_at, standalone=MAX(downloads.standalone, excluded.standalone)",
+            rusqlite::params![
+                row.video_id,
+                row.song_json,
+                row.relative_path,
+                row.part_path,
+                row.artwork_path,
+                row.state,
+                row.quality,
+                row.mime_type,
+                row.size_bytes,
+                row.downloaded_bytes,
+                row.error,
+                row.updated_at,
+                row.standalone as i64,
+            ],
+        );
+    }
+
+    pub fn update_download_progress(
+        &self,
+        video_id: &str,
+        state: &str,
+        size_bytes: i64,
+        downloaded_bytes: i64,
+        mime_type: Option<&str>,
+        error: Option<&str>,
+    ) {
+        let conn = self.0.lock().unwrap();
+        let _ = conn.execute(
+            "UPDATE downloads SET state=?2, size_bytes=?3, downloaded_bytes=?4,
+                    mime_type=COALESCE(?5, mime_type), error=?6, updated_at=?7 WHERE video_id=?1",
+            rusqlite::params![
+                video_id,
+                state,
+                size_bytes,
+                downloaded_bytes,
+                mime_type,
+                error,
+                now_secs()
+            ],
+        );
+    }
+
+    pub fn mark_download_standalone(&self, video_id: &str) {
+        let conn = self.0.lock().unwrap();
+        let _ = conn.execute("UPDATE downloads SET standalone=1 WHERE video_id=?1", [video_id]);
+    }
+
+    pub fn delete_download(&self, video_id: &str) {
+        let mut conn = self.0.lock().unwrap();
+        let Ok(tx) = conn.transaction() else { return };
+        let _ = tx.execute("DELETE FROM download_collection_track WHERE video_id=?1", [video_id]);
+        let _ = tx.execute("DELETE FROM downloads WHERE video_id=?1", [video_id]);
+        let _ = tx.commit();
+    }
+
+    pub fn list_download_collections(&self) -> Vec<DownloadCollectionRow> {
+        let conn = self.0.lock().unwrap();
+        let mut out = Vec::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT id, kind, title, subtitle, thumbnail, continuation, state, error
+             FROM download_collection ORDER BY title COLLATE NOCASE",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |r| {
+                Ok(DownloadCollectionRow {
+                    id: r.get(0)?,
+                    kind: r.get(1)?,
+                    title: r.get(2)?,
+                    subtitle: r.get(3)?,
+                    thumbnail: r.get(4)?,
+                    continuation: r.get(5)?,
+                    state: r.get(6)?,
+                    error: r.get(7)?,
+                })
+            }) {
+                out.extend(rows.flatten());
+            }
+        }
+        out
+    }
+
+    pub fn get_download_collection(&self, id: &str) -> Option<DownloadCollectionRow> {
+        self.list_download_collections().into_iter().find(|c| c.id == id)
+    }
+
+    pub fn upsert_download_collection(&self, row: &DownloadCollectionRow) {
+        let conn = self.0.lock().unwrap();
+        let _ = conn.execute(
+            "INSERT INTO download_collection(id, kind, title, subtitle, thumbnail, continuation, state, error)
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8)
+             ON CONFLICT(id) DO UPDATE SET kind=excluded.kind, title=excluded.title,
+               subtitle=excluded.subtitle, thumbnail=excluded.thumbnail,
+               continuation=excluded.continuation, state=excluded.state, error=excluded.error",
+            rusqlite::params![row.id, row.kind, row.title, row.subtitle, row.thumbnail, row.continuation, row.state, row.error],
+        );
+    }
+
+    pub fn set_download_collection_tracks(&self, id: &str, tracks: &[DownloadCollectionTrack]) {
+        let mut conn = self.0.lock().unwrap();
+        let Ok(tx) = conn.transaction() else { return };
+        let _ = tx.execute("DELETE FROM download_collection_track WHERE collection_id=?1", [id]);
+        for t in tracks {
+            let _ = tx.execute(
+                "INSERT OR REPLACE INTO download_collection_track(collection_id, video_id, position, song_json)
+                 VALUES(?1,?2,?3,?4)",
+                rusqlite::params![t.collection_id, t.video_id, t.position, t.song_json],
+            );
+        }
+        let _ = tx.commit();
+    }
+
+    pub fn download_collection_tracks(&self, id: &str) -> Vec<DownloadCollectionTrack> {
+        let conn = self.0.lock().unwrap();
+        let mut out = Vec::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT collection_id, video_id, position, song_json FROM download_collection_track
+             WHERE collection_id=?1 ORDER BY position",
+        ) {
+            if let Ok(rows) = stmt.query_map([id], |r| {
+                Ok(DownloadCollectionTrack {
+                    collection_id: r.get(0)?,
+                    video_id: r.get(1)?,
+                    position: r.get(2)?,
+                    song_json: r.get(3)?,
+                })
+            }) {
+                out.extend(rows.flatten());
+            }
+        }
+        out
+    }
+
+    pub fn delete_download_collection(&self, id: &str) {
+        let mut conn = self.0.lock().unwrap();
+        let Ok(tx) = conn.transaction() else { return };
+        let _ = tx.execute("DELETE FROM download_collection_track WHERE collection_id=?1", [id]);
+        let _ = tx.execute("DELETE FROM download_collection WHERE id=?1", [id]);
+        let _ = tx.commit();
+    }
+
+    pub fn download_collection_count(&self, video_id: &str) -> i64 {
+        let conn = self.0.lock().unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM download_collection_track WHERE video_id=?1",
+            [video_id],
+            |r| r.get(0),
+        )
+        .unwrap_or(0)
+    }
+
+    pub fn download_bytes(&self) -> i64 {
+        let conn = self.0.lock().unwrap();
+        conn.query_row("SELECT COALESCE(SUM(downloaded_bytes),0) FROM downloads", [], |r| r.get(0))
+            .unwrap_or(0)
+    }
+
+    pub fn clear_downloads(&self) {
+        let mut conn = self.0.lock().unwrap();
+        let Ok(tx) = conn.transaction() else { return };
+        let _ = tx.execute("DELETE FROM download_collection_track", []);
+        let _ = tx.execute("DELETE FROM download_collection", []);
+        let _ = tx.execute("DELETE FROM downloads", []);
+        let _ = tx.commit();
     }
 
     /// Persist the canonical selected identity and its two legacy projections atomically. Older
@@ -1276,6 +1594,54 @@ mod tests {
         assert_eq!(d.get_setting("selected_identity_json"), None);
         assert_eq!(d.get_setting("data_sync_id"), None);
         assert_eq!(d.get_setting("account_json"), None);
+    }
+
+    #[test]
+    fn downloads_round_trip_deduplicate_and_track_collection_membership() {
+        let d = db();
+        let row = DownloadRow {
+            video_id: "v1".into(),
+            song_json: r#"{"video_id":"v1"}"#.into(),
+            relative_path: "audio/v1.webm".into(),
+            part_path: "audio/v1.webm.part".into(),
+            artwork_path: None,
+            state: "queued".into(),
+            quality: "HIGH".into(),
+            mime_type: Some("audio/webm".into()),
+            size_bytes: 10,
+            downloaded_bytes: 2,
+            error: None,
+            updated_at: 1,
+            standalone: false,
+        };
+        d.upsert_download(&row);
+        assert_eq!(d.get_download("v1").unwrap().downloaded_bytes, 2);
+        d.mark_download_standalone("v1");
+        assert!(d.get_download("v1").unwrap().standalone);
+        d.upsert_download(&row);
+        assert!(d.get_download("v1").unwrap().standalone, "dedup must not lose standalone intent");
+        d.upsert_download_collection(&DownloadCollectionRow {
+            id: "c1".into(),
+            kind: "album".into(),
+            title: "Album".into(),
+            subtitle: None,
+            thumbnail: None,
+            continuation: None,
+            state: "queued".into(),
+            error: None,
+        });
+        d.set_download_collection_tracks(
+            "c1",
+            &[DownloadCollectionTrack {
+                collection_id: "c1".into(),
+                video_id: "v1".into(),
+                position: 0,
+                song_json: row.song_json,
+            }],
+        );
+        assert_eq!(d.download_collection_count("v1"), 1);
+        d.delete_download("v1");
+        assert_eq!(d.download_collection_count("v1"), 0);
     }
 }
 
