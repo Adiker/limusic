@@ -187,7 +187,7 @@ impl Format {
     pub fn is_original(&self) -> bool {
         self.audio_track
             .as_ref()
-            .is_none_or(|t| t.is_auto_dubbed.is_none() && t.audio_is_default == Some(true))
+            .is_none_or(|t| t.is_auto_dubbed != Some(true) && t.audio_is_default == Some(true))
     }
     /// Direct, playable URL with no cipher required (present on the non-web fallback clients).
     pub fn direct_url(&self) -> Option<&str> {
@@ -362,7 +362,7 @@ mod tests {
                 { "itag": 251, "url": "hi", "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 150000, "audioQuality": "AUDIO_QUALITY_MEDIUM",
                   "audioTrack": { "displayName": "Hindi", "id": "hi.3" } },
                 { "itag": 251, "url": "en", "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 140000, "audioQuality": "AUDIO_QUALITY_MEDIUM",
-                  "audioTrack": { "displayName": "English original", "id": "en.4", "audioIsDefault": true } },
+                  "audioTrack": { "displayName": "English original", "id": "en.4", "audioIsDefault": true, "isAutoDubbed": false } },
                 { "itag": 249, "url": "es", "mimeType": "audio/webm; codecs=\"opus\"", "bitrate": 90000, "audioQuality": "AUDIO_QUALITY_LOW",
                   "audioTrack": { "displayName": "Spanish", "id": "es.3", "audioIsDefault": false, "isAutoDubbed": true } }
             ] }

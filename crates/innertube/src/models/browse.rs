@@ -2107,6 +2107,7 @@ mod tests {
         let first = &page.items[0];
         assert_eq!(first.title, "Ep. 5 We're Live!");
         assert_eq!(first.artists, "Lemonade Stand");
+        assert!(!first.is_video, "\"hide music videos\" would drop every episode");
         assert!(first.thumbnail.as_deref().unwrap().contains("xOXghljqUGw"));
         // A continuation has no header, so no show name, but the rows still come through.
         assert_eq!(parse_playlist_continuation(&root).items.len(), 2);

@@ -576,7 +576,9 @@ pub(crate) fn parse_episode_item(node: &Value) -> Option<SongItem> {
         artists: runs_text(node.get("secondTitle")).unwrap_or_default(),
         duration,
         thumbnail: last_thumbnail(node.get("thumbnail")?),
-        is_video: is_video_row(node),
+        // An episode's type is MUSIC_VIDEO_TYPE_PODCAST_EPISODE, which "hide music videos" would
+        // otherwise drop. Video mode still reads the player response, so video podcasts keep it.
+        is_video: false,
         library: library_toggle(node),
         ..Default::default()
     })
