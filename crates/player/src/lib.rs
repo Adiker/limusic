@@ -154,6 +154,11 @@ fn new_mpv(cache_dir: &str) -> Result<Mpv, Error> {
     // pre-init phase returns PROPERTY_NOT_FOUND on this mpv build).
     let mpv = Mpv::new()?;
     mpv.set_property("vid", "no")?; // audio only
+                                    // The app resolves every URL itself; mpv shelling out to youtube-dl is never right and buries
+                                    // the real failure. A stream that 403s went "Stream ends prematurely" -> ytdl_hook ->
+                                    // "youtube-dl failed: not found" -> "Failed to recognize file format", so the user was told
+                                    // their audio format was wrong when the download had been refused (issue #292).
+    mpv.set_property("ytdl", "no")?;
     mpv.set_property("gapless-audio", "yes")?;
     mpv.set_property("cache", "yes")?;
     mpv.set_property("cache-on-disk", "yes")?;

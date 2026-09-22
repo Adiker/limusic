@@ -69,6 +69,12 @@ pub enum ResolveError {
     /// here is a session that needs signing in again. Issue #71.
     #[error("this upload could not be played. Try signing in to YouTube Music again ({0})")]
     UploadUnavailable(String),
+    /// Every client YouTube answered for this track wanted an account, and there is no session.
+    /// Distinct from `AllClientsFailed` because the user can fix this one: some networks and
+    /// regions get `LOGIN_REQUIRED` from every anonymous client, and signing in is the whole fix
+    /// (issue #292).
+    #[error("YouTube would not serve {0} without an account. Sign in from the account menu.")]
+    SignInRequired(String),
     /// A local file that was in the library but is no longer on disk (context: local.rs).
     #[error("this file is no longer on your disk: {0}")]
     LocalMissing(String),
@@ -200,6 +206,20 @@ impl Orchestrator {
         }
 
         let main_ok = main_resp.as_ref().is_some_and(|r| r.playability_status.is_ok());
+        // The main response's status was the one thing the log never showed, so a report where
+        // nothing played could not be told apart from one where only the fallbacks failed
+        // (issue #292). `reason` is YouTube's own sentence, which is what separates a country
+        // block from a bot check.
+        let mut login_wanted = false;
+        if let Some(r) = main_resp.as_ref().filter(|_| !main_ok) {
+            login_wanted = r.playability_status.status == "LOGIN_REQUIRED";
+            tracing::debug!(
+                client = main_key,
+                status = %r.playability_status.status,
+                reason = r.playability_status.reason.as_deref().unwrap_or(""),
+                "not OK"
+            );
+        }
         let has_high = main_resp
             .as_ref()
             .and_then(|r| r.streaming_data.as_ref())
@@ -252,7 +272,13 @@ impl Orchestrator {
                 match self.it.player(client, video_id, playlist_id, client_sts, client_pot).await {
                     Ok(r) if r.playability_status.is_ok() => (key.to_owned(), r),
                     Ok(r) => {
-                        tracing::debug!(client = key, status = %r.playability_status.status, "not OK");
+                        login_wanted |= r.playability_status.status == "LOGIN_REQUIRED";
+                        tracing::debug!(
+                            client = key,
+                            status = %r.playability_status.status,
+                            reason = r.playability_status.reason.as_deref().unwrap_or(""),
+                            "not OK"
+                        );
                         continue;
                     }
                     Err(e) => {
@@ -419,6 +445,10 @@ impl Orchestrator {
         }
         tracing::info!(video_id, "all InnerTube clients exhausted → rustypipe fallback");
         match rustypipe_fallback::resolve(video_id, prefer_high).await {
+            Ok(c) if !self.streams_to_the_end(&c.url, c.size).await => {
+                tracing::warn!(video_id, "rustypipe URL serves only its first MiB — not playable");
+                Err(nothing_played(video_id, logged_in, login_wanted))
+            }
             Ok(c) => Ok(PlaybackData {
                 video_id: video_id.to_owned(),
                 stream_url: c.url,
@@ -437,7 +467,7 @@ impl Orchestrator {
             }),
             Err(e) => {
                 tracing::error!(video_id, error = %e, "rustypipe fallback failed");
-                Err(ResolveError::AllClientsFailed(video_id.to_owned()))
+                Err(nothing_played(video_id, logged_in, login_wanted))
             }
         }
     }
@@ -494,6 +524,32 @@ impl Orchestrator {
         for (k, v) in headers {
             req = req.header(k, v);
         }
+        matches!(req.send().await, Ok(r) if r.status().is_success())
+    }
+
+    /// Can this URL serve the whole track, or only its opening?
+    ///
+    /// Since 2026 googlevideo answers only the first mebibyte of a rustypipe (or ANDROID_VR) URL:
+    /// measured 2026-09-22, a range ending inside that window returns 206 and every range ending
+    /// past it returns 403, on every video tried and at any chunk size. HEAD and the opening range
+    /// the existing validation sends both pass, so nothing here could see it, and mpv was handed a
+    /// stream that delivered no bytes and blamed the audio format (issue #292).
+    ///
+    /// The probe is the last 256 bytes: served means the far end of the file is reachable, and
+    /// there is no offset to guess. A track smaller than the window needs no probe.
+    /// ponytail: only the rustypipe path pays for this. The direct clients are already filtered by
+    /// their HEAD (a capped URL 403s that too), so this would be a second request per candidate
+    /// for a case that cannot reach the user.
+    async fn streams_to_the_end(&self, url: &str, size: u64) -> bool {
+        const CAP: u64 = 1024 * 1024;
+        if size <= CAP {
+            return true;
+        }
+        let req = crate::http::client()
+            .get(url)
+            .header("Range", format!("bytes={}-{}", size - 256, size - 1))
+            .header("Accept-Encoding", "identity")
+            .timeout(Duration::from_secs(10));
         matches!(req.send().await, Ok(r) if r.status().is_success())
     }
 
@@ -590,6 +646,16 @@ fn stream_headers(
         }
     }
     headers
+}
+
+/// The error for a track nothing could stream. Signing in is a real fix when YouTube asked for an
+/// account and there is no session, and useless noise otherwise (issue #292).
+fn nothing_played(video_id: &str, logged_in: bool, login_wanted: bool) -> ResolveError {
+    if login_wanted && !logged_in {
+        ResolveError::SignInRequired(video_id.to_owned())
+    } else {
+        ResolveError::AllClientsFailed(video_id.to_owned())
+    }
 }
 
 fn is_high(f: &Format) -> bool {

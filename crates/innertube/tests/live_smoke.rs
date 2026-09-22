@@ -554,3 +554,26 @@ async fn video_search_returns_video_rows() {
     let hidden = it.search_videos(&client, "daft punk").await.expect("hidden video search");
     assert!(hidden.items.is_empty(), "hide_videos did not empty the video search");
 }
+
+/// Is the rustypipe safety net still able to carry a whole track?
+///
+/// Measured 2026-09-22: googlevideo serves the first mebibyte of a rustypipe URL and 403s any
+/// range ending past it, at any chunk size, on every video tried. mpv played nothing and blamed
+/// the audio format (issue #292), and `Orchestrator::streams_to_the_end` now rejects such a URL
+/// rather than hand it over. **A failure here means the net is down, not that the code broke**:
+/// the app degrades to "nothing could play this", so what is lost is the last resort.
+#[tokio::test]
+async fn rustypipe_url_streams_to_the_end() {
+    let c =
+        innertube::rustypipe_fallback::resolve(VIDEO_ID, true).await.expect("rustypipe resolve");
+    assert!(c.size > 1024 * 1024, "pick a longer VIDEO_ID: this one fits inside the cap");
+    let resp = reqwest::Client::new()
+        .get(&c.url)
+        .header("Range", format!("bytes={}-{}", c.size - 256, c.size - 1))
+        .header("Accept-Encoding", "identity")
+        .send()
+        .await
+        .expect("range request");
+    eprintln!("rustypipe itag {}: last 256 B -> HTTP {}", c.itag, resp.status());
+    assert!(resp.status().is_success(), "rustypipe URL serves only its first MiB (issue #292)");
+}

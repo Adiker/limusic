@@ -3607,7 +3607,7 @@ fn merge_radio(
 /// wrong for an upload: the file is still there, the session is what failed. Issue #71.
 fn skip_reason(e: &ResolveError) -> &'static str {
     match e {
-        ResolveError::UploadUnavailable(_) => "sign-in needed",
+        ResolveError::UploadUnavailable(_) | ResolveError::SignInRequired(_) => "sign-in needed",
         _ => "unavailable",
     }
 }
