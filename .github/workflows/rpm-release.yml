@@ -1,0 +1,106 @@
+name: Fedora RPM release package
+
+# Upstream's release script builds the RPM on Fedora and uploads it alongside the CI-built Linux,
+# Windows and macOS artifacts. GitHub has no hosted Fedora runner, so reproduce that build in the
+# official Fedora container while checking out the same fork tag.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing fork release tag to package (for example v0.8.1)
+        required: true
+        type: string
+      dry_run:
+        description: Build the RPM but do not upload it to the release
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rpm-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Resolve the tag
+        id: rel
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag }}"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::invalid release tag: $TAG"
+            exit 1
+          }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the fork release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.rel.outputs.tag }}
+          path: source
+          persist-credentials: false
+
+      - name: Build the RPM in Fedora
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          version="$(jq -r .version source/src-tauri/tauri.conf.json)"
+          [ "$version" = "${{ steps.rel.outputs.version }}" ] || {
+            echo "::error::tauri.conf.json says $version but the tag says ${{ steps.rel.outputs.version }}"
+            exit 1
+          }
+          [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] || {
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is required, just like upstream's release build"
+            exit 1
+          }
+          docker run --rm \
+            -e TAURI_SIGNING_PRIVATE_KEY \
+            -e TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
+            -v "$GITHUB_WORKSPACE/source:/source" \
+            fedora:44 bash -euo pipefail -c '
+              dnf install -y \
+                gcc gcc-c++ make openssl-devel librsvg2-devel gtk3-devel \
+                webkit2gtk4.1-devel mpv-libs-devel libappindicator-gtk3-devel \
+                dbus-devel pkgconf-pkg-config nodejs npm rust cargo
+              npm install --global pnpm@10 "@tauri-apps/cli@^2"
+              cd /source
+              (cd ui && pnpm install --frozen-lockfile && pnpm build)
+              tauri build --bundles rpm --config \
+                "{\"build\":{\"beforeBuildCommand\":\"\"}}"
+            '
+
+      - name: Collect the RPM
+        run: |
+          set -euo pipefail
+          mkdir -p rpm-dist
+          rpm="$(find source/target/release/bundle/rpm -maxdepth 1 -type f \
+            -name 'limusic-*.rpm' -print -quit)"
+          [ -n "$rpm" ] || { echo "::error::RPM was not produced"; exit 1; }
+          cp "$rpm" rpm-dist/
+
+      - name: Dry run, keep the RPM as an artifact
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: limusic-rpm-${{ steps.rel.outputs.tag }}
+          path: rpm-dist/*.rpm
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Attach the RPM
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "${{ steps.rel.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" --clobber rpm-dist/*.rpm

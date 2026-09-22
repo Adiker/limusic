@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Limusic
+Comment=Desktop YouTube Music client
+Exec=limusic
+Icon=limusic
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;

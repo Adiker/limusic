@@ -1,0 +1,51 @@
+# Maintainer: Adiker
+pkgname=limusic
+pkgver=0.8.1
+pkgrel=1
+pkgdesc='Desktop YouTube Music client built with Tauri'
+arch=('x86_64')
+url='https://github.com/SimoHypers/limusic'
+license=('GPL-3.0-or-later')
+depends=(
+  'gtk3'
+  'webkit2gtk-4.1'
+  'libayatana-appindicator'
+  'librsvg'
+  'mpv'
+  'openssl'
+  'dbus'
+  'gstreamer'
+  'gst-plugins-base'
+  'gst-plugins-good'
+  'gst-libav'
+)
+makedepends=('base-devel' 'git' 'rust' 'nodejs' 'npm')
+_source_repo="${LIMUSIC_SOURCE_REPO:-Adiker/limusic}"
+source=(
+  "$pkgname-$pkgver.tar.gz::https://github.com/${_source_repo}/archive/refs/tags/v${pkgver}.tar.gz"
+  'limusic.desktop'
+)
+sha256sums=('SKIP' 'SKIP')
+
+build() {
+  cd "$srcdir/$pkgname-$pkgver"
+
+  local npm_prefix="$srcdir/.npm-global"
+  npm_config_prefix="$npm_prefix" npm install --global pnpm@10
+  export PATH="$npm_prefix/bin:$PATH"
+  (cd ui && pnpm install --frozen-lockfile)
+  (cd ui && pnpm build)
+  cargo build --release --locked
+}
+
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+
+  install -Dm755 target/release/limusic-app "$pkgdir/usr/bin/limusic"
+  install -Dm644 "$srcdir/limusic.desktop" \
+    "$pkgdir/usr/share/applications/limusic.desktop"
+  install -Dm644 src-tauri/icons/icon.png \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/limusic.png"
+  install -Dm644 LICENSE \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

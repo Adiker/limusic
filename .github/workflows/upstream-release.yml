@@ -1,0 +1,271 @@
+name: Sync upstream release
+
+# A fork does not receive release events from the upstream repository. Poll the upstream release
+# API, merge that tag into the fork's default branch, and build the resulting fork tag. The platform
+# workflows below are the upstream release workflows; this workflow only prepares their source and
+# starts them.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Upstream release tag to build (for example v0.8.1); empty means latest
+        required: false
+        type: string
+      force:
+        description: Rebuild an incomplete release in the fork
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: upstream-release
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: SimoHypers/limusic
+
+jobs:
+  discover:
+    name: Find an upstream release
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.release.outputs.build }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Check the upstream release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+          FORCE_BUILD: ${{ inputs.force }}
+          FORK_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$REQUESTED_TAG" ]; then
+            endpoint="https://api.github.com/repos/$UPSTREAM_REPOSITORY/releases/tags/$REQUESTED_TAG"
+          else
+            endpoint="https://api.github.com/repos/$UPSTREAM_REPOSITORY/releases/latest"
+          fi
+
+          release="$(curl --fail --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "$endpoint")"
+          tag="$(jq -r '.tag_name // empty' <<<"$release")"
+          version="${tag#v}"
+
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::unsupported upstream release tag: ${tag:-<empty>}"
+            exit 1
+          fi
+          if [ "$(jq -r '.draft // true' <<<"$release")" = true ]; then
+            echo "::error::the selected upstream release is still a draft"
+            exit 1
+          fi
+
+          marker="limusic-${version}-release-manifest.txt"
+          existing="$(curl --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$FORK_REPOSITORY/releases/tags/$tag" || true)"
+          complete="$(jq -r --arg marker "$marker" \
+            '[.assets[]?.name | select(. == $marker)] | length > 0' <<<"$existing" 2>/dev/null || echo false)"
+
+          build=true
+          if [ "$complete" = true ] && [ "$FORCE_BUILD" != true ]; then
+            build=false
+            echo "Release $tag is already complete in $FORK_REPOSITORY"
+          else
+            echo "Release $tag needs a build in $FORK_REPOSITORY"
+          fi
+
+          {
+            echo "build=$build"
+            echo "tag=$tag"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+  prepare:
+    name: Merge upstream into the fork
+    needs: discover
+    if: needs.discover.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.discover.outputs.tag }}
+      VERSION: ${{ needs.discover.outputs.version }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout the fork's default branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+
+      - name: Merge the upstream release into the fork source
+        working-directory: source
+        env:
+          FORK_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          existing_sha="$(git ls-remote "$FORK_URL" "refs/tags/$TAG^{}" | awk '{print $1}')"
+          [ -n "$existing_sha" ] || existing_sha="$(git ls-remote "$FORK_URL" "refs/tags/$TAG" | awk '{print $1}')"
+          if [ -n "$existing_sha" ]; then
+            # A retry must rebuild the exact source tag from the first attempt. Re-merging the same
+            # upstream commit would create a new merge commit and could never match that tag.
+            git fetch --no-tags "$FORK_URL" "refs/tags/$TAG:refs/fork-release/$TAG"
+            git checkout --detach "refs/fork-release/$TAG"
+          else
+            git remote add upstream "https://github.com/$UPSTREAM_REPOSITORY.git"
+            # Fetch into FETCH_HEAD instead of refs/tags/$TAG so the fork tag remains untouched.
+            git fetch --no-tags upstream "refs/tags/$TAG"
+            upstream_commit="$(git rev-parse FETCH_HEAD^{commit})"
+            git merge --no-edit "$upstream_commit" || {
+              echo "::error::the fork branch cannot be merged automatically with upstream $TAG"
+              git status --short
+              exit 1
+            }
+            source_sha="$(git rev-parse HEAD)"
+            git push "$FORK_URL" "HEAD:refs/tags/$TAG"
+          fi
+
+          source_version="$(jq -r .version src-tauri/tauri.conf.json)"
+          [ "$source_version" = "$VERSION" ] || {
+            echo "::error::fork release source has version $source_version, expected $VERSION"
+            exit 1
+          }
+
+      - name: Create the release and its initial updater manifest
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --latest=false \
+              --title "Limusic $TAG" \
+              --notes "Built from the fork after merging upstream release [$TAG](https://github.com/$UPSTREAM_REPOSITORY/releases/tag/$TAG)."
+          fi
+
+          rm -rf initial-manifest
+          if ! gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern latest.json --dir initial-manifest >/dev/null 2>&1; then
+            mkdir -p initial-manifest
+            jq -n \
+              --arg version "$VERSION" \
+              --arg notes "Built from the fork after merging upstream release $TAG." \
+              --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              '{version: $version, notes: $notes, pub_date: $pub_date, platforms: {}}' \
+              > initial-manifest/latest.json
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --clobber initial-manifest/latest.json
+          fi
+
+  build:
+    name: Dispatch upstream-compatible builds
+    needs: [discover, prepare]
+    if: needs.discover.outputs.build == 'true' && needs.prepare.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 220
+    env:
+      TAG: ${{ needs.discover.outputs.tag }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Dispatch all platform and package workflows
+        run: |
+          set -euo pipefail
+          workflows=(
+            linux-release.yml
+            windows-release.yml
+            macos-release.yml
+            rpm-release.yml
+            arch-release.yml
+          )
+          declare -A before
+          for workflow in "${workflows[@]}"; do
+            before["$workflow"]="$(gh run list --repo "$GITHUB_REPOSITORY" \
+              --workflow "$workflow" --branch "$DEFAULT_BRANCH" --limit 1 \
+              --json databaseId --jq '.[0].databaseId // 0')"
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" \
+              --ref "$DEFAULT_BRANCH" -f "tag=$TAG"
+          done
+
+          wait_for_run() {
+            local workflow="$1" old_id="${before[$1]}" id
+            for _ in $(seq 1 60); do
+              id="$(gh run list --repo "$GITHUB_REPOSITORY" \
+                --workflow "$workflow" --branch "$DEFAULT_BRANCH" --limit 1 \
+                --json databaseId --jq '.[0].databaseId // 0')"
+              if [ "$id" != 0 ] && [ "$id" != "$old_id" ]; then
+                printf '%s' "$id"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "::error::no run appeared for $workflow" >&2
+            return 1
+          }
+
+          run_ids=()
+          for workflow in "${workflows[@]}"; do
+            run_ids+=("$(wait_for_run "$workflow")")
+          done
+
+          failed=0
+          for run_id in "${run_ids[@]}"; do
+            gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status || failed=1
+          done
+          [ "$failed" = 0 ] || {
+            echo "::error::one or more release builds failed"
+            exit 1
+          }
+
+      - name: Verify the upstream asset set plus Arch
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          require_asset() {
+            local pattern="$1"
+            grep -Eq "$pattern" <<<"$assets" || {
+              echo "::error::release is missing asset matching $pattern"
+              printf '%s\n' "$assets"
+              exit 1
+            }
+          }
+          require_asset '^latest\.json$'
+          require_asset "^limusic_${TAG#v}_amd64\.AppImage$"
+          require_asset "^limusic_${TAG#v}_amd64\.AppImage\.sig$"
+          require_asset "^limusic_${TAG#v}_amd64\.deb$"
+          require_asset "^limusic-${TAG#v}-[0-9]+\.x86_64\.rpm$"
+          require_asset "^limusic_${TAG#v}_x64-setup\.exe$"
+          require_asset "^limusic_${TAG#v}_x64-setup\.exe\.sig$"
+          require_asset "^limusic_${TAG#v}_x64_en-US\.msi$"
+          require_asset "^limusic_${TAG#v}_aarch64\.dmg$"
+          require_asset "^limusic_${TAG#v}_aarch64\.app\.tar\.gz$"
+          require_asset "^limusic_${TAG#v}_aarch64\.app\.tar\.gz\.sig$"
+          require_asset "^limusic-${TAG#v}-[0-9]+-x86_64\.pkg\.tar\.zst$"
+
+      - name: Mark the release complete
+        run: |
+          set -euo pipefail
+          marker="limusic-${TAG#v}-release-manifest.txt"
+          {
+            echo "upstream_repository=$UPSTREAM_REPOSITORY"
+            echo "upstream_tag=$TAG"
+            echo "source=merged fork default branch with upstream tag"
+            echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > "$marker"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$marker"

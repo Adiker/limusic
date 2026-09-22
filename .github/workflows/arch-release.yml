@@ -1,0 +1,93 @@
+name: Arch Linux release package
+
+# The upstream release does not publish an Arch package. This workflow uses the same fork tag as
+# the Linux/Windows/macOS release workflows and adds the native Arch package to that release.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing fork release tag to package (for example v0.8.1)
+        required: true
+        type: string
+      dry_run:
+        description: Build the package but do not upload it to the release
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: arch-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Resolve the tag
+        id: rel
+        shell: bash
+        run: |
+          TAG="${{ inputs.tag }}"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::invalid release tag: $TAG"
+            exit 1
+          }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the fork release tag
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.rel.outputs.tag }}
+          persist-credentials: false
+
+      - name: Check the tag matches the app version
+        run: |
+          version="$(jq -r .version src-tauri/tauri.conf.json)"
+          [ "$version" = "${{ steps.rel.outputs.version }}" ] || {
+            echo "::error::tauri.conf.json says $version but the tag says ${{ steps.rel.outputs.version }}"
+            exit 1
+          }
+
+      - name: Build in the official Arch Linux image
+        env:
+          LIMUSIC_SOURCE_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.rel.outputs.version }}/" pkg/arch/PKGBUILD
+          docker run --rm \
+            -e LIMUSIC_SOURCE_REPO \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            archlinux:latest bash -euo pipefail -c '
+              pacman -Sy --noconfirm --needed \
+                base-devel git rust nodejs npm sudo
+              npm install --global pnpm@10
+              useradd --create-home builder
+              printf "builder ALL=(ALL) NOPASSWD: ALL\n" > /etc/sudoers.d/builder
+              chown -R builder:builder /workspace
+              su builder -c "cd /workspace/pkg/arch && makepkg --syncdeps --noconfirm --cleanbuild --clean"
+            '
+
+      - name: Dry run, keep the package as an artifact
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: limusic-arch-${{ steps.rel.outputs.tag }}
+          path: pkg/arch/*.pkg.tar.zst
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Attach the Arch package
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          package="$(find pkg/arch -maxdepth 1 -type f -name '*.pkg.tar.zst' -print -quit)"
+          [ -n "$package" ] || { echo "::error::makepkg produced no package"; exit 1; }
+          gh release upload "${{ steps.rel.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" --clobber "$package"
