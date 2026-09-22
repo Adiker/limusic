@@ -41,6 +41,11 @@ pub enum PlayerEvent {
     /// One track died (end-file with error, e.g. its URL 403'd). mpv may have auto-advanced
     /// into the next playlist entry or gone idle — the orchestrator asks [`Player::is_idle`].
     TrackFailed(String),
+    /// mpv could not open the audio device, so the file ended with an error that has nothing to do
+    /// with the stream: the device went away under it (sleep/resume, unplugged, a driver restart).
+    /// Kept apart from [`PlayerEvent::TrackFailed`] because the two want opposite handling, see
+    /// `AppState::on_audio_device_lost`.
+    AudioDeviceLost,
     Error(String),
 }
 
@@ -62,6 +67,18 @@ fn friendly_error(e: &libmpv2::Error) -> String {
             other => format!("Playback failed (mpv error {other})"),
         },
         other => format!("Playback failed ({other})"),
+    }
+}
+
+/// Did this end-file error come from the audio output rather than the stream? Windows reports it
+/// after a sleep/resume (WASAPI re-enumerates and the old device is gone), Linux and macOS after a
+/// device is unplugged or the sound server restarts.
+fn is_ao_init_failed(e: &libmpv2::Error) -> bool {
+    use libmpv2::mpv_error;
+    match e {
+        libmpv2::Error::Loadfile { error } => is_ao_init_failed(error),
+        libmpv2::Error::Raw(code) => *code == mpv_error::AoInitFailed,
+        _ => false,
     }
 }
 
@@ -773,7 +790,12 @@ fn event_loop(mut ev: EventContext, deck: usize, decks: Arc<Decks>) {
                     decks.preloaded.store(false, Ordering::Release);
                     continue;
                 }
-                if tx.send(PlayerEvent::TrackFailed(friendly_error(&e))).is_err() {
+                let ev = if is_ao_init_failed(&e) {
+                    PlayerEvent::AudioDeviceLost
+                } else {
+                    PlayerEvent::TrackFailed(friendly_error(&e))
+                };
+                if tx.send(ev).is_err() {
                     break;
                 }
             }
@@ -998,7 +1020,7 @@ fn perceptual_to_mpv(percent: i64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{af_chain, loadfile_args, perceptual_to_mpv, quoted};
+    use super::{af_chain, is_ao_init_failed, loadfile_args, perceptual_to_mpv, quoted};
 
     #[test]
     fn gain_and_pitch_share_one_chain() {
@@ -1221,5 +1243,19 @@ mod tests {
         // Monotonic, and finer steps at the loud end than the quiet one.
         assert!((1..=100).all(|s| perceptual_to_mpv(s) > perceptual_to_mpv(s - 1)));
         assert!(db(100) - db(99) < db(2) - db(1));
+    }
+
+    #[test]
+    fn audio_device_errors_are_not_dead_streams() {
+        use libmpv2::{mpv_error, Error};
+        // The branch that decides whether a PC waking from sleep holds its place or walks the
+        // whole queue playing every track it touches (issue #267).
+        assert!(is_ao_init_failed(&Error::Raw(mpv_error::AoInitFailed)));
+        assert!(is_ao_init_failed(&Error::Loadfile {
+            error: std::rc::Rc::new(Error::Raw(mpv_error::AoInitFailed))
+        }));
+        // A dead or expired stream URL still has to reach the fallback clients.
+        assert!(!is_ao_init_failed(&Error::Raw(mpv_error::LoadingFailed)));
+        assert!(!is_ao_init_failed(&Error::Raw(mpv_error::NothingToPlay)));
     }
 }

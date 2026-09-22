@@ -1723,6 +1723,27 @@ impl AppState {
         false
     }
 
+    /// The audio device went away under a loaded file (a PC waking from sleep re-enumerates its
+    /// devices, or one was unplugged). mpv ends the file with an error exactly like a dead URL
+    /// does, and routing it through `on_track_failed` is what made a sleeping PC wake up playing
+    /// music by itself: the retry evicted a perfectly good stream URL, `start_current` ends with an
+    /// unconditional `play()` so the user's pause was thrown away, the device was still missing so
+    /// the next track failed the same way, and the app walked the queue (scrobbling each track it
+    /// touched) until the device came back and one of those `play()` calls stuck. Issue #267.
+    ///
+    /// Nothing is wrong with the stream, so stay exactly where we are. mpv is idle now, so the
+    /// remembered position is what `resume_or_toggle` reloads at when the user presses play.
+    pub async fn on_audio_device_lost(&self) {
+        let pos = self.current_position();
+        let mut q = self.queue.lock().await;
+        q.lookahead_loaded = None; // mpv's playlist died with the file
+        if let Some(item) = q.items.get(q.current) {
+            if q.duration > 0.0 && pos > 1.0 && pos < q.duration {
+                *self.pending_seek.lock().unwrap() = Some((item.video_id.clone(), pos));
+            }
+        }
+    }
+
     /// Resolve + load the current track into mpv (replace). Returns false if resolve failed or the
     /// request was superseded.
     async fn start_current(self: &std::sync::Arc<Self>, gen: u64) -> bool {

@@ -889,6 +889,16 @@ fn spawn_event_pump(
                         let _ = app.emit("playback-error", serde_json::json!({ "message": msg }));
                     }
                 }
+                PlayerEvent::AudioDeviceLost => {
+                    tracing::warn!("audio device unavailable, holding the queue where it is");
+                    state.on_audio_device_lost().await;
+                    let _ = app.emit(
+                        "playback-error",
+                        serde_json::json!({
+                            "message": "Your audio device is unavailable. Press play once it's back."
+                        }),
+                    );
+                }
                 PlayerEvent::Error(msg) => {
                     tracing::error!(error = %msg, "player error");
                     let _ = app.emit("playback-error", serde_json::json!({ "message": msg }));
