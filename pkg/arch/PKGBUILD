@@ -1,7 +1,7 @@
 # Maintainer: Adiker
 pkgname=limusic
 pkgver=0.8.1
-pkgrel=2
+pkgrel=3
 pkgdesc='Desktop YouTube Music client built with Tauri'
 arch=('x86_64')
 url='https://github.com/SimoHypers/limusic'
@@ -13,6 +13,7 @@ depends=(
   'librsvg'
   'mpv'
   'openssl'
+  'sqlite'
   'dbus'
   'gstreamer'
   'gst-plugins-base'
@@ -32,7 +33,8 @@ build() {
 
   rustup toolchain install stable --profile minimal
   export RUSTUP_TOOLCHAIN=stable
-  export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-Clinker-features=-lld"
+  # Disable rustc's self-contained lld and link SQLite after the app objects for GNU ld.
+  export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-Clinker-features=-lld -Clink-arg=-lsqlite3"
 
   local npm_prefix="$srcdir/.npm-global"
   npm_config_prefix="$npm_prefix" npm install --global pnpm@10 "@tauri-apps/cli@^2"
