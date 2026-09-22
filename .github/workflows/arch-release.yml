@@ -66,6 +66,8 @@ jobs:
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
+      # The distro rustc selects lld, which leaves bundled QuickJS/SQLite unresolved here; the
+      # PKGBUILD uses the upstream stable rustup toolchain instead.
       - name: Build in the official Arch Linux image
         env:
           LIMUSIC_SOURCE_REPO: ${{ github.repository }}
@@ -84,8 +86,6 @@ jobs:
               useradd --create-home builder
               printf "builder ALL=(ALL) NOPASSWD: ALL\n" > /etc/sudoers.d/builder
               chown -R builder:builder /workspace
-              # The PKGBUILD selects upstream stable with RUSTUP_TOOLCHAIN, avoiding Arch rustc's
-              # lld linker, which leaves the bundled QuickJS/SQLite archives unresolved here.
               su builder -c "cd /workspace/pkg/arch && makepkg --syncdeps --noconfirm --cleanbuild --clean"
             '
 
