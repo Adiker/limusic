@@ -576,12 +576,15 @@ impl Player {
 ///
 /// A positive gain carries a limiter: lifting a quiet track pushes its peaks past full scale, and
 /// without one they would clip at the output. `level=disabled` stops alimiter from re-normalizing
-/// the result, which would undo the gain.
+/// the result, which would undo the gain. `latency=1` is essential for gapless playback: alimiter
+/// looks 5 ms ahead, and latency compensation trims that initial delay and drains the same number
+/// of buffered samples at EOF instead of dropping the outgoing tail when mpv rebuilds the graph
+/// for the next playlist entry.
 fn af_chain(gain_db: Option<f64>, semitones: i32) -> String {
     let mut chain = Vec::new();
     match gain_db {
         Some(g) if g > 0.0 => {
-            chain.push(format!("lavfi=[volume={g}dB,alimiter=limit=0.98:level=disabled]"))
+            chain.push(format!("lavfi=[volume={g}dB,alimiter=limit=0.98:level=disabled:latency=1]"))
         }
         Some(g) => chain.push(format!("lavfi=[volume={g}dB]")),
         None => {}
@@ -1002,7 +1005,10 @@ mod tests {
         // The bug this exists for: either setter clobbering the other's filter.
         assert_eq!(af_chain(None, 0), "");
         assert_eq!(af_chain(Some(-3.5), 0), "lavfi=[volume=-3.5dB]");
-        assert_eq!(af_chain(Some(4.0), 0), "lavfi=[volume=4dB,alimiter=limit=0.98:level=disabled]");
+        assert_eq!(
+            af_chain(Some(4.0), 0),
+            "lavfi=[volume=4dB,alimiter=limit=0.98:level=disabled:latency=1]"
+        );
         assert_eq!(af_chain(None, 12), "rubberband=pitch-scale=2");
         assert_eq!(af_chain(Some(-6.0), -12), "lavfi=[volume=-6dB],rubberband=pitch-scale=0.5");
         // One semitone up is the twelfth root of two.
