@@ -31,11 +31,11 @@ build() {
   cd "$srcdir/$pkgname-$pkgver"
 
   local npm_prefix="$srcdir/.npm-global"
-  npm_config_prefix="$npm_prefix" npm install --global pnpm@10
+  npm_config_prefix="$npm_prefix" npm install --global pnpm@10 "@tauri-apps/cli@^2"
   export PATH="$npm_prefix/bin:$PATH"
   (cd ui && pnpm install --frozen-lockfile)
   (cd ui && pnpm build)
-  cargo build --release --locked
+  tauri build --no-bundle --config '{"build":{"beforeBuildCommand":""}}'
 }
 
 package() {

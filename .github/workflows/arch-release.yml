@@ -53,11 +53,26 @@ jobs:
             exit 1
           }
 
+      # Build recipe changes live on the default branch, while the application source remains the
+      # exact fork release tag. This lets a package-workflow fix be retried without retagging a
+      # published release; the PKGBUILD itself fetches the pinned tag as its source.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          path: arch-recipe
+          sparse-checkout: |
+            pkg/arch/PKGBUILD
+            pkg/arch/limusic.desktop
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Build in the official Arch Linux image
         env:
           LIMUSIC_SOURCE_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          cp arch-recipe/pkg/arch/PKGBUILD pkg/arch/PKGBUILD
+          cp arch-recipe/pkg/arch/limusic.desktop pkg/arch/limusic.desktop
           sed -i "s/^pkgver=.*/pkgver=${{ steps.rel.outputs.version }}/" pkg/arch/PKGBUILD
           docker run --rm \
             -e LIMUSIC_SOURCE_REPO \

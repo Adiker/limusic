@@ -42,26 +42,26 @@ if command -v apt-get >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq --no-install-recommends \
-    xvfb xauth dbus dbus-x11 python3 \
+    xvfb dbus dbus-x11 python3 \
     libegl-mesa0 libgl1-mesa-dri libglx-mesa0 libgles2 libgl1 libegl1 \
     libharfbuzz0b libharfbuzz-icu0 libkrb5-3 libgssapi-krb5-2 libpango-1.0-0 \
     libasound2t64 libfribidi0 libusb-1.0-0 libcom-err2 libgpg-error0 libexpat1 \
     libfontconfig1 fonts-dejavu-core ca-certificates gvfs
 elif command -v pacman >/dev/null; then
   pacman -Sy --noconfirm --quiet \
-    xorg-server-xvfb xorg-xauth dbus python \
+    xorg-server-xvfb dbus python \
     mesa libglvnd harfbuzz harfbuzz-icu krb5 pango alsa-lib fribidi libusb \
     expat fontconfig ttf-dejavu ca-certificates gvfs gnutls
 elif command -v dnf >/dev/null; then
   dnf install -y -q \
-    xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon dbus-x11 python3 \
+    xorg-x11-server-Xvfb dbus-daemon dbus-x11 python3 \
     mesa-libEGL mesa-libGL mesa-libGLES libglvnd harfbuzz krb5-libs pango alsa-lib \
     fribidi libusb1 expat fontconfig dejavu-sans-fonts ca-certificates gvfs
 elif command -v zypper >/dev/null; then
-  # openSUSE spells half of these differently: xvfb-run is its own package, dbus-run-session comes
-  # from dbus-1-daemon, and there is no dbus-1-x11 at all.
+  # openSUSE spells half of these differently; dbus-run-session comes from dbus-1-daemon and there
+  # is no dbus-1-x11. Start Xvfb directly below, so no distro-specific xvfb-run wrapper is needed.
   zypper -q --non-interactive in -y \
-    xvfb-run xauth dbus-1-daemon python3 \
+    xorg-x11-server-Xvfb dbus-1-daemon python3 \
     Mesa-libEGL1 Mesa-libGL1 Mesa-libGLESv2-2 libglvnd harfbuzz-tools libharfbuzz0 krb5 \
     libpango-1_0-0 alsa-lib libfribidi0 libusb-1_0-0 libcom_err2 libgpg-error0 libexpat1 \
     fontconfig dejavu-fonts ca-certificates gvfs libgnutls30
@@ -74,7 +74,7 @@ fi
 # Arch and openSUSE have to be told.
 # A half-installed container makes every check below meaningless, and the missing symbols it
 # produces look exactly like a real defect (KI-8). Stop here instead.
-for tool in xvfb-run dbus-run-session ldd python3; do
+for tool in Xvfb dbus-run-session ldd python3; do
   command -v "$tool" >/dev/null || { echo "   package install failed: no $tool"; exit 1; }
 done
 
@@ -180,7 +180,16 @@ step "launching the app under Xvfb"
 export HOME=/tmp/apphome
 mkdir -p "$HOME"
 : > /tmp/run.log
-timeout 90 dbus-run-session -- xvfb-run -a -s "-screen 0 1280x800x24" "$APPDIR/AppRun" \
+Xvfb :99 -screen 0 1280x800x24 -nolisten tcp -ac >/tmp/xvfb.log 2>&1 &
+XvfbPID=$!
+export DISPLAY=:99
+sleep 1
+if ! kill -0 "$XvfbPID" 2>/dev/null; then
+  cat /tmp/xvfb.log
+  bad "Xvfb failed to start"
+  exit 1
+fi
+timeout 90 dbus-run-session -- "$APPDIR/AppRun" \
   > /tmp/run.log 2>&1 &
 RUNPID=$!
 # Stop as soon as a webview works (about three seconds) or the app dies. The app never exits on its
@@ -192,6 +201,8 @@ for _ in $(seq 90); do
 done
 kill "$RUNPID" 2>/dev/null
 wait "$RUNPID" 2>/dev/null
+kill "$XvfbPID" 2>/dev/null
+wait "$XvfbPID" 2>/dev/null
 # The app is killed rather than exiting, so its status says nothing; the log is the verdict.
 grep -viE 'dbind|StatusNotifier|libEGL warning|DRI3' /tmp/run.log | head -40 | sed 's/^/   /'
 if grep -qE 'Could not create .*EGL display|undefined symbol|cannot open shared object file|Failed to load module|webview never became ready|symbol lookup error|core dumped' /tmp/run.log; then

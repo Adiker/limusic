@@ -293,6 +293,17 @@ jobs:
           fi
           echo "every DT_NEEDED is either bundled or a host baseline library"
 
+      # The source checkout above is pinned to the release tag. Keep CI-only verification helpers
+      # current with the workflow revision so a helper fix can be tested without moving a published
+      # release tag or changing the app source being built.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          path: ci-tools
+          sparse-checkout: scripts/appdir-foreign-check.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       # The static guards above only see this runner. Every failure in this family (v0.2.10's
       # undefined symbol, v0.2.11's missing libnettle.so.8 on Arch, v0.2.14's dead webviews on
       # Mesa) looked fine on Ubuntu and only appeared on someone else's distro. So run the app on
@@ -311,7 +322,7 @@ jobs:
         run: |
           set -euo pipefail
           APPDIR="$PWD/target/release/bundle/appimage/limusic.AppDir"
-          CHECK="$PWD/scripts/appdir-foreign-check.sh"
+          CHECK="$PWD/ci-tools/scripts/appdir-foreign-check.sh"
           IMAGES="debian:sid archlinux:latest opensuse/tumbleweed"
 
           pids=""
