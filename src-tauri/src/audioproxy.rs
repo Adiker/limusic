@@ -153,9 +153,12 @@ pub fn start() {
 
 /// Register one googlevideo URL (with the headers it needs) and return the loopback URL mpv should
 /// be handed. `None` means the direct URL must be used: the proxy never came up, the kill-switch
-/// is set, or the URL is empty.
+/// is set, or the URL is not googlevideo (an RSS-feed podcast's enclosure is not throttled, and
+/// may not honour ranges, #294).
 pub fn register(url: &str, headers: &HashMap<String, String>) -> Option<String> {
-    if url.is_empty() || std::env::var_os("LIMUSIC_NO_AUDIO_PROXY").is_some() {
+    if !crate::orchestrator::is_googlevideo(url)
+        || std::env::var_os("LIMUSIC_NO_AUDIO_PROXY").is_some()
+    {
         return None;
     }
     let (port, token) = ENDPOINT.get()?;

@@ -278,10 +278,12 @@ impl Orchestrator {
                 continue;
             };
 
-            // n-transform + &pot= for web clients (context/05, 06).
+            // n-transform + &pot= for web clients (context/05, 06). googlevideo only: an RSS-feed
+            // podcast's URL is the feed's own host, which must not be handed a PoToken (#294).
             let client = self.clients.get(&key);
-            let needs_n = client.is_some_and(|c| c.use_web_po_tokens)
-                || NEEDS_N_TRANSFORM.contains(&key.as_str());
+            let needs_n = is_googlevideo(&url)
+                && (client.is_some_and(|c| c.use_web_po_tokens)
+                    || NEEDS_N_TRANSFORM.contains(&key.as_str()));
             if needs_n {
                 url = self.cipher.transform_n_param_in_url(&url).await;
                 if client.is_some_and(|c| c.use_web_po_tokens) {
@@ -555,6 +557,15 @@ impl Orchestrator {
     }
 }
 
+/// True for a URL served by YouTube's own stream CDN. Everything else (an RSS-feed podcast's
+/// enclosure, #294) gets no n-transform, no PoToken and no chunking proxy.
+pub(crate) fn is_googlevideo(url: &str) -> bool {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.ends_with(".googlevideo.com")))
+        .unwrap_or(false)
+}
+
 /// The headers mpv (and the validating HEAD) must send for one stream.
 ///
 /// A privately-owned track's googlevideo URL is only served to the session that owns it, so an
@@ -631,9 +642,20 @@ fn best_thumbnail(resp: &PlayerResponse) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{blacklist_blocks, blacklist_insert, stream_headers, WEB_REMIX_BLACKLIST_TTL};
+    use super::{
+        blacklist_blocks, blacklist_insert, is_googlevideo, stream_headers, WEB_REMIX_BLACKLIST_TTL,
+    };
     use std::collections::HashMap;
     use std::time::{Duration, Instant};
+
+    // An RSS-feed podcast streams from the feed's own host (#294), which gets no PoToken.
+    #[test]
+    fn only_googlevideo_hosts_count_as_googlevideo() {
+        assert!(is_googlevideo("https://rr5---sn-abc.googlevideo.com/videoplayback?n=x"));
+        assert!(!is_googlevideo("https://www.podtrac.com/pts/redirect.mp3/x.mp3"));
+        assert!(!is_googlevideo("https://evil.com/googlevideo.com/videoplayback"));
+        assert!(!is_googlevideo("/home/me/song.flac"));
+    }
 
     #[test]
     fn the_web_remix_bar_expires_and_stays_bounded() {
