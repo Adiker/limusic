@@ -1093,7 +1093,7 @@ impl AppState {
     }
 
     /// Start a fresh queue from one track (a search-result click), then hydrate the radio via
-    /// `next` and prime the gapless lookahead.
+    /// `next` (skipped when autoplay is off) and prime the gapless lookahead.
     pub async fn play_song(self: &std::sync::Arc<Self>, seed: SongItem) {
         if self.lt.is_guest().await {
             // Guests follow the host; clicking a song adds it to the shared queue instead
@@ -1107,15 +1107,17 @@ impl AppState {
 
         // A local file isn't a videoId YouTube has ever heard of: it has no radio, and asking for
         // one offline (where local music earns its keep) is a guaranteed-failing request.
-        let local = crate::local::is_local_song(&video_id);
+        // Autoplay off means the song plays and the queue ends there (#238): the radio hydrated
+        // below is exactly the "recommended tracks" that setting turns off.
+        let no_radio = crate::local::is_local_song(&video_id) || !self.autoplay_enabled();
 
         {
             let mut q = self.queue.lock().await;
             // Unplayed manual adds survive a context switch (Spotify semantics): they follow the
             // new track, ahead of its radio (hydration appends behind them).
             let mut carried = upcoming_queued(&q.items, q.current);
-            // A local file has no radio behind it, so don't promise one in the header.
-            q.source_name = (!local).then(|| format!("{} Radio", seed.title));
+            // No radio behind it, so don't promise one in the header.
+            q.source_name = (!no_radio).then(|| format!("{} Radio", seed.title));
             q.items = vec![seed];
             q.items.append(&mut carried);
             q.current = 0;
@@ -1126,7 +1128,7 @@ impl AppState {
             q.radio = false;
             // Hold off the autoplay early trigger `start_current` is about to spawn: this queue is
             // one track long, so it would fetch the very radio being hydrated below (#255).
-            q.hydrating = (!local).then_some(gen);
+            q.hydrating = (!no_radio).then_some(gen);
             // Shuffle carries into the new queue only when it's sticky (re-snapshotted after
             // radio hydration); otherwise a new context starts unshuffled.
             q.shuffle_orig = (sticky && q.shuffle_orig.is_some()).then(|| q.items.clone());
@@ -1137,7 +1139,7 @@ impl AppState {
             return;
         }
 
-        if local {
+        if no_radio {
             self.prime_lookahead(gen).await;
             return;
         }
