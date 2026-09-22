@@ -66,8 +66,8 @@ jobs:
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
-      # The distro rustc selects lld, which leaves bundled QuickJS/SQLite unresolved here; the
-      # PKGBUILD uses the upstream stable rustup toolchain instead.
+      # The Rust self-contained lld leaves bundled QuickJS/SQLite unresolved in this build; the
+      # PKGBUILD opts out of lld and uses the system linker.
       - name: Build in the official Arch Linux image
         env:
           LIMUSIC_SOURCE_REPO: ${{ github.repository }}
