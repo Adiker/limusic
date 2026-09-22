@@ -155,6 +155,10 @@ fn new_mpv(cache_dir: &str) -> Result<Mpv, Error> {
     let mpv = Mpv::new()?;
     mpv.set_property("vid", "no")?; // audio only
     mpv.set_property("gapless-audio", "yes")?;
+    // Open the appended remote entry while the current track is still playing. `gapless-audio`
+    // keeps the output device alive, but on its own does not guarantee that the next HTTP stream
+    // and demuxer are ready before the buffered tail reaches the playlist boundary.
+    mpv.set_property("prefetch-playlist", "yes")?;
     mpv.set_property("cache", "yes")?;
     mpv.set_property("cache-on-disk", "yes")?;
     mpv.set_property("demuxer-cache-dir", cache_dir)?;
@@ -1059,6 +1063,14 @@ mod tests {
         );
         p.set_http_proxy(None).unwrap();
         assert_eq!(p.mpv().get_property::<String>("http-proxy").unwrap(), "");
+
+        // Gapless audio only keeps the output device open. The appended remote file also has to
+        // be opened before the current track reaches EOF, or its HTTP/demux startup becomes an
+        // audible pause at the boundary.
+        assert!(
+            p.mpv().get_property::<bool>("prefetch-playlist").unwrap(),
+            "gapless lookahead prefetch is disabled"
+        );
 
         // Seek latency. A 12 MiB back buffer was pruned well before a long mix ended, so a backward
         // seek hit the network and stalled; the default 1 s buffering gate is most of the rest of
