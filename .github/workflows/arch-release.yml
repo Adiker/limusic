@@ -94,7 +94,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: limusic-arch-${{ steps.rel.outputs.tag }}
-          path: pkg/arch/*.pkg.tar.zst
+          path: pkg/arch/limusic-${{ steps.rel.outputs.version }}-[0-9]*-x86_64.pkg.tar.zst
           if-no-files-found: error
           retention-days: 7
 
@@ -104,7 +104,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          package="$(find pkg/arch -maxdepth 1 -type f -name '*.pkg.tar.zst' -print -quit)"
+          package="$(find pkg/arch -maxdepth 1 -type f \
+            -name "limusic-${{ steps.rel.outputs.version }}-[0-9]*-x86_64.pkg.tar.zst" \
+            -print -quit)"
           [ -n "$package" ] || { echo "::error::makepkg produced no package"; exit 1; }
+          echo "Uploading Arch package: $package"
           gh release upload "${{ steps.rel.outputs.tag }}" \
             --repo "$GITHUB_REPOSITORY" --clobber "$package"
