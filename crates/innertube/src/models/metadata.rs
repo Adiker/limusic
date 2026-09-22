@@ -560,6 +560,43 @@ pub(crate) fn parse_list_item(node: &Value) -> Option<SongItem> {
     })
 }
 
+/// A podcast episode row (`musicMultiRowListItemRenderer`), the only row a show page (`MPSP…`),
+/// Saved Episodes and the home Podcasts feed carry. Only the home rows name their show
+/// (`secondTitle`); on a show page `artists` is left for the page to fill. Issue #286.
+pub(crate) fn parse_episode_item(node: &Value) -> Option<SongItem> {
+    let video_id = find_first_str(node.get("onTap").or_else(|| node.get("overlay"))?, "videoId")?;
+    let title = runs_text(node.get("title"))?;
+    let duration = node
+        .pointer("/playbackProgress/musicPlaybackProgressRenderer/durationText")
+        .and_then(runs_text_opt)
+        .and_then(|d| episode_duration(&d));
+    Some(SongItem {
+        video_id,
+        title,
+        artists: runs_text(node.get("secondTitle")).unwrap_or_default(),
+        duration,
+        thumbnail: last_thumbnail(node.get("thumbnail")?),
+        // An episode's type is MUSIC_VIDEO_TYPE_PODCAST_EPISODE, which "hide music videos" would
+        // otherwise drop. Video mode still reads the player response, so video podcasts keep it.
+        is_video: false,
+        library: library_toggle(node),
+        ..Default::default()
+    })
+}
+
+/// " • 1 hr 4 min" → "1:04:00", " • 55 min" → "55:00": the colon form every other row uses.
+/// ponytail: numbers only, so it survives a localized unit word; a lone number is read as minutes,
+/// which makes an exact "2 hr" episode "2:00". The player's own duration corrects it on play.
+fn episode_duration(text: &str) -> Option<String> {
+    let n: Vec<u32> =
+        text.split(|c: char| !c.is_ascii_digit()).filter_map(|s| s.parse().ok()).collect();
+    match n[..] {
+        [m] => Some(format!("{m}:00")),
+        [h, m] => Some(format!("{h}:{m:02}:00")),
+        _ => None,
+    }
+}
+
 /// The play count from an album row's third flex column ("53M plays" → "53M"). Playlist and
 /// library rows put the album name in that column instead, so the two have to be told apart.
 ///
@@ -599,7 +636,7 @@ fn album_column(node: &Value) -> Option<String> {
 
 /// The album's browseId (`MPRE…`): either the linked album run or the row menu's "Go to album"
 /// entry — whichever the renderer carries. Tolerant: first `MPRE…` browseId in the node. context/08.
-fn album_id(node: &Value) -> Option<String> {
+pub(crate) fn album_id(node: &Value) -> Option<String> {
     find_all(node, "browseId")
         .into_iter()
         .filter_map(Value::as_str)

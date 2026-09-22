@@ -23,6 +23,8 @@ export const asSong = (i: BrowseItem): SongItem => ({
 	artist_runs: i.artistRuns,
 	artist_id: i.artistRuns?.find((r) => r.id)?.id,
 	duration: i.duration,
+	// Without it the card's ⋯ menu, and the player bar once it plays, have no "Go to album".
+	album_id: i.albumId,
 	play_count: i.playCount,
 	thumbnail: i.thumbnail,
 	explicit: i.explicit,

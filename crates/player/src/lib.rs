@@ -569,10 +569,18 @@ impl Player {
 
 /// The whole `af` chain: loudness gain, then pitch. Empty when neither is in play, so the default
 /// path stays exactly the filterless one it was before pitch existed.
+///
+/// A positive gain carries a limiter: lifting a quiet track pushes its peaks past full scale, and
+/// without one they would clip at the output. `level=disabled` stops alimiter from re-normalizing
+/// the result, which would undo the gain.
 fn af_chain(gain_db: Option<f64>, semitones: i32) -> String {
     let mut chain = Vec::new();
-    if let Some(g) = gain_db {
-        chain.push(format!("lavfi=[volume={g}dB]"));
+    match gain_db {
+        Some(g) if g > 0.0 => {
+            chain.push(format!("lavfi=[volume={g}dB,alimiter=limit=0.98:level=disabled]"))
+        }
+        Some(g) => chain.push(format!("lavfi=[volume={g}dB]")),
+        None => {}
     }
     if semitones != 0 {
         // Semitones → frequency multiplier (equal temperament).
@@ -990,6 +998,7 @@ mod tests {
         // The bug this exists for: either setter clobbering the other's filter.
         assert_eq!(af_chain(None, 0), "");
         assert_eq!(af_chain(Some(-3.5), 0), "lavfi=[volume=-3.5dB]");
+        assert_eq!(af_chain(Some(4.0), 0), "lavfi=[volume=4dB,alimiter=limit=0.98:level=disabled]");
         assert_eq!(af_chain(None, 12), "rubberband=pitch-scale=2");
         assert_eq!(af_chain(Some(-6.0), -12), "lavfi=[volume=-6dB],rubberband=pitch-scale=0.5");
         // One semitone up is the twelfth root of two.
@@ -1108,6 +1117,10 @@ mod tests {
         let after = af(); // mpv hands the chain back in its own escaped form, hence `contains`
         assert!(after.contains("volume=-4dB"), "retune after a rejection failed: {after}");
         assert!(!after.contains("rubberband"), "stored pitch survived the rollback: {after}");
+
+        // 4. A boosted track: mpv (and its ffmpeg) must accept the limiter, or the gain is lost.
+        p.set_gain(Some(6.0)).unwrap();
+        assert!(af().contains("alimiter"), "boost went in without its limiter: {}", af());
     }
 
     #[test]
