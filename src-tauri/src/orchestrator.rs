@@ -494,10 +494,21 @@ impl Orchestrator {
     /// at the player view with video on, it needs no cipher, no PoToken and no HEAD two-pass, and it
     /// must never be able to make audio slower or less reliable. A `None` here just means the view
     /// keeps the artwork.
-    pub async fn resolve_video(&self, video_id: &str, max_height: i32) -> Option<String> {
+    pub async fn resolve_video(
+        &self,
+        video_id: &str,
+        max_height: i32,
+        disabled: &HashSet<String>,
+    ) -> Option<String> {
         // VISIONOS alone: ANDROID_VR's video URLs are capped at the first mebibyte like its audio
         // ones (issue #292), so it could only ever hand the view a stream that dies mid-clip.
         for key in ["VISIONOS"] {
+            // The "stream clients" setting covers this path too. It used to be read only by
+            // `resolve`, so a user who turned a client off still got it here, which is both a
+            // setting that does not do what it says and a client they had a reason to refuse.
+            if disabled.contains(key) {
+                continue;
+            }
             let Some(client) = self.clients.get(key) else { continue };
             let resp = match self.it.player(client, video_id, None, None, None).await {
                 Ok(r) => r,

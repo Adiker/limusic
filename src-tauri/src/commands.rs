@@ -248,7 +248,7 @@ pub async fn video_stream(
     }
     // The webview picks the height from its own box, so clamp it here rather than trusting it.
     let max_height = max_height.clamp(144, 1080);
-    match state.orchestrator.resolve_video(&video_id, max_height).await {
+    match state.orchestrator.resolve_video(&video_id, max_height, &state.disabled_clients()).await {
         Some(url) => {
             state.put_video_url(&video_id, url);
             Ok(crate::videoproxy::url_for(&video_id))
