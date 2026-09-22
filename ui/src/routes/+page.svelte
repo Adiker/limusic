@@ -44,7 +44,7 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	// The mood chips + which one is active. Kept out of `home` so the row survives a filter switch's
-	// loading state (every home response carries the same chips anyway). Limusic is music-only.
+	// loading state (every home response carries the same chips anyway).
 	let chips = $state<HomeChip[]>([]);
 	let selected = $state<string | null>(null);
 	let loadingMore = $state(false);
@@ -312,7 +312,7 @@
 
 	// Chips only refresh when a response actually carries them (never blank the row mid-switch).
 	$effect(() => {
-		if (home?.chips?.length) chips = home.chips.filter((c) => c.title !== 'Podcasts');
+		if (home?.chips?.length) chips = home.chips;
 	});
 
 	onMount(() => load(null));

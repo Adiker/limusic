@@ -479,7 +479,9 @@ fn playlist_rows<'a>(
     let episodes = find_all_shallow(root, "musicMultiRowListItemRenderer");
     tracks.into_iter().filter_map(parse_list_item).chain(
         episodes.into_iter().filter_map(parse_episode_item).map(move |mut it| {
-            it.artists = show.unwrap_or_default().to_owned();
+            if it.artists.is_empty() {
+                it.artists = show.unwrap_or_default().to_owned();
+            }
             it
         }),
     )
@@ -932,29 +934,30 @@ pub(crate) fn is_signed_out(root: &Value) -> bool {
 
 // --- node parsers -------------------------------------------------------------------------
 
-/// A carousel content node is either a two-row card or a track row.
+/// A carousel content node is a two-row card, a track row, or a podcast episode (the home
+/// Podcasts feed, #286).
 fn parse_carousel_item(node: &Value) -> Option<BrowseItem> {
     if let Some(tr) = node.get("musicTwoRowItemRenderer") {
         return parse_two_row_item(tr);
     }
-    if let Some(li) = node.get("musicResponsiveListItemRenderer") {
-        let song = parse_list_item(li)?;
-        return Some(BrowseItem {
-            kind: "song",
-            id: song.video_id,
-            title: song.title,
-            subtitle: Some(song.artists).filter(|s| !s.is_empty()),
-            thumbnail: song.thumbnail,
-            duration: song.duration,
-            album_id: song.album_id,
-            artist_runs: song.artist_runs,
-            play_count: song.play_count,
-            is_video: song.is_video,
-            is_upload: song.is_upload,
-            explicit: song.explicit,
-        });
-    }
-    None
+    let song = node
+        .get("musicResponsiveListItemRenderer")
+        .and_then(parse_list_item)
+        .or_else(|| node.get("musicMultiRowListItemRenderer").and_then(parse_episode_item))?;
+    Some(BrowseItem {
+        kind: "song",
+        id: song.video_id,
+        title: song.title,
+        subtitle: Some(song.artists).filter(|s| !s.is_empty()),
+        thumbnail: song.thumbnail,
+        duration: song.duration,
+        album_id: song.album_id,
+        artist_runs: song.artist_runs,
+        play_count: song.play_count,
+        is_video: song.is_video,
+        is_upload: song.is_upload,
+        explicit: song.explicit,
+    })
 }
 
 /// A `musicTwoRowItemRenderer` → one card. Kind inferred from its navigation endpoint.
@@ -2107,5 +2110,27 @@ mod tests {
         assert!(first.thumbnail.as_deref().unwrap().contains("xOXghljqUGw"));
         // A continuation has no header, so no show name, but the rows still come through.
         assert_eq!(parse_playlist_continuation(&root).items.len(), 2);
+    }
+
+    // The home feed's Podcasts chip returns carousels of the same episode rows, which name their
+    // show in `secondTitle`. Before #286 they parsed to nothing and every shelf was dropped.
+    #[test]
+    fn parses_podcast_episodes_on_the_home_feed() {
+        let root = json!({ "musicCarouselShelfRenderer": {
+            "header": { "musicCarouselShelfBasicHeaderRenderer": { "title": { "runs": [{ "text": "Business" }] } } },
+            "contents": [{ "musicMultiRowListItemRenderer": {
+                "thumbnail": { "musicThumbnailRenderer": { "thumbnail": { "thumbnails": [{ "url": "https://i.ytimg.com/vi/abc/hq720.jpg" }] } } },
+                "onTap": { "watchEndpoint": { "videoId": "abc" } },
+                "title": { "runs": [{ "text": "Episode 12" }] },
+                "secondTitle": { "runs": [{ "text": "The Show", "navigationEndpoint": { "browseEndpoint": { "browseId": "MPSPPLxyz" } } }] }
+            } }]
+        } });
+        let home = parse_home(&root);
+        let card = &home.sections[0].items[0];
+        assert_eq!(
+            (card.kind, card.id.as_str(), card.title.as_str()),
+            ("song", "abc", "Episode 12")
+        );
+        assert_eq!(card.subtitle.as_deref(), Some("The Show"));
     }
 }

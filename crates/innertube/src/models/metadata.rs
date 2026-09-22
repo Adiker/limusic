@@ -560,9 +560,9 @@ pub(crate) fn parse_list_item(node: &Value) -> Option<SongItem> {
     })
 }
 
-/// A podcast episode row (`musicMultiRowListItemRenderer`), the only row a show page (`MPSP…`)
-/// and Saved Episodes carry. The row names no show, so `artists` is left for the page to fill.
-/// Issue #286.
+/// A podcast episode row (`musicMultiRowListItemRenderer`), the only row a show page (`MPSP…`),
+/// Saved Episodes and the home Podcasts feed carry. Only the home rows name their show
+/// (`secondTitle`); on a show page `artists` is left for the page to fill. Issue #286.
 pub(crate) fn parse_episode_item(node: &Value) -> Option<SongItem> {
     let video_id = find_first_str(node.get("onTap").or_else(|| node.get("overlay"))?, "videoId")?;
     let title = runs_text(node.get("title"))?;
@@ -573,6 +573,7 @@ pub(crate) fn parse_episode_item(node: &Value) -> Option<SongItem> {
     Some(SongItem {
         video_id,
         title,
+        artists: runs_text(node.get("secondTitle")).unwrap_or_default(),
         duration,
         thumbnail: last_thumbnail(node.get("thumbnail")?),
         is_video: is_video_row(node),
