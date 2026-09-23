@@ -1745,8 +1745,16 @@ impl AppState {
     /// remembered position is what `resume_or_toggle` reloads at when the user presses play.
     pub async fn on_audio_device_lost(&self) {
         let pos = self.current_position();
+        // Read the position first: this empties mpv's playlist, which resets `time-pos`.
+        //
+        // The file died, the *playlist* didn't. mpv runs with no `keep-open` and with
+        // `prefetch-playlist`, so it moves straight on to the appended gapless lookahead and
+        // tries it too. If the device came back in between (a PipeWire restart, a Bluetooth
+        // blip) that track starts playing, unpaused, while the queue still points at this one:
+        // the same "woke up playing music by itself" the retry path used to cause.
+        let _ = self.player.stop();
         let mut q = self.queue.lock().await;
-        q.lookahead_loaded = None; // mpv's playlist died with the file
+        q.lookahead_loaded = None;
         if let Some(item) = q.items.get(q.current) {
             if q.duration > 0.0 && pos > 1.0 && pos < q.duration {
                 *self.pending_seek.lock().unwrap() = Some((item.video_id.clone(), pos));

@@ -438,6 +438,20 @@ impl Player {
         Ok(())
     }
 
+    /// Stop playback outright and empty the playlist: mpv goes idle and stays there.
+    ///
+    /// Not [`Self::clear_playlist`], which keeps the entry mpv is on. This exists for the audio
+    /// device disappearing under a loaded file: mpv ends that file with an error and, with no
+    /// `keep-open` and `prefetch-playlist` on, walks straight into the appended gapless lookahead
+    /// (already open) and tries it too. By the time the app hears about the failure that next
+    /// entry is the current one, so `playlist-clear` would leave it playing, which is a track the
+    /// user never asked for starting by itself. Issue #267.
+    pub fn stop(&self) -> Result<(), Error> {
+        self.drop_preload(true);
+        self.mpv().command("stop", &[])?;
+        Ok(())
+    }
+
     /// True when mpv has nothing loaded (playlist exhausted or the last load failed). The
     /// orchestrator uses this after a track ends/fails to tell "gaplessly advanced into the
     /// lookahead" apart from "stalled — load the next track explicitly".
