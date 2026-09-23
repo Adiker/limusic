@@ -327,7 +327,7 @@
 			"font_filter": "Fontes",
 			"experimental": "Experimental",
 			"app_icon": "Ícone do aplicativo",
-			"app_icon_hint": "Um PNG substitui o ícone na barra de tarefas, na área de notificação e nesta janela. Os atalhos e o gerenciador de arquivos mantêm o ícone instalado.",
+			"app_icon_hint": "Um PNG substitui o ícone na barra de tarefas, na área de notificação, nesta janela e no Alt+Tab. Os atalhos, o gerenciador de arquivos e o botão da barra de tarefas do Windows mantêm o ícone instalado.",
 			"app_icon_pick": "Escolher…",
 			"app_icon_dialog": "Escolha um ícone do aplicativo",
 			"app_icon_filter": "Imagem PNG",
@@ -368,7 +368,9 @@
 			"crossfade_hint": "Faz o final de cada faixa entrar suavemente no início da próxima. Durante a sobreposição das faixas, executa um segundo decodificador de áudio, o que consome um pouco mais de memória.",
 			"crossfade_duration": "Duração do crossfade",
 			"crossfade_duration_hint": "Quanto tempo dura a sobreposição. Faixas curtas têm um fade mais curto, para que um fade nunca comece antes que o anterior tenha terminado.",
-			"crossfade_seconds": "{secs}s"
+			"crossfade_seconds": "{secs}s",
+			"normalize_volume": "Normalização de volume",
+			"normalize_volume_hint": "Nivela o volume de reprodução das faixas, para que uma masterização mais baixa não seja abafada pela seguinte. Desative para ouvir cada faixa exatamente como foi masterizada."
 		},
 		"data": {
 			"clear_cache": "Limpar cache de imagens e streams",
@@ -765,5 +767,11 @@
 		"playlist_partial": "Total adicionado à {playlist}: {added}; Total de duplicatas: {duplicates}; Total não confirmado: {remaining}. {error}",
 		"remove": "Remover desta playlist",
 		"remove_confirm": "Remover {count}?"
+	},
+	"errors": {
+		"unreachable": "Não foi possível acessar o YouTube Music. Verifique sua conexão.",
+		"offline_title": "Sem conexão",
+		"offline_body": "O Limusic não consegue acessar o YouTube Music. Verifique sua conexão com a internet e tente novamente.",
+		"generic_title": "Algo deu errado"
 	}
 }
