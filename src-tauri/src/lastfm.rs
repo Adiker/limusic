@@ -56,6 +56,8 @@ const ERR_TEMP_UNAVAILABLE: i64 = 16;
 
 enum Msg {
     Track(Box<Track>),
+    /// The playing track's album, learned after it started. Unlike `Track`, keeps the clock.
+    Album(String),
     Duration(f64),
     Position(f64),
     /// Session key set (connect) or cleared (disconnect).
@@ -88,6 +90,12 @@ impl LastfmHandle {
             artists,
             album: item.album.clone(),
         })));
+    }
+
+    /// A search or home card starts playing with no album name; the radio fetched behind it
+    /// supplies one a moment later (#309). A second `set_track` would restart the scrobble clock.
+    pub fn set_album(&self, album: &str) {
+        let _ = self.tx.send(Msg::Album(album.to_owned()));
     }
 
     pub fn set_duration(&self, secs: f64) {
@@ -146,6 +154,11 @@ impl Scrobbler {
                 self.duration = 0.0;
                 self.scrobbled = false;
                 self.now_playing().await;
+            }
+            Msg::Album(album) => {
+                if let Some(t) = &mut self.track {
+                    t.album = Some(album);
+                }
             }
             Msg::Duration(secs) => self.duration = secs,
             Msg::Position(pos) => {
