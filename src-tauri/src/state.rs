@@ -1042,11 +1042,20 @@ impl AppState {
         if let Some(c) = self.db.get_stream(video_id, cache_horizon(now, duration_secs)) {
             tracing::debug!(video_id, "stream url cache hit");
             // Cached URL carries no fresh metadata; the UI already has it from the queue item.
+            //
+            // The URL was validated under one client's User-Agent, so the replay sends the same
+            // one. An empty map (what this used to return) sent the audio proxy upstream as
+            // reqwest's default, and left mpv on the previous track's UA. `is_upload` is false by
+            // construction: upload URLs are never cached (see the write below).
+            let headers = match c.client.as_deref() {
+                Some(k) => self.orchestrator.headers_for(k, false),
+                None => Default::default(),
+            };
             return Ok(PlaybackData {
                 video_id: video_id.to_owned(),
                 stream_url: c.url,
                 itag: c.itag,
-                headers: Default::default(),
+                headers,
                 expires_in_seconds: c.expires_at - now,
                 loudness_db: c.loudness_db,
                 // Cached alongside the URL: a hit skips `/player`, so without it a replay never
@@ -1066,7 +1075,7 @@ impl AppState {
                 // the cache window (hours, and every track you just listened to) would fall back
                 // to the queue row's flag, which is exactly the thing that can't be trusted.
                 is_video: c.is_video,
-                stream_client: "cache".to_owned(),
+                stream_client: c.client.unwrap_or_else(|| "cache".to_owned()),
             });
         }
         let data = self
@@ -1089,6 +1098,7 @@ impl AppState {
                     is_video: data.is_video,
                     ping_url: data.playback_ping.as_ref().map(|p| p.url.clone()),
                     ping_client: data.playback_ping.as_ref().map(|p| p.client.clone()),
+                    client: Some(data.stream_client.clone()),
                 },
                 now,
             );
@@ -1663,7 +1673,7 @@ impl AppState {
         });
     }
 
-    /// Which client's URL the playing track was resolved from ("WEB_REMIX", "cache", ...).
+    /// Which client's URL the playing track was resolved from ("WEB_REMIX", "VISIONOS", ...).
     /// Names the culprit in a playback-error toast, which on Windows is the only diagnostic a
     /// reporter can actually produce.
     pub async fn current_stream_client(&self) -> Option<String> {

@@ -645,8 +645,9 @@ impl Orchestrator {
         });
     }
 
-    /// [`stream_headers`] for a client registry key.
-    fn headers_for(&self, client: &str, is_upload: bool) -> HashMap<String, String> {
+    /// [`stream_headers`] for a client registry key. `pub(crate)` because a cache hit skips the
+    /// resolve and has to rebuild the same headers from the client it recorded.
+    pub(crate) fn headers_for(&self, client: &str, is_upload: bool) -> HashMap<String, String> {
         stream_headers(
             self.clients.get(client).map(|c| c.user_agent.clone()),
             self.it.cookie(),
