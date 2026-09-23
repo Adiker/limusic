@@ -593,7 +593,8 @@ pub fn run() {
             //
             // The cipher webview rides the same tick, for the same reason: it is a whole
             // `WebKitWebProcess` (91 MiB PSS / 234 MiB RSS measured on Fedora) held for two
-            // functions that run once per track resolve.
+            // functions that run once per track resolve. Not on Windows, where rebuilding it
+            // freezes the app: see `CipherDeobfuscator::teardown_if_idle` (issue #288).
             {
                 let potoken = potoken.clone();
                 let cipher = cipher.clone();

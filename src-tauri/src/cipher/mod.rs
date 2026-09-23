@@ -258,8 +258,19 @@ impl CipherDeobfuscator {
     ///
     /// The idle window has to outlast a track: sig/n run once per resolve, so a shorter one would
     /// tear down and rebuild once per song, with the rebuild landing on the play path.
+    ///
+    /// **Never on Windows.** Building the webview back costs a `CreateCoreWebView2Controller`,
+    /// which wry runs on the app's main thread inside a nested message pump
+    /// (`webview2_com::wait_with_pump`), so the whole event loop stops until WebView2 answers. On a
+    /// cold machine that call has been measured at two minutes (issue #288: app frozen, evals
+    /// queued, the backlog draining the instant it returned). One idle web process is cheaper than
+    /// re-paying that once per listening gap. The fix that lets this come back is not needing a
+    /// webview at all (progress/notes/windows-cipher-webview.md).
     // ponytail: called from the periodic task in lib.rs that already ticks for PoToken.
     pub async fn teardown_if_idle(&self, idle: Duration) {
+        if cfg!(target_os = "windows") {
+            return;
+        }
         let mut inner = self.inner.lock().await;
         if !inner.idle_for(idle) {
             return;
