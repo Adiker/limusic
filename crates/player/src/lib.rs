@@ -801,6 +801,17 @@ fn event_loop(mut ev: EventContext, deck: usize, decks: Arc<Decks>) {
                 // through here instead of Event::EndFile — in our usage (no async get/set/command
                 // replies) an Err from wait_event *is* a failed track.
                 if !live() {
+                    // Not every silent deck is a preload: `start_crossfade` flips `active` to the
+                    // incoming deck the moment an overlap starts, so for the length of the fade
+                    // the deck going *out* is the one that isn't live. Its stream dying there is
+                    // the end of a track the user already heard, and reporting it as a lookahead
+                    // failure would clear the *next* track's preload and evict its cached URL.
+                    // A preload can't be the one erroring here: one arriving mid-fade is held in
+                    // `pending` until `finish_fade`, which clears `fading` before it is loaded.
+                    if decks.fading.load(Ordering::Acquire) {
+                        tracing::warn!(deck, error = %friendly_error(&e), "outgoing track died mid-fade");
+                        continue;
+                    }
                     // The preload died before anyone heard it. Reporting it would skip the track
                     // that is actually playing; dropping the preload instead means this track
                     // reaches its own end normally and the app loads the next one explicitly
