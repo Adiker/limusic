@@ -118,7 +118,10 @@ fn header(out: &mut String, app: &AppHandle, db: &Db) {
         );
     }
 
-    let disabled = db.get_setting("disabled_clients").unwrap_or_default();
+    // The key the setting is stored under (`commands.rs` UI_SETTINGS, `AppState::disabled_clients`).
+    // This used to read `disabled_clients`, which nothing writes, so it said "none" on every
+    // machine: the field that matters most when a report says nothing plays.
+    let disabled = db.get_setting("disabled_stream_clients").unwrap_or_default();
     let _ = writeln!(
         out,
         "Signed in: {} | Proxy: {} | Quality: {} | Normalize: {} | Music videos: {} | Disabled clients: {}",

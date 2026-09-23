@@ -58,8 +58,10 @@ fn friendly_error(e: &libmpv2::Error) -> String {
     match e {
         libmpv2::Error::Loadfile { error } => friendly_error(error),
         libmpv2::Error::Raw(code) => match *code {
+            // Not necessarily YouTube: mpv reads from the loopback audio proxy, so this also
+            // covers the proxy failing to reach googlevideo. Say only what is known.
             mpv_error::LoadingFailed => {
-                "Couldn't load this track — YouTube rejected the stream link".to_owned()
+                "Couldn't load this track. The stream link was refused.".to_owned()
             }
             mpv_error::NothingToPlay => "This stream contains no playable audio".to_owned(),
             mpv_error::UnknownFormat => "Unrecognized audio format".to_owned(),
