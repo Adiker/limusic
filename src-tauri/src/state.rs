@@ -1801,6 +1801,14 @@ impl AppState {
                         return false;
                     }
                 }
+                Err(e) if e.affects_every_track() => {
+                    // Nothing is wrong with this track: the network is down, or YouTube is
+                    // refusing every anonymous client right now. Skipping would walk the whole
+                    // queue in a couple of seconds, toast once per track and persist the new
+                    // position, so stay exactly where we are and say what happened.
+                    self.emit_error(&item.video_id, &e.to_string());
+                    return false;
+                }
                 Err(e) => {
                     let mut q = self.queue.lock().await;
                     // Deliberately ignores repeat-all: wrapping the unplayable-skip would spin
@@ -1929,7 +1937,15 @@ impl AppState {
                     return;
                 }
                 Err(e) => {
-                    tracing::warn!(video_id = %next_video, error = %e, "lookahead resolve failed — dropping from queue");
+                    if e.affects_every_track() {
+                        // The next track is fine; we just cannot reach YouTube. Removing it here
+                        // would delete a good row from the persisted queue, and the retry loop
+                        // would do it again to the row that moved up. Leave the queue alone and
+                        // let the next prime try again.
+                        tracing::warn!(video_id = %next_video, error = %e, "lookahead resolve failed, leaving the queue alone");
+                        return;
+                    }
+                    tracing::warn!(video_id = %next_video, error = %e, "lookahead resolve failed, dropping from queue");
                     if self.generation.load(Ordering::SeqCst) != gen {
                         return;
                     }
@@ -3651,6 +3667,9 @@ fn merge_radio(
 
 /// What the skip toast blames. "unavailable" is right for a video YouTube would not serve, and
 /// wrong for an upload: the file is still there, the session is what failed. Issue #71.
+///
+/// `Unreachable` and `SignInRequired` no longer reach here: `ResolveError::affects_every_track`
+/// stops both call sites before they skip anything, because neither says anything about the track.
 fn skip_reason(e: &ResolveError) -> &'static str {
     match e {
         ResolveError::UploadUnavailable(_) | ResolveError::SignInRequired(_) => "sign-in needed",

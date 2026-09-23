@@ -78,6 +78,20 @@ pub enum ResolveError {
     /// A local file that was in the library but is no longer on disk (context: local.rs).
     #[error("this file is no longer on your disk: {0}")]
     LocalMissing(String),
+    /// Nothing answered at all: no client's `/player` call came back, and neither did the
+    /// rustypipe net. That is the network, a dead proxy or a captive portal, and it says nothing
+    /// about this particular track, so the queue must not skip past it or drop it.
+    #[error("could not reach YouTube. Check your connection and try again ({0})")]
+    Unreachable(String),
+}
+
+impl ResolveError {
+    /// Would every other track in the queue fail this way too? A caller deciding whether to skip
+    /// forward, or to delete a row, has to know: skipping is right for a track YouTube refused and
+    /// wrong for an outage, where it walks the whole queue and deletes what it passes.
+    pub fn affects_every_track(&self) -> bool {
+        matches!(self, ResolveError::Unreachable(_) | ResolveError::SignInRequired(_))
+    }
 }
 
 /// Client keys that need the `n`-transform applied to their stream URLs. context/06.
@@ -242,6 +256,9 @@ impl Orchestrator {
 
         // 4. Fallback loop. idx == -1 reuses the main response; 0.. are the fallback clients.
         let mut best: Option<Candidate> = None;
+        // Did YouTube answer anything at all? A refusal is information about the track; silence is
+        // information about the network, and the two want opposite handling upstream.
+        let mut reached = main_resp.is_some();
         // A login client's upload URL that failed HEAD. Used only if nothing validates.
         let mut upload_fallback: Option<Candidate> = None;
         let last_idx = order.len() as isize - 1;
@@ -285,7 +302,10 @@ impl Orchestrator {
                     continue;
                 }
                 let client_sts = if client.use_signature_timestamp { sts } else { None };
-                match self.it.player(client, video_id, playlist_id, client_sts, client_pot).await {
+                let answered =
+                    self.it.player(client, video_id, playlist_id, client_sts, client_pot).await;
+                reached |= answered.is_ok();
+                match answered {
                     Ok(r) if r.playability_status.is_ok() => (key.to_owned(), r),
                     Ok(r) => {
                         login_wanted |= r.playability_status.status == "LOGIN_REQUIRED";
@@ -463,7 +483,8 @@ impl Orchestrator {
         match rustypipe_fallback::resolve(video_id, prefer_high).await {
             Ok(c) if !self.streams_to_the_end(&c.url, c.size).await => {
                 tracing::warn!(video_id, "rustypipe URL serves only its first MiB — not playable");
-                Err(nothing_played(video_id, logged_in, login_wanted))
+                // rustypipe answered, so the network is up and this failure is about the URL.
+                Err(nothing_played(video_id, logged_in, login_wanted, true))
             }
             Ok(c) => Ok(PlaybackData {
                 video_id: video_id.to_owned(),
@@ -483,7 +504,7 @@ impl Orchestrator {
             }),
             Err(e) => {
                 tracing::error!(video_id, error = %e, "rustypipe fallback failed");
-                Err(nothing_played(video_id, logged_in, login_wanted))
+                Err(nothing_played(video_id, logged_in, login_wanted, reached))
             }
         }
     }
@@ -679,7 +700,16 @@ fn stream_headers(
 
 /// The error for a track nothing could stream. Signing in is a real fix when YouTube asked for an
 /// account and there is no session, and useless noise otherwise (issue #292).
-fn nothing_played(video_id: &str, logged_in: bool, login_wanted: bool) -> ResolveError {
+/// When no response came back at all (`reached` false), we never learned anything about this video.
+fn nothing_played(
+    video_id: &str,
+    logged_in: bool,
+    login_wanted: bool,
+    reached: bool,
+) -> ResolveError {
+    if !reached {
+        return ResolveError::Unreachable(video_id.to_owned());
+    }
     if login_wanted && !logged_in {
         ResolveError::SignInRequired(video_id.to_owned())
     } else {
@@ -738,7 +768,8 @@ fn best_thumbnail(resp: &PlayerResponse) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        blacklist_blocks, blacklist_insert, is_googlevideo, stream_headers, WEB_REMIX_BLACKLIST_TTL,
+        blacklist_blocks, blacklist_insert, is_googlevideo, nothing_played, stream_headers,
+        ResolveError, WEB_REMIX_BLACKLIST_TTL,
     };
     use std::collections::HashMap;
     use std::time::{Duration, Instant};
@@ -788,5 +819,59 @@ mod tests {
 
         // Signed out: an upload cannot play at all, but it must not produce a bogus header.
         assert!(!stream_headers(ua(), None, true).contains_key("Cookie"));
+    }
+
+    /// Silence outranks a half-heard verdict: with nothing reached, even a `LOGIN_REQUIRED` seen
+    /// earlier must not turn an outage into "sign in".
+    #[test]
+    fn nothing_played_prefers_unreachable_over_a_verdict() {
+        for (logged_in, login_wanted) in
+            [(false, true), (false, false), (true, true), (true, false)]
+        {
+            assert!(
+                matches!(
+                    nothing_played("v", logged_in, login_wanted, false),
+                    ResolveError::Unreachable(_)
+                ),
+                "an outage must never read as a verdict on the track"
+            );
+        }
+    }
+
+    /// The regression guard for issue #292's fix, once YouTube did answer.
+    #[test]
+    fn nothing_played_keeps_its_old_answers_when_youtube_answered() {
+        assert!(matches!(nothing_played("v", false, true, true), ResolveError::SignInRequired(_)));
+        for (logged_in, login_wanted) in [(false, false), (true, true), (true, false)] {
+            assert!(matches!(
+                nothing_played("v", logged_in, login_wanted, true),
+                ResolveError::AllClientsFailed(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn only_the_systemic_errors_affect_every_track() {
+        let v = || "v".to_owned();
+        assert!(
+            ResolveError::Unreachable(v()).affects_every_track(),
+            "an outage would walk the queue and delete rows"
+        );
+        assert!(
+            ResolveError::SignInRequired(v()).affects_every_track(),
+            "every anonymous track fails the same way until the user signs in"
+        );
+        assert!(
+            !ResolveError::AllClientsFailed(v()).affects_every_track(),
+            "an unavailable video must still be skipped, or the queue stalls on it"
+        );
+        assert!(
+            !ResolveError::UploadUnavailable(v()).affects_every_track(),
+            "a mixed queue must skip past a failed upload to the ordinary tracks"
+        );
+        assert!(
+            !ResolveError::LocalMissing(v()).affects_every_track(),
+            "a deleted local file must keep leaving the queue"
+        );
     }
 }
