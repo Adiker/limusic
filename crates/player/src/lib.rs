@@ -46,6 +46,11 @@ pub enum PlayerEvent {
     /// Kept apart from [`PlayerEvent::TrackFailed`] because the two want opposite handling, see
     /// `AppState::on_audio_device_lost`.
     AudioDeviceLost,
+    /// The crossfade preload deck failed to open the *next* track (dead or 403 URL). Kept apart
+    /// from [`PlayerEvent::TrackFailed`] because reporting it as that would skip the track the
+    /// user is hearing; what is owed is evicting the next track's cached URL, see
+    /// `AppState::on_lookahead_failed`.
+    LookaheadFailed(String),
     Error(String),
 }
 
@@ -787,9 +792,12 @@ fn event_loop(mut ev: EventContext, deck: usize, decks: Arc<Decks>) {
                     // The preload died before anyone heard it. Reporting it would skip the track
                     // that is actually playing; dropping the preload instead means this track
                     // reaches its own end normally and the app loads the next one explicitly
-                    // (`state::on_track_ended` asks `is_idle` for exactly this case).
+                    // (`state::on_track_ended` asks `is_idle` for exactly this case). It is still
+                    // reported, as its own event, so the dead URL is evicted from the cache. `let _`,
+                    // not `break`: this loop is what the playing track depends on.
                     tracing::warn!(deck, error = %friendly_error(&e), "crossfade preload failed");
                     decks.preloaded.store(false, Ordering::Release);
+                    let _ = tx.send(PlayerEvent::LookaheadFailed(friendly_error(&e)));
                     continue;
                 }
                 let ev = if is_ao_init_failed(&e) {

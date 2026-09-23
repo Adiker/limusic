@@ -1754,6 +1754,21 @@ impl AppState {
         }
     }
 
+    /// The crossfade lookahead's track failed to open. The current track is unaffected, so the queue
+    /// and transport stay put; clearing `lookahead_loaded` makes `on_track_ended` load the next
+    /// track explicitly, and evicting its URL stops the cache serving it again (for hours) to fail
+    /// in front of the user.
+    pub async fn on_lookahead_failed(&self) {
+        let video_id = {
+            let mut q = self.queue.lock().await;
+            let idx = q.lookahead_loaded.take();
+            idx.and_then(|i| q.items.get(i)).map(|item| item.video_id.clone())
+        };
+        let Some(video_id) = video_id else { return };
+        tracing::warn!(video_id = %video_id, "lookahead stream died, evicting its cached URL");
+        self.db.evict_stream(&video_id);
+    }
+
     /// Resolve + load the current track into mpv (replace). Returns false if resolve failed or the
     /// request was superseded.
     async fn start_current(self: &std::sync::Arc<Self>, gen: u64) -> bool {
