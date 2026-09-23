@@ -88,6 +88,12 @@
 		"top_result": "Top result",
 		"all_results_for": "All results for “{query}”"
 	},
+	"errors": {
+		"unreachable": "Can't reach YouTube Music. Check your connection.",
+		"offline_title": "No connection",
+		"offline_body": "Limusic can't reach YouTube Music. Check your internet connection, then try again.",
+		"generic_title": "Something went wrong"
+	},
 	"nav": {
 		"home": "Home",
 		"search": "Search",
