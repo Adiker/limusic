@@ -155,6 +155,15 @@ fn new_mpv(cache_dir: &str) -> Result<Mpv, Error> {
     let mpv = Mpv::new()?;
     mpv.set_property("vid", "no")?; // audio only
     mpv.set_property("gapless-audio", "yes")?;
+    // mpv's native Matroska demuxer floors WebM DiscardPadding nanoseconds to Opus samples. For
+    // values one nanosecond below a sample boundary (YouTube emits 6,833,333 ns), that leaves one
+    // unwanted sample at EOF and an audible pop between otherwise-continuous tracks. FFmpeg's
+    // demuxer rounds the padding correctly without altering the stream bytes.
+    mpv.set_property("demuxer", "lavf")?;
+    // Open the appended remote entry while the current track is still playing. `gapless-audio`
+    // keeps the output device alive, but on its own does not guarantee that the next HTTP stream
+    // and demuxer are ready before the buffered tail reaches the playlist boundary.
+    mpv.set_property("prefetch-playlist", "yes")?;
     mpv.set_property("cache", "yes")?;
     mpv.set_property("cache-on-disk", "yes")?;
     mpv.set_property("demuxer-cache-dir", cache_dir)?;
@@ -571,13 +580,18 @@ impl Player {
 /// path stays exactly the filterless one it was before pitch existed.
 ///
 /// A positive gain carries a limiter: lifting a quiet track pushes its peaks past full scale, and
-/// without one they would clip at the output. `level=disabled` stops alimiter from re-normalizing
-/// the result, which would undo the gain.
+/// without one they would clip at the output. Its threshold is full scale (`limit=1`), so it only
+/// touches what would genuinely clip: a lower ceiling pulls down every peak of every boosted
+/// track, which is audible gain-riding on music that was never going to clip (#298, #300).
+/// `level=disabled` stops alimiter from re-normalizing the result, which would undo the gain.
+/// `latency=1` is essential for gapless playback: alimiter looks 5 ms ahead, and latency
+/// compensation trims that initial delay and drains the same number of buffered samples at EOF
+/// instead of dropping the outgoing tail when mpv rebuilds the graph for the next playlist entry.
 fn af_chain(gain_db: Option<f64>, semitones: i32) -> String {
     let mut chain = Vec::new();
     match gain_db {
         Some(g) if g > 0.0 => {
-            chain.push(format!("lavfi=[volume={g}dB,alimiter=limit=0.98:level=disabled]"))
+            chain.push(format!("lavfi=[volume={g}dB,alimiter=limit=1:level=disabled:latency=1]"))
         }
         Some(g) => chain.push(format!("lavfi=[volume={g}dB]")),
         None => {}
@@ -998,7 +1012,10 @@ mod tests {
         // The bug this exists for: either setter clobbering the other's filter.
         assert_eq!(af_chain(None, 0), "");
         assert_eq!(af_chain(Some(-3.5), 0), "lavfi=[volume=-3.5dB]");
-        assert_eq!(af_chain(Some(4.0), 0), "lavfi=[volume=4dB,alimiter=limit=0.98:level=disabled]");
+        assert_eq!(
+            af_chain(Some(4.0), 0),
+            "lavfi=[volume=4dB,alimiter=limit=1:level=disabled:latency=1]"
+        );
         assert_eq!(af_chain(None, 12), "rubberband=pitch-scale=2");
         assert_eq!(af_chain(Some(-6.0), -12), "lavfi=[volume=-6dB],rubberband=pitch-scale=0.5");
         // One semitone up is the twelfth root of two.
@@ -1059,6 +1076,19 @@ mod tests {
         );
         p.set_http_proxy(None).unwrap();
         assert_eq!(p.mpv().get_property::<String>("http-proxy").unwrap(), "");
+
+        // Gapless audio only keeps the output device open. The appended remote file also has to
+        // be opened before the current track reaches EOF, or its HTTP/demux startup becomes an
+        // audible pause at the boundary.
+        assert!(
+            p.mpv().get_property::<bool>("prefetch-playlist").unwrap(),
+            "gapless lookahead prefetch is disabled"
+        );
+        assert_eq!(
+            p.mpv().get_property::<String>("demuxer").unwrap(),
+            "lavf",
+            "native Matroska demuxing reintroduces a boundary sample"
+        );
 
         // Seek latency. A 12 MiB back buffer was pruned well before a long mix ended, so a backward
         // seek hit the network and stalled; the default 1 s buffering gate is most of the rest of
