@@ -61,10 +61,8 @@ const CHUNK: u64 = 4 * 1024 * 1024;
 const STALL: Duration = Duration::from_secs(20);
 
 /// `send()` (or one body read) with the stall guard on it.
-async fn no_stall<F: std::future::Future<Output = T>, T>(f: F) -> Result<T, io::Error> {
-    tokio::time::timeout(STALL, f)
-        .await
-        .map_err(|_| io::Error::other("audio proxy: upstream stalled"))
+pub(crate) async fn no_stall<F: std::future::Future<Output = T>, T>(f: F) -> Result<T, io::Error> {
+    tokio::time::timeout(STALL, f).await.map_err(|_| io::Error::other("upstream stalled"))
 }
 
 /// Keep at most this many stream URLs registered. A registration is the URL plus its headers (a
