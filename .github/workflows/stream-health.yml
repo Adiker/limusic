@@ -49,8 +49,15 @@ jobs:
 
       # `-p innertube` only: the app crate links libmpv and WebKitGTK, and none of these tests
       # need it.
+      #
+      # `rustypipe_url_streams_to_the_end` is skipped: googlevideo serves only the first MiB of a
+      # rustypipe URL (issue #292), so it fails every night, and a job that is always red gets
+      # ignored. Run it by hand to see whether the cap has lifted; drop the skip when it passes,
+      # or delete the test if the rustypipe fallback goes.
       - name: Live extraction suite
-        run: cargo test -p innertube --features integration-tests -- --nocapture
+        run: >-
+          cargo test -p innertube --features integration-tests --
+          --nocapture --skip rustypipe_url_streams_to_the_end
 
       - name: What a failure here means
         if: failure()
@@ -58,4 +65,3 @@ jobs:
           echo "::notice::A red run usually means YouTube changed something, not that a commit broke."
           echo "::notice::direct_clients red: a direct client (VISIONOS) stopped serving whole tracks."
           echo "::notice::cipher_registries red: YouTube rotated player.js and the registries are behind."
-          echo "::notice::rustypipe_url_streams_to_the_end red: the rustypipe net is capped at 1 MiB (issue #292)."
