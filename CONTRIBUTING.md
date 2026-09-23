@@ -45,6 +45,18 @@ offline. If you touch a lyrics provider, run the ignored ones: a provider whose
 endpoint has changed returns "no lyrics" rather than an error, so it looks
 exactly like a track that simply has none.
 
+Live YouTube extraction checks are behind a feature flag instead, since they hit
+the network:
+
+```bash
+cargo test -p innertube --features integration-tests -- --nocapture
+```
+
+Run these after changing the client list, the cipher, or anything in the resolve
+path. A failure usually means YouTube changed something rather than that your
+patch is wrong; `.github/workflows/stream-health.yml` runs them nightly and says
+what each one means.
+
 On macOS the test binaries link libmpv just like the app does, so they need the
 same `LIBRARY_PATH` as the build or they fail to link with
 `ld: library 'mpv' not found`:

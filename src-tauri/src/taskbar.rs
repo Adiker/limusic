@@ -332,7 +332,10 @@ fn icon_from_bgra(pixels: &[u32], w: i32, h: i32) -> Option<HICON> {
 /// ponytail: `GetSystemMetrics`, not `GetSystemMetricsForDpi`. The latter needs another `windows`
 /// crate feature to shave a few pixels off a second monitor running a different scale.
 pub fn set_icons(window: &tauri::WebviewWindow, img: &tauri::image::Image<'_>) {
-    let Ok(hwnd) = window.hwnd() else { return };
+    let Ok(hwnd) = window.hwnd() else {
+        tracing::warn!("app icon: no main window HWND; the shell keeps the .exe icon");
+        return;
+    };
     let _swap = ICON_SWAP.lock().unwrap_or_else(|e| e.into_inner());
     let big = metric(SM_CXICON, SM_CYICON);
     let small = metric(SM_CXSMICON, SM_CYSMICON);
@@ -358,12 +361,29 @@ fn send_icon(
     (w, h): (i32, i32),
     prev: &AtomicIsize,
 ) {
+    // #299: the taskbar button still shows the .exe icon on at least one Windows 11 machine, and
+    // every way this can fail is a silent `return`. The log is what tells a Windows run whether
+    // ICON_BIG was ever sent, so the next report can be read instead of guessed at.
+    let name = if which == ICON_BIG { "ICON_BIG" } else { "ICON_SMALL" };
     let img = crate::appicon::scaled(img, w as u32, h as u32);
     let pixels = crate::appicon::premultiplied_bgra(img.rgba());
-    let Some(icon) = icon_from_bgra(&pixels, w, h) else { return };
-    unsafe {
-        SendMessageW(hwnd, WM_SETICON, Some(WPARAM(which as _)), Some(LPARAM(icon.0 as _)));
-    }
+    let Some(icon) = icon_from_bgra(&pixels, w, h) else {
+        tracing::warn!(
+            icon = name,
+            want_w = w,
+            want_h = h,
+            got_w = img.width(),
+            got_h = img.height(),
+            "app icon: could not build the HICON"
+        );
+        return;
+    };
+    // WM_SETICON returns the icon it replaced. Zero means the window had none, which is the state
+    // in which the shell falls back to the .exe resource.
+    let replaced = unsafe {
+        SendMessageW(hwnd, WM_SETICON, Some(WPARAM(which as _)), Some(LPARAM(icon.0 as _)))
+    };
+    tracing::info!(icon = name, w, h, replaced = replaced.0 != 0, "app icon sent");
     // The window owns the handle until it is replaced. Freeing the one it just let go keeps a user
     // who tries five icons in a row from leaking five of them.
     let old = prev.swap(icon.0 as isize, Ordering::Relaxed);

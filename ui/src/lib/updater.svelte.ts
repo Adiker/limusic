@@ -6,6 +6,7 @@ import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { toast } from './player.svelte';
 import { t } from './i18n.svelte';
+import { friendlyNetError } from './neterr';
 import { canSelfUpdate, getSettings, openExternal, releaseNotes } from './api';
 import { getVersion } from '@tauri-apps/api/app';
 
@@ -95,7 +96,10 @@ export async function checkForUpdatesInteractive(): Promise<{ message: string; e
 			};
 		return { message: t('settings.about.up_to_date'), error: false };
 	} catch (e) {
-		return { message: t('settings.about.update_check_failed', { error: String(e) }), error: true };
+		// Rendered inline in the dialog rather than as a toast, so it misses the toast's own
+		// network wording and has to ask for it here.
+		const detail = friendlyNetError(String(e), t('errors.unreachable'));
+		return { message: t('settings.about.update_check_failed', { error: detail }), error: true };
 	} finally {
 		updateState.checking = false;
 	}

@@ -309,9 +309,13 @@ struct QueueState {
     /// The client that served the primed lookahead track — promoted to `current_client` on a
     /// gapless advance so the failure feedback still knows the client.
     lookahead_client: Option<String>,
-    /// Loudness gain (dB) for the primed lookahead. mpv's `af` is global, so this can't ride along
-    /// with the appended entry — it's applied when the gapless advance is observed.
-    lookahead_gain: Option<Option<f64>>,
+    /// Raw `loudnessDb` of the currently-loaded track, kept so toggling normalization can retune
+    /// what is already playing instead of waiting for the next one (#298).
+    current_loudness_db: Option<f64>,
+    /// Raw `loudnessDb` for the primed lookahead. mpv's `af` is global, so the gain can't ride
+    /// along with the appended entry: it's computed and applied when the gapless advance is
+    /// observed. Outer `Option` is "a lookahead is primed", inner is "YouTube told us a loudness".
+    lookahead_loudness_db: Option<Option<f64>>,
     /// Watch-history ping for the current track + the primed lookahead's (promoted on a gapless
     /// advance, mirroring current/lookahead_client). context/01 §registerPlayback.
     playback_ping: Option<PlaybackPing>,
@@ -439,7 +443,7 @@ impl AppState {
 
     /// User-disabled stream clients — comma-separated setting. Also the force-fail lever for the
     /// rustypipe-solo acceptance test; `LIMUSIC_DISABLED_CLIENTS` env overrides for quick testing.
-    fn disabled_clients(&self) -> HashSet<String> {
+    pub(crate) fn disabled_clients(&self) -> HashSet<String> {
         let raw = std::env::var("LIMUSIC_DISABLED_CLIENTS")
             .ok()
             .or_else(|| self.db.get_setting("disabled_stream_clients"))
@@ -1038,11 +1042,20 @@ impl AppState {
         if let Some(c) = self.db.get_stream(video_id, cache_horizon(now, duration_secs)) {
             tracing::debug!(video_id, "stream url cache hit");
             // Cached URL carries no fresh metadata; the UI already has it from the queue item.
+            //
+            // The URL was validated under one client's User-Agent, so the replay sends the same
+            // one. An empty map (what this used to return) sent the audio proxy upstream as
+            // reqwest's default, and left mpv on the previous track's UA. `is_upload` is false by
+            // construction: upload URLs are never cached (see the write below).
+            let headers = match c.client.as_deref() {
+                Some(k) => self.orchestrator.headers_for(k, false),
+                None => Default::default(),
+            };
             return Ok(PlaybackData {
                 video_id: video_id.to_owned(),
                 stream_url: c.url,
                 itag: c.itag,
-                headers: Default::default(),
+                headers,
                 expires_in_seconds: c.expires_at - now,
                 loudness_db: c.loudness_db,
                 // Cached alongside the URL: a hit skips `/player`, so without it a replay never
@@ -1062,7 +1075,7 @@ impl AppState {
                 // the cache window (hours, and every track you just listened to) would fall back
                 // to the queue row's flag, which is exactly the thing that can't be trusted.
                 is_video: c.is_video,
-                stream_client: "cache".to_owned(),
+                stream_client: c.client.unwrap_or_else(|| "cache".to_owned()),
             });
         }
         let data = self
@@ -1085,6 +1098,7 @@ impl AppState {
                     is_video: data.is_video,
                     ping_url: data.playback_ping.as_ref().map(|p| p.url.clone()),
                     ping_client: data.playback_ping.as_ref().map(|p| p.client.clone()),
+                    client: Some(data.stream_client.clone()),
                 },
                 now,
             );
@@ -1621,8 +1635,9 @@ impl AppState {
             let mut q = self.queue.lock().await;
             // `af` is global in mpv and the appended entry couldn't carry its own, so the new track
             // is playing at the *previous* one's gain until this lands.
-            if let Some(gain) = q.lookahead_gain.take() {
-                if let Err(e) = self.player.set_gain(gain) {
+            if let Some(loudness) = q.lookahead_loudness_db.take() {
+                q.current_loudness_db = loudness;
+                if let Err(e) = self.player.set_gain(self.track_gain(loudness)) {
                     tracing::warn!(error = %e, "applying lookahead loudness gain failed");
                 }
             }
@@ -1658,7 +1673,7 @@ impl AppState {
         });
     }
 
-    /// Which client's URL the playing track was resolved from ("WEB_REMIX", "cache", ...).
+    /// Which client's URL the playing track was resolved from ("WEB_REMIX", "VISIONOS", ...).
     /// Names the culprit in a playback-error toast, which on Windows is the only diagnostic a
     /// reporter can actually produce.
     pub async fn current_stream_client(&self) -> Option<String> {
@@ -1718,6 +1733,50 @@ impl AppState {
         false
     }
 
+    /// The audio device went away under a loaded file (a PC waking from sleep re-enumerates its
+    /// devices, or one was unplugged). mpv ends the file with an error exactly like a dead URL
+    /// does, and routing it through `on_track_failed` is what made a sleeping PC wake up playing
+    /// music by itself: the retry evicted a perfectly good stream URL, `start_current` ends with an
+    /// unconditional `play()` so the user's pause was thrown away, the device was still missing so
+    /// the next track failed the same way, and the app walked the queue (scrobbling each track it
+    /// touched) until the device came back and one of those `play()` calls stuck. Issue #267.
+    ///
+    /// Nothing is wrong with the stream, so stay exactly where we are. mpv is idle now, so the
+    /// remembered position is what `resume_or_toggle` reloads at when the user presses play.
+    pub async fn on_audio_device_lost(&self) {
+        let pos = self.current_position();
+        // Read the position first: this empties mpv's playlist, which resets `time-pos`.
+        //
+        // The file died, the *playlist* didn't. mpv runs with no `keep-open` and with
+        // `prefetch-playlist`, so it moves straight on to the appended gapless lookahead and
+        // tries it too. If the device came back in between (a PipeWire restart, a Bluetooth
+        // blip) that track starts playing, unpaused, while the queue still points at this one:
+        // the same "woke up playing music by itself" the retry path used to cause.
+        let _ = self.player.stop();
+        let mut q = self.queue.lock().await;
+        q.lookahead_loaded = None;
+        if let Some(item) = q.items.get(q.current) {
+            if q.duration > 0.0 && pos > 1.0 && pos < q.duration {
+                *self.pending_seek.lock().unwrap() = Some((item.video_id.clone(), pos));
+            }
+        }
+    }
+
+    /// The crossfade lookahead's track failed to open. The current track is unaffected, so the queue
+    /// and transport stay put; clearing `lookahead_loaded` makes `on_track_ended` load the next
+    /// track explicitly, and evicting its URL stops the cache serving it again (for hours) to fail
+    /// in front of the user.
+    pub async fn on_lookahead_failed(&self) {
+        let video_id = {
+            let mut q = self.queue.lock().await;
+            let idx = q.lookahead_loaded.take();
+            idx.and_then(|i| q.items.get(i)).map(|item| item.video_id.clone())
+        };
+        let Some(video_id) = video_id else { return };
+        tracing::warn!(video_id = %video_id, "lookahead stream died, evicting its cached URL");
+        self.db.evict_stream(&video_id);
+    }
+
     /// Resolve + load the current track into mpv (replace). Returns false if resolve failed or the
     /// request was superseded.
     async fn start_current(self: &std::sync::Arc<Self>, gen: u64) -> bool {
@@ -1775,6 +1834,14 @@ impl AppState {
                         return false;
                     }
                 }
+                Err(e) if e.affects_every_track() => {
+                    // Nothing is wrong with this track: the network is down, or YouTube is
+                    // refusing every anonymous client right now. Skipping would walk the whole
+                    // queue in a couple of seconds, toast once per track and persist the new
+                    // position, so stay exactly where we are and say what happened.
+                    self.emit_error(&item.video_id, &e.to_string());
+                    return false;
+                }
                 Err(e) => {
                     let mut q = self.queue.lock().await;
                     // Deliberately ignores repeat-all: wrapping the unplayable-skip would spin
@@ -1809,7 +1876,7 @@ impl AppState {
             .map(|(_, pos)| pos);
         let stream_url = mpv_stream_url(&data);
         if let Err(e) =
-            self.player.load(&stream_url, &data.headers, loudness_gain(data.loudness_db), seek)
+            self.player.load(&stream_url, &data.headers, self.track_gain(data.loudness_db), seek)
         {
             self.emit_error(&item.video_id, &e.to_string());
             return false;
@@ -1827,6 +1894,7 @@ impl AppState {
         {
             let mut q = self.queue.lock().await;
             q.current_client = Some(data.stream_client.clone());
+            q.current_loudness_db = data.loudness_db;
             // Fresh play → fresh history state (context/01 §registerPlayback).
             q.playback_ping = data.playback_ping.clone();
             q.cpn = innertube::generate_cpn();
@@ -1902,7 +1970,15 @@ impl AppState {
                     return;
                 }
                 Err(e) => {
-                    tracing::warn!(video_id = %next_video, error = %e, "lookahead resolve failed — dropping from queue");
+                    if e.affects_every_track() {
+                        // The next track is fine; we just cannot reach YouTube. Removing it here
+                        // would delete a good row from the persisted queue, and the retry loop
+                        // would do it again to the row that moved up. Leave the queue alone and
+                        // let the next prime try again.
+                        tracing::warn!(video_id = %next_video, error = %e, "lookahead resolve failed, leaving the queue alone");
+                        return;
+                    }
+                    tracing::warn!(video_id = %next_video, error = %e, "lookahead resolve failed, dropping from queue");
                     if self.generation.load(Ordering::SeqCst) != gen {
                         return;
                     }
@@ -1964,7 +2040,7 @@ impl AppState {
         }
         q.lookahead_loaded = Some(next_idx);
         q.lookahead_client = Some(data.stream_client.clone());
-        q.lookahead_gain = Some(loudness_gain(data.loudness_db));
+        q.lookahead_loudness_db = Some(data.loudness_db);
         q.lookahead_playback_ping = data.playback_ping.clone();
         // Same backfill as start_current: a gapless advance emits this item straight from the
         // queue, so the repair has to land before it becomes the current track.
@@ -1977,6 +2053,24 @@ impl AppState {
     async fn current_item(&self) -> Option<SongItem> {
         let q = self.queue.lock().await;
         q.items.get(q.current).cloned()
+    }
+
+    /// [`loudness_gain`] for one track, honouring the `normalize_volume` setting. Off means mpv
+    /// gets no `af` at all, so the master plays exactly as mastered: no attenuation, no boost and
+    /// no limiter (#298). Every load path routes through here, so the switch cannot half-apply.
+    fn track_gain(&self, loudness_db: Option<f64>) -> Option<f64> {
+        (self.db.get_setting("normalize_volume").as_deref() != Some("false"))
+            .then(|| loudness_gain(loudness_db))
+            .flatten()
+    }
+
+    /// Retune what is already playing after the `normalize_volume` switch moved. The point of the
+    /// setting is hearing the same track both ways, so it cannot wait for the next track change.
+    pub(crate) async fn reapply_gain(&self) {
+        let loudness = self.queue.lock().await.current_loudness_db;
+        if let Err(e) = self.player.set_gain(self.track_gain(loudness)) {
+            tracing::warn!(error = %e, "reapplying loudness gain failed");
+        }
     }
 
     // --- events (context/11 UI contract) ----------------------------------------------------
@@ -2837,13 +2931,14 @@ impl AppState {
         if let Err(e) = self.player.load(
             &stream_url,
             &data.headers,
-            loudness_gain(data.loudness_db),
+            self.track_gain(data.loudness_db),
             (pos > 0.5).then_some(pos),
         ) {
             self.emit_error(&track.id, &e.to_string());
             return;
         }
         let _ = if playing { self.player.play() } else { self.player.pause() };
+        self.queue.lock().await.current_loudness_db = data.loudness_db;
         if let Some(item) = self.current_item().await {
             self.emit_now_playing(&item, "listen-together");
         }
@@ -3605,9 +3700,12 @@ fn merge_radio(
 
 /// What the skip toast blames. "unavailable" is right for a video YouTube would not serve, and
 /// wrong for an upload: the file is still there, the session is what failed. Issue #71.
+///
+/// `Unreachable` and `SignInRequired` no longer reach here: `ResolveError::affects_every_track`
+/// stops both call sites before they skip anything, because neither says anything about the track.
 fn skip_reason(e: &ResolveError) -> &'static str {
     match e {
-        ResolveError::UploadUnavailable(_) => "sign-in needed",
+        ResolveError::UploadUnavailable(_) | ResolveError::SignInRequired(_) => "sign-in needed",
         _ => "unavailable",
     }
 }
@@ -3861,7 +3959,8 @@ fn history_threshold(duration: f64) -> f64 {
 /// they are lifted by at most [`MAX_BOOST_DB`].
 ///
 /// `None` means "no filter": on target (or no metadata), mpv gets its `af` cleared rather than a
-/// `volume=0dB` no-op in the chain.
+/// `volume=0dB` no-op in the chain. Callers go through [`AppState::track_gain`], which is where
+/// the user's `normalize_volume` switch turns the whole thing off.
 // ponytail: no peak data from YouTube, so the boost cap is a guess at how much limiting a dynamic
 // master tolerates. Lower MAX_BOOST_DB if classical/jazz sounds squashed.
 fn loudness_gain(loudness_db: Option<f64>) -> Option<f64> {
@@ -3896,9 +3995,10 @@ fn mpv_stream_url(data: &PlaybackData) -> String {
 /// Loudness target, matching YouTube Music's own player rather than the video site's -14.
 const TARGET_LUFS: f64 = -7.0;
 
-/// Most a quiet track is lifted toward [`TARGET_LUFS`]. The limiter absorbs the peaks, and past
-/// this it audibly flattens a dynamic master.
-const MAX_BOOST_DB: f64 = 6.0;
+/// Most a quiet track is lifted toward [`TARGET_LUFS`]. Every dB of boost is a dB the limiter may
+/// have to take back off the peaks, so this is a dynamics budget, not a loudness one: +6 flattened
+/// dynamic masters audibly (#298, #300), while +3 still closes most of the gap #237 reported.
+const MAX_BOOST_DB: f64 = 3.0;
 
 /// Fingerprint of a queue's track list: what `emit_queue` compares to decide whether the UI
 /// already has these rows. Hashes length, `video_id`, and every field the panel renders

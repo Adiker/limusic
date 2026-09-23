@@ -15,6 +15,8 @@ pub struct StreamCandidate {
     pub url: String,
     pub itag: u32,
     pub mime: String,
+    /// Full file size in bytes, for the bounded `&range=` URL googlevideo requires.
+    pub size: u64,
     pub bitrate: u32,
     pub expires_in_seconds: u32,
     /// rustypipe's loudness (inverse ReplayGain — see AudioStream docs). Feeds context/14 gain.
@@ -33,6 +35,24 @@ pub enum FallbackError {
     NoAudio,
     #[error("rustypipe: {0}")]
     RustyPipe(String),
+}
+
+impl FallbackError {
+    /// Did YouTube answer? A refusal is a verdict on the track; only `RustyPipe` can be silence.
+    ///
+    /// The orchestrator needs the two apart. With every InnerTube client skipped or erroring, the
+    /// last thing that spoke to YouTube is rustypipe, and reading its "unavailable" as an outage
+    /// makes the queue treat a dead video as systemic: it holds the track in place instead of
+    /// skipping it and fails on it forever. Issue #292.
+    pub fn answered(&self) -> bool {
+        match self {
+            // `map_err` builds these two from `ExtractionError::Unavailable` only, which is
+            // YouTube's own playability verdict, and `NoAudio` from a player response that
+            // parsed. Transport, parse and cipher failures all land in `RustyPipe`.
+            Self::AgeRestricted | Self::Unavailable(_) | Self::NoAudio => true,
+            Self::RustyPipe(_) => false,
+        }
+    }
 }
 
 /// Resolve a videoId to its best audio stream via rustypipe. `prefer_high`: pick the
@@ -56,6 +76,7 @@ pub async fn resolve(video_id: &str, prefer_high: bool) -> Result<StreamCandidat
         url: best.url.clone(),
         itag: best.itag,
         mime: best.mime.clone(),
+        size: best.size,
         bitrate: best.bitrate,
         expires_in_seconds: player.expires_in_seconds,
         loudness_db: best.loudness_db,
@@ -101,5 +122,21 @@ fn map_err(e: RpError) -> FallbackError {
             _ => FallbackError::Unavailable(msg),
         },
         other => FallbackError::RustyPipe(other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FallbackError;
+
+    #[test]
+    fn only_a_verdict_counts_as_an_answer() {
+        assert!(FallbackError::AgeRestricted.answered());
+        assert!(FallbackError::Unavailable("gone".into()).answered());
+        assert!(FallbackError::NoAudio.answered());
+        assert!(
+            !FallbackError::RustyPipe("connection refused".into()).answered(),
+            "a transport failure must still read as an outage"
+        );
     }
 }

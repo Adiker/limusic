@@ -109,6 +109,13 @@ fn tune_webview(win: &tauri::WebviewWindow, media: bool) {
             settings.set_enable_webrtc(false);
             settings.set_enable_webgl(false);
             settings.set_enable_html5_database(false); // WebSQL. localStorage is a separate switch.
+
+            // Two-finger swipe to go back (#302). WebKit walks its own back/forward list, which
+            // for this SPA is SvelteKit's pushState entries: the same ones the titlebar's back
+            // button steps through. It only fires once a horizontal scroller has run out, so the
+            // shelves keep their swipes. Windows has this on by default; macOS would need
+            // WKWebView's allowsBackForwardNavigationGestures, which wry does not expose.
+            settings.set_enable_back_forward_navigation_gestures(true);
         }
     });
     match res {
@@ -593,7 +600,8 @@ pub fn run() {
             //
             // The cipher webview rides the same tick, for the same reason: it is a whole
             // `WebKitWebProcess` (91 MiB PSS / 234 MiB RSS measured on Fedora) held for two
-            // functions that run once per track resolve.
+            // functions that run once per track resolve. Not on Windows, where rebuilding it
+            // freezes the app: see `CipherDeobfuscator::teardown_if_idle` (issue #288).
             {
                 let potoken = potoken.clone();
                 let cipher = cipher.clone();
@@ -888,6 +896,22 @@ fn spawn_event_pump(
                         };
                         let _ = app.emit("playback-error", serde_json::json!({ "message": msg }));
                     }
+                }
+                PlayerEvent::AudioDeviceLost => {
+                    tracing::warn!("audio device unavailable, holding the queue where it is");
+                    state.on_audio_device_lost().await;
+                    let _ = app.emit(
+                        "playback-error",
+                        serde_json::json!({
+                            "message": "Your audio device is unavailable. Press play once it's back."
+                        }),
+                    );
+                }
+                PlayerEvent::LookaheadFailed(msg) => {
+                    // No toast: the user is still hearing the current track and nothing they can
+                    // see has gone wrong. The only thing owed is the eviction.
+                    tracing::warn!(error = %msg, "lookahead preload failed");
+                    state.on_lookahead_failed().await;
                 }
                 PlayerEvent::Error(msg) => {
                     tracing::error!(error = %msg, "player error");
