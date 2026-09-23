@@ -362,10 +362,11 @@ impl Orchestrator {
                 continue;
             };
 
-            // n-transform + &pot= for web clients (context/05, 06). googlevideo only: an RSS-feed
-            // podcast's URL is the feed's own host, which must not be handed a PoToken (#294).
+            // n-transform + &pot= for web clients (context/05, 06). YouTube's own stream hosts
+            // only: an RSS-feed podcast's URL is the feed's own host, which must not be handed a
+            // PoToken (#294). Uploads stream from `c.youtube.com` and do need both (#308).
             let client = self.clients.get(&key);
-            let needs_n = is_googlevideo(&url)
+            let needs_n = is_youtube_stream(&url)
                 && (client.is_some_and(|c| c.use_web_po_tokens)
                     || NEEDS_N_TRANSFORM.contains(&key.as_str()));
             if needs_n {
@@ -613,7 +614,7 @@ impl Orchestrator {
         headers: &HashMap<String, String>,
         content_length: Option<u64>,
     ) -> bool {
-        let req = match content_length.filter(|n| *n > 0).filter(|_| is_googlevideo(url)) {
+        let req = match content_length.filter(|n| *n > 0).filter(|_| is_youtube_stream(url)) {
             Some(len) => crate::http::client()
                 .get(url)
                 .header("Range", format!("bytes={}-{}", len.saturating_sub(256), len - 1))
@@ -693,26 +694,34 @@ impl Orchestrator {
     }
 }
 
-/// True for a URL served by YouTube's own stream CDN. Everything else (an RSS-feed podcast's
-/// enclosure, #294) gets no n-transform, no PoToken and no chunking proxy.
 /// A format's byte length, when it reported one. `"0"` (an RSS-feed enclosure, #294) reads as
 /// absent, because a zero-length file has no tail to probe.
 fn content_length(f: &Format) -> Option<u64> {
     f.content_length.as_deref()?.parse::<u64>().ok().filter(|n| *n > 0)
 }
 
-pub(crate) fn is_googlevideo(url: &str) -> bool {
+/// True for a URL served by YouTube's own stream CDN. Everything else (an RSS-feed podcast's
+/// enclosure, #294) gets no n-transform, no PoToken and no chunking proxy.
+///
+/// **Two hosts, not one.** Ordinary tracks come back on `*.googlevideo.com`, but one of the user's
+/// own uploads is served from `*.c.youtube.com` (measured on a 0.8.2 report, issue #308). Matching
+/// only the first host meant an upload's URL was handed to mpv unsigned: no `n`-transform and no
+/// `&pot=`, which googlevideo answers with 403, and mpv opened it directly because the chunking
+/// proxy skipped it too. Uploads have no anonymous client behind them, so that was every upload.
+pub(crate) fn is_youtube_stream(url: &str) -> bool {
     reqwest::Url::parse(url)
         .ok()
-        .and_then(|u| u.host_str().map(|h| h.ends_with(".googlevideo.com")))
+        .and_then(|u| {
+            u.host_str().map(|h| h.ends_with(".googlevideo.com") || h.ends_with(".c.youtube.com"))
+        })
         .unwrap_or(false)
 }
 
 /// The headers mpv (and the validating HEAD) must send for one stream.
 ///
-/// A privately-owned track's googlevideo URL is only served to the session that owns it, so an
-/// upload's GET has to carry the cookie. Uploads only: this is the hot path and there is no
-/// evidence an ordinary stream wants one. Issue #71.
+/// A privately-owned track's stream URL (`c.youtube.com`, #308) is only served to the session
+/// that owns it, so an upload's GET has to carry the cookie. Uploads only: this is the hot path
+/// and there is no evidence an ordinary stream wants one. Issue #71.
 ///
 /// mpv's header properties are global (crates/player: `http-header-fields`), so a track appended
 /// for gapless playback inherits whatever the current one set. Same host either way, so it is
@@ -804,19 +813,24 @@ fn best_thumbnail(resp: &PlayerResponse) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        blacklist_blocks, blacklist_insert, claim_heal, content_length, is_googlevideo,
+        blacklist_blocks, blacklist_insert, claim_heal, content_length, is_youtube_stream,
         nothing_played, stream_headers, ResolveError, WEB_REMIX_BLACKLIST_TTL,
     };
     use std::collections::HashMap;
     use std::time::{Duration, Instant};
 
-    // An RSS-feed podcast streams from the feed's own host (#294), which gets no PoToken.
+    // An RSS-feed podcast streams from the feed's own host (#294), which gets no PoToken. One of
+    // the user's own uploads streams from `c.youtube.com` (#308), which needs everything a
+    // googlevideo URL needs: miss it and the URL reaches mpv unsigned and 403s.
     #[test]
-    fn only_googlevideo_hosts_count_as_googlevideo() {
-        assert!(is_googlevideo("https://rr5---sn-abc.googlevideo.com/videoplayback?n=x"));
-        assert!(!is_googlevideo("https://www.podtrac.com/pts/redirect.mp3/x.mp3"));
-        assert!(!is_googlevideo("https://evil.com/googlevideo.com/videoplayback"));
-        assert!(!is_googlevideo("/home/me/song.flac"));
+    fn both_of_youtubes_stream_hosts_count_and_nothing_else_does() {
+        assert!(is_youtube_stream("https://rr5---sn-abc.googlevideo.com/videoplayback?n=x"));
+        assert!(is_youtube_stream("https://rr2---sn-2onja5-5i.c.youtube.com/videoplayback?n=x"));
+        assert!(!is_youtube_stream("https://www.podtrac.com/pts/redirect.mp3/x.mp3"));
+        assert!(!is_youtube_stream("https://evil.com/googlevideo.com/videoplayback"));
+        assert!(!is_youtube_stream("https://evil.com/rr2---sn-x.c.youtube.com/videoplayback"));
+        assert!(!is_youtube_stream("https://www.youtube.com/watch?v=x"));
+        assert!(!is_youtube_stream("/home/me/song.flac"));
     }
 
     #[test]
