@@ -525,6 +525,11 @@ impl Orchestrator {
             }),
             Err(e) => {
                 tracing::error!(video_id, error = %e, "rustypipe fallback failed");
+                // rustypipe is the last thing that spoke to YouTube, so its verdict counts as an
+                // answer even when every InnerTube client was skipped or errored (a disabled
+                // MAIN/VISIONOS pair, or TVHTML5_SIMPLY passed over for want of a PoToken). Without
+                // this, a genuinely dead video reads as an outage and the queue sits on it.
+                let reached = reached || e.answered();
                 Err(nothing_played(video_id, logged_in, login_wanted, reached))
             }
         }

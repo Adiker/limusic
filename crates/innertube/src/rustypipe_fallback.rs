@@ -37,6 +37,24 @@ pub enum FallbackError {
     RustyPipe(String),
 }
 
+impl FallbackError {
+    /// Did YouTube answer? A refusal is a verdict on the track; only `RustyPipe` can be silence.
+    ///
+    /// The orchestrator needs the two apart. With every InnerTube client skipped or erroring, the
+    /// last thing that spoke to YouTube is rustypipe, and reading its "unavailable" as an outage
+    /// makes the queue treat a dead video as systemic: it holds the track in place instead of
+    /// skipping it and fails on it forever. Issue #292.
+    pub fn answered(&self) -> bool {
+        match self {
+            // `map_err` builds these two from `ExtractionError::Unavailable` only, which is
+            // YouTube's own playability verdict, and `NoAudio` from a player response that
+            // parsed. Transport, parse and cipher failures all land in `RustyPipe`.
+            Self::AgeRestricted | Self::Unavailable(_) | Self::NoAudio => true,
+            Self::RustyPipe(_) => false,
+        }
+    }
+}
+
 /// Resolve a videoId to its best audio stream via rustypipe. `prefer_high`: pick the
 /// highest-bitrate opus/mp4a stream (matches our HIGH preference); else lowest ≤128k.
 pub async fn resolve(video_id: &str, prefer_high: bool) -> Result<StreamCandidate, FallbackError> {
@@ -104,5 +122,21 @@ fn map_err(e: RpError) -> FallbackError {
             _ => FallbackError::Unavailable(msg),
         },
         other => FallbackError::RustyPipe(other.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FallbackError;
+
+    #[test]
+    fn only_a_verdict_counts_as_an_answer() {
+        assert!(FallbackError::AgeRestricted.answered());
+        assert!(FallbackError::Unavailable("gone".into()).answered());
+        assert!(FallbackError::NoAudio.answered());
+        assert!(
+            !FallbackError::RustyPipe("connection refused".into()).answered(),
+            "a transport failure must still read as an outage"
+        );
     }
 }
