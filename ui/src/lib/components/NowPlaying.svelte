@@ -47,11 +47,14 @@
 	// backdrop does. `data-np-keep` marks the two regions that own their clicks: the artwork itself
 	// and the queue/lyrics column. Anything added straight to the view outside those closes it.
 	// Same press-not-release rule as the player bar: dragging a queue row (or a lyrics scroll) and
-	// releasing over the backdrop retargets the click at the common ancestor, which is this.
+	// releasing over the backdrop retargets the click at the common ancestor, which is this. Both
+	// ends of the drag are checked, because the retarget happens whichever way it ran: a selection
+	// started on the backdrop and finished over the lyrics lands the click here too.
 	const keeps = (t: EventTarget | null) => !!(t as Element | null)?.closest?.('[data-np-keep]');
 	let pressedKeep = false;
+	let releasedKeep = false;
 	function onBackdropClick(e: MouseEvent) {
-		if (pressedKeep || keeps(e.target)) return;
+		if (pressedKeep || releasedKeep || keeps(e.target)) return;
 		np.open = false;
 	}
 
@@ -115,7 +118,8 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
 	transition:fly={{ y: '100%', duration: 320, easing: cubicOut }}
-	onpointerdown={(e) => (pressedKeep = keeps(e.target))}
+	onpointerdown={(e) => ((pressedKeep = keeps(e.target)), (releasedKeep = false))}
+	onpointerup={(e) => (releasedKeep = keeps(e.target))}
 	onclick={onBackdropClick}
 	class="absolute inset-y-0 left-16 right-0 z-20 flex justify-center overflow-hidden bg-background px-4 py-4 sm:px-6 sm:py-6 lg:px-10 {ui.sidebarCollapsed
 		? ''
