@@ -109,6 +109,13 @@ fn tune_webview(win: &tauri::WebviewWindow, media: bool) {
             settings.set_enable_webrtc(false);
             settings.set_enable_webgl(false);
             settings.set_enable_html5_database(false); // WebSQL. localStorage is a separate switch.
+
+            // Two-finger swipe to go back (#302). WebKit walks its own back/forward list, which
+            // for this SPA is SvelteKit's pushState entries: the same ones the titlebar's back
+            // button steps through. It only fires once a horizontal scroller has run out, so the
+            // shelves keep their swipes. Windows has this on by default; macOS would need
+            // WKWebView's allowsBackForwardNavigationGestures, which wry does not expose.
+            settings.set_enable_back_forward_navigation_gestures(true);
         }
     });
     match res {
