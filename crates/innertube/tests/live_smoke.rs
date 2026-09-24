@@ -66,7 +66,16 @@ const MUST_STREAM: [&str; 1] = ["VISIONOS"];
 #[tokio::test]
 async fn direct_clients_resolve_and_stream() {
     let it = InnerTube::new(Session::default(), None).unwrap();
-    let vd = it.fetch_visitor_data().await.ok();
+    let vd = match it.fetch_visitor_data().await {
+        Ok(v) => {
+            eprintln!("visitorData: {} chars", v.len());
+            Some(v)
+        }
+        Err(e) => {
+            eprintln!("visitorData bootstrap FAILED: {e}");
+            None
+        }
+    };
     let it = InnerTube::new(Session { visitor_data: vd, ..Session::default() }, None).unwrap();
     let clients = Clients::bundled();
 
@@ -88,7 +97,14 @@ async fn direct_clients_resolve_and_stream() {
             }
         };
         if !resp.playability_status.is_ok() {
-            matrix.push((key, Leg::Failed(format!("status {}", resp.playability_status.status))));
+            matrix.push((
+                key,
+                Leg::Failed(format!(
+                    "status {} ({})",
+                    resp.playability_status.status,
+                    resp.playability_status.reason.as_deref().unwrap_or("no reason")
+                )),
+            ));
             continue;
         }
         let sd = resp.streaming_data.as_ref().expect("streamingData");
