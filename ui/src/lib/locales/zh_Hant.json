@@ -360,7 +360,7 @@
 			"font_filter": "字體",
 			"experimental": "實驗性功能",
 			"app_icon": "應用程式圖示",
-			"app_icon_hint": "PNG 將替換標題列、系統欄和本視窗中的圖示。捷徑與檔案總管將保留已安裝的版本。",
+			"app_icon_hint": "PNG 將替換系統匣和 Alt-Tab 視窗的圖示。工作列與檔案總管的圖示不會受到此影響。",
 			"app_icon_pick": "選擇…",
 			"app_icon_dialog": "選擇應用程式圖示",
 			"app_icon_filter": "PNG"
@@ -399,7 +399,9 @@
 			"crossfade_hint": "將每首歌曲的結尾與下一首的開頭連接起來。在歌曲過渡時，同時運行第二個音訊解碼器，這會需要更多的記憶體。",
 			"crossfade_duration": "淡入淡出持續時間",
 			"crossfade_duration_hint": "過渡持續的時間。較短曲目的過渡時間會縮短，因此一個過渡不會在另一個過渡完成之前開始。",
-			"crossfade_seconds": "{secs} 秒"
+			"crossfade_seconds": "{secs} 秒",
+			"normalize_volume": "音量標準化",
+			"normalize_volume_hint": "將不同音訊的平均音量調整至相同的目標水準，以避免使用者在切換不同曲目或影片時，需要頻繁手動調整音量。"
 		},
 		"data": {
 			"clear_cache": "清除縮圖與串流的快取",
@@ -765,5 +767,11 @@
 		"signed_in_as": "已使用 {name} 的身份登入",
 		"switched_to": "切換至 {name}",
 		"could_not_add": "無法新增 — 請嘗試打開它"
+	},
+	"errors": {
+		"unreachable": "無法連接到 YouTube Music。請檢查您的網絡連接。",
+		"offline_title": "沒有網路連接",
+		"offline_body": "Limusic 無法訪問 YouTube Music。請檢查您的網絡連接，然後重試。",
+		"generic_title": "糟糕，發生了一點錯誤"
 	}
 }
