@@ -1181,10 +1181,30 @@ impl AppState {
                 // be in the radio page too, and it should stay where the user put it.
                 let mut seen: HashSet<String> =
                     q.items.iter().map(|i| i.video_id.clone()).collect();
+                let had_album = q.items.get(q.current).is_some_and(|i| i.album.is_some());
                 for item in next.items {
                     if seen.insert(item.video_id.clone()) {
                         q.items.push(item);
+                    } else if let Some(have) =
+                        q.items.iter_mut().find(|i| i.video_id == item.video_id)
+                    {
+                        // Search and home cards carry no album name; the radio's own row for the
+                        // same track does (#309).
+                        have.album = have.album.take().or(item.album);
                     }
+                }
+                // The seed is already playing and Last.fm and Discord were told it has no album.
+                // Sent under the queue lock, so it can't overtake the next track's `set_track`.
+                if let Some(album) = q
+                    .items
+                    .get(q.current)
+                    .filter(|i| !had_album && i.video_id == video_id)
+                    .and_then(|i| i.album.as_deref())
+                {
+                    if let Some(d) = &self.discord {
+                        d.set_album(&video_id, album);
+                    }
+                    self.lastfm.set_album(&video_id, album);
                 }
                 // Shuffle on → the radio hydration is part of the queue: snapshot it as the
                 // "original" order, then shuffle the upcoming tracks. (Runs before the lookahead
