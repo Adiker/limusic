@@ -327,7 +327,7 @@
 			"font_filter": "Polices",
 			"experimental": "Expérimental",
 			"app_icon": "Icône de l'application",
-			"app_icon_hint": "Un fichier PNG remplace l'icône dans la barre des tâches, dans la zone de notification et dans cette fenêtre. Les raccourcis et le gestionnaire de fichiers conservent l'icône installée.",
+			"app_icon_hint": "Un fichier PNG remplace l'icône dans la barre d'état système, dans cette fenêtre et dans Alt-Tab. Les raccourcis, le gestionnaire de fichiers et le bouton de la barre des tâches Windows conservent l'icône installée.",
 			"app_icon_pick": "Choisir…",
 			"app_icon_dialog": "Choisissez une icône d'application",
 			"app_icon_filter": "Image au format PNG",
@@ -368,7 +368,9 @@
 			"crossfade_hint": "Fait en sorte que la fin de chaque piste s'enchaîne progressivement avec le début de la suivante. Ce processus nécessite l'exécution d'un deuxième décodeur audio pendant le chevauchement des pistes, ce qui entraîne une légère augmentation de la consommation de mémoire.",
 			"crossfade_duration": "Durée du fondu enchaîné",
 			"crossfade_duration_hint": "Combien de temps dure le chevauchement. Les titres courts s'estompent plus rapidement, ainsi, un fondu ne commence jamais avant que le précédent ne soit terminé.",
-			"crossfade_seconds": "{secs}s"
+			"crossfade_seconds": "{secs}s",
+			"normalize_volume": "Normalisation du volume",
+			"normalize_volume_hint": "Équilibrez le volume des titres afin qu'un titre peu fort ne soit pas masqué par celui qui suit. Désactivez cette fonction pour écouter chaque titre exactement tel qu'il a été masterisé."
 		},
 		"data": {
 			"clear_cache": "Vider le cache des images et des flux",
@@ -765,5 +767,11 @@
 		"account_changed": "L'ajout de titres a été interrompu en raison d'un changement de compte.",
 		"remove": "Retirer de cette playlist",
 		"remove_confirm": "Retirer {count} ?"
+	},
+	"errors": {
+		"unreachable": "Impossible d'accéder à YouTube Music. Vérifiez votre connexion.",
+		"offline_title": "Pas de connexion",
+		"offline_body": "Limusic ne parvient pas à se connecter à YouTube Music. Vérifiez votre connexion Internet, puis réessayez.",
+		"generic_title": "Une erreur s'est produite"
 	}
 }

@@ -327,7 +327,7 @@
 			"font_filter": "Fuentes",
 			"experimental": "Experimental",
 			"app_icon": "Icono de la aplicación",
-			"app_icon_hint": "Un PNG reemplaza el icono en la barra de tareas, la bandeja y esta ventana. Los accesos directos y el administrador de archivos mantienen el icono instalado.",
+			"app_icon_hint": "Un PNG reemplaza el icono en la bandeja, esta ventana y Alt-Tab. Los accesos directos, el administrador de archivos y el botón de la barra de tareas de windows mantienen el icono instalado.",
 			"app_icon_pick": "Elegir…",
 			"app_icon_dialog": "Elegir un icono para la aplicación",
 			"app_icon_filter": "Imagen PNG",
@@ -368,7 +368,9 @@
 			"crossfade_hint": "Desvanece el final de cada pista al inicio de la siguiente. Ejecuta un segundo decodificador de audio cuando las pistas se superponen, así que usa un poco más de memoria.",
 			"crossfade_duration": "Duración del crossfade",
 			"crossfade_duration_hint": "Las pistas cortas tienen un desvanecimiento más breve, para que nunca comience uno antes de que termine el anterior.",
-			"crossfade_seconds": "{secs}s"
+			"crossfade_seconds": "{secs}s",
+			"normalize_volume": "Normalización de volumen",
+			"normalize_volume_hint": "Nivela el volumen de las pistas para que una mezcla baja no sea opacada por la siguiente. Desactívalo para oír cada pista exactamente como fue masterizada."
 		},
 		"data": {
 			"clear_cache": "Limpiar caché de imágenes y streams",
@@ -765,5 +767,11 @@
 		"playlist_partial": "Se añadió {added} a {playlist}; {duplicates} ya estaban allí; {remaining} sin confirmar. {error}",
 		"remove": "Quitar de esta playlist",
 		"remove_confirm": "Quitar {count}?"
+	},
+	"errors": {
+		"unreachable": "No se pudo conectar con YouTube Music. Comprueba tu conexión.",
+		"offline_title": "Sin conexión",
+		"offline_body": "Limusic no pudo conectarse a YouTube Music. Comprueba tu conexión a internet e intenta de nuevo.",
+		"generic_title": "Algo salió mal"
 	}
 }
