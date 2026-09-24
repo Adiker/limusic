@@ -1204,7 +1204,7 @@ impl AppState {
                     if let Some(d) = &self.discord {
                         d.set_album(&video_id, album);
                     }
-                    self.lastfm.set_album(album);
+                    self.lastfm.set_album(&video_id, album);
                 }
                 // Shuffle on → the radio hydration is part of the queue: snapshot it as the
                 // "original" order, then shuffle the upcoming tracks. (Runs before the lookahead

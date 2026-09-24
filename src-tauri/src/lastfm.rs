@@ -57,7 +57,12 @@ const ERR_TEMP_UNAVAILABLE: i64 = 16;
 enum Msg {
     Track(Box<Track>),
     /// The playing track's album, learned after it started. Unlike `Track`, keeps the clock.
-    Album(String),
+    /// Keyed by video id: nothing serializes a stale `start_current`'s `Track` against the
+    /// current one, so an album for a track that is no longer playing has to be dropped.
+    Album {
+        video_id: String,
+        album: String,
+    },
     Duration(f64),
     Position(f64),
     /// Session key set (connect) or cleared (disconnect).
@@ -65,6 +70,7 @@ enum Msg {
 }
 
 struct Track {
+    video_id: String,
     title: String,
     artists: String,
     album: Option<String>,
@@ -86,6 +92,7 @@ impl LastfmHandle {
         let artists =
             if primary_only { primary_artist(&item.artists, strict) } else { item.artists.clone() };
         let _ = self.tx.send(Msg::Track(Box::new(Track {
+            video_id: item.video_id.clone(),
             title: item.title.clone(),
             artists,
             album: item.album.clone(),
@@ -94,8 +101,8 @@ impl LastfmHandle {
 
     /// A search or home card starts playing with no album name; the radio fetched behind it
     /// supplies one a moment later (#309). A second `set_track` would restart the scrobble clock.
-    pub fn set_album(&self, album: &str) {
-        let _ = self.tx.send(Msg::Album(album.to_owned()));
+    pub fn set_album(&self, video_id: &str, album: &str) {
+        let _ = self.tx.send(Msg::Album { video_id: video_id.to_owned(), album: album.to_owned() });
     }
 
     pub fn set_duration(&self, secs: f64) {
@@ -155,8 +162,10 @@ impl Scrobbler {
                 self.scrobbled = false;
                 self.now_playing().await;
             }
-            Msg::Album(album) => {
-                let Some(t) = &mut self.track else { return };
+            Msg::Album { video_id, album } => {
+                let Some(t) = self.track.as_mut().filter(|t| t.video_id == video_id) else {
+                    return;
+                };
                 t.album = Some(album);
                 // Re-send it: `updateNowPlaying` already went out without the album, and the
                 // clock fields stay untouched so the scrobble still times from the real start.
