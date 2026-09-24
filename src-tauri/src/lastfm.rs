@@ -156,9 +156,11 @@ impl Scrobbler {
                 self.now_playing().await;
             }
             Msg::Album(album) => {
-                if let Some(t) = &mut self.track {
-                    t.album = Some(album);
-                }
+                let Some(t) = &mut self.track else { return };
+                t.album = Some(album);
+                // Re-send it: `updateNowPlaying` already went out without the album, and the
+                // clock fields stay untouched so the scrobble still times from the real start.
+                self.now_playing().await;
             }
             Msg::Duration(secs) => self.duration = secs,
             Msg::Position(pos) => {
