@@ -254,7 +254,7 @@
 		"songs_count": "{count} songs"
 	},
 	"downloads": {
-		"title": "Downloaded",
+		"title": "Download",
 		"choose_folder": "Choose folder",
 		"folder_updated": "Downloads folder updated",
 		"no_folder": "No downloads folder configured",
