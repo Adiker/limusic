@@ -244,7 +244,9 @@
 			"about": "Acerca de",
 			"about_hint": "Versión, actualizaciones y qué cambió.",
 			"discord": "Discord",
-			"discord_hint": "Cómo se ve tu tarjeta de Rich Presence."
+			"discord_hint": "Cómo se ve tu tarjeta de Rich Presence.",
+			"hotkeys": "Atajos globales",
+			"hotkeys_hint": "Atajos globales para controlar la reproducción."
 		},
 		"sections": {
 			"language": "Idioma",
@@ -325,7 +327,7 @@
 			"font_filter": "Fuentes",
 			"experimental": "Experimental",
 			"app_icon": "Icono de la aplicación",
-			"app_icon_hint": "Un PNG reemplaza el icono en la barra de tareas, la bandeja y esta ventana. Los accesos directos y el administrador de archivos mantienen el icono instalado.",
+			"app_icon_hint": "Un PNG reemplaza el icono en la bandeja, esta ventana y Alt-Tab. Los accesos directos, el administrador de archivos y el botón de la barra de tareas de windows mantienen el icono instalado.",
 			"app_icon_pick": "Elegir…",
 			"app_icon_dialog": "Elegir un icono para la aplicación",
 			"app_icon_filter": "Imagen PNG",
@@ -366,7 +368,9 @@
 			"crossfade_hint": "Desvanece el final de cada pista al inicio de la siguiente. Ejecuta un segundo decodificador de audio cuando las pistas se superponen, así que usa un poco más de memoria.",
 			"crossfade_duration": "Duración del crossfade",
 			"crossfade_duration_hint": "Las pistas cortas tienen un desvanecimiento más breve, para que nunca comience uno antes de que termine el anterior.",
-			"crossfade_seconds": "{secs}s"
+			"crossfade_seconds": "{secs}s",
+			"normalize_volume": "Normalización de volumen",
+			"normalize_volume_hint": "Nivela el volumen de las pistas para que una mezcla baja no sea opacada por la siguiente. Desactívalo para oír cada pista exactamente como fue masterizada."
 		},
 		"data": {
 			"clear_cache": "Limpiar caché de imágenes y streams",
@@ -452,6 +456,45 @@
 			"preview_status": "Lista de miembros",
 			"preview_you": "Tú",
 			"preview_card": "Tarjeta de perfil"
+		},
+		"hotkeys": {
+			"title": "Atajos globales",
+			"description": "Controla la reproducción con atajos de teclado personalizables, incluso cuando Limusic está minimizado o ejecutándose en segundo plano.",
+			"enable": "Activar atajos globales",
+			"enable_hint": "Los atajos globales están desactivados. Actívalos para que respondan a atajos del sistema.",
+			"off": "Apagado",
+			"rebind": "Reasignar",
+			"recording": "Mantén un modificador + tecla...",
+			"wayland_hint": "Puede que no funcione en GNOME (Wayland).",
+			"clear": "Limpiar atajo",
+			"reset": "Restablecer valores predeterminados",
+			"conflict": "Este atajo ya está asignado a \"{action}\"",
+			"failed_register": "No se pudo registrar el atajo con el sistema (puede estar en uso por otra aplicación)",
+			"section_playback": "Reproducción",
+			"section_audio": "Audio",
+			"section_window": "Ventana",
+			"action_play_pause": "Reproducir / Pausa",
+			"action_play_pause_hint": "Alterna entre reproducir y pausar.",
+			"action_next_track": "Siguiente pista",
+			"action_next_track_hint": "Salta a la siguiente canción en la cola.",
+			"action_prev_track": "Pista anterior",
+			"action_prev_track_hint": "Regresa a la canción previa en la cola.",
+			"action_volume_up": "Subir volumen",
+			"action_volume_up_hint": "Incrementa el volumen por 5%.",
+			"action_volume_down": "Bajar volumen",
+			"action_volume_down_hint": "Baja el volumen por 5%.",
+			"action_mute_toggle": "Silenciar / Activar sonido",
+			"action_mute_toggle_hint": "Alterna entre silencio y el volumen previo.",
+			"action_seek_forward": "Avanzar",
+			"action_seek_forward_hint": "Salta 10 segundos adelante en la pista.",
+			"action_seek_backward": "Retroceder",
+			"action_seek_backward_hint": "Salta 10 segundos atrás en la pista.",
+			"action_toggle_shuffle": "Aleatorio",
+			"action_toggle_shuffle_hint": "Alterna el modo aleatorio para la cola.",
+			"action_toggle_repeat": "Repetición",
+			"action_toggle_repeat_hint": "Modo de repetición: desactivado, todo, uno.",
+			"action_show_app": "Mostrar la aplicación",
+			"action_show_app_hint": "Muestra la ventana de Limusic en primer plano."
 		}
 	},
 	"dialogs": {
@@ -724,5 +767,11 @@
 		"playlist_partial": "Se añadió {added} a {playlist}; {duplicates} ya estaban allí; {remaining} sin confirmar. {error}",
 		"remove": "Quitar de esta playlist",
 		"remove_confirm": "Quitar {count}?"
+	},
+	"errors": {
+		"unreachable": "No se pudo conectar con YouTube Music. Comprueba tu conexión.",
+		"offline_title": "Sin conexión",
+		"offline_body": "Limusic no pudo conectarse a YouTube Music. Comprueba tu conexión a internet e intenta de nuevo.",
+		"generic_title": "Algo salió mal"
 	}
 }

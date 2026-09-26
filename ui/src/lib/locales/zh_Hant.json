@@ -11,7 +11,7 @@
 		"select_all": "全選 ({count})",
 		"clear": "清除",
 		"track": "{title}. 空白鍵：選擇，Enter：播放。",
-		"track_guest": "{title}. 空白鍵：選擇，Enter：加入佇列。",
+		"track_guest": "{title}. 空白鍵：選擇，Enter：加入待播清單。",
 		"select_track": "選擇 {title}",
 		"lost": "{count} 選擇的曲目已不在清單中。",
 		"pending": "載入中…已找到 {count} 首曲目。",
@@ -216,7 +216,7 @@
 		"in_library": "已收藏",
 		"no_matching_tracks": "沒有符合 “{query}” 的曲目。",
 		"empty_album": "這個專輯空無一物。",
-		"play_count": "{count} 首播放中",
+		"play_count": "累積播放 {count} 次",
 		"added_by": "由 {user} 新增",
 		"no_playlists_create": "目前還沒有播放清單，請到收藏庫中新建一個。",
 		"search_playlists": "從播放清單中搜尋…",
@@ -275,7 +275,9 @@
 			"data": "資料與存儲",
 			"data_hint": "網路與快取檔案。",
 			"about": "關於",
-			"about_hint": "版本、更新與更新資訊。"
+			"about_hint": "版本、更新與更新資訊。",
+			"hotkeys": "全域快捷鍵",
+			"hotkeys_hint": "系統快捷鍵，用於控制播放。"
 		},
 		"sections": {
 			"language": "語言",
@@ -318,7 +320,7 @@
 			"proxy": "HTTP/HTTPS Proxy",
 			"proxy_hint": "使用自定義 Proxy Server 轉發所有網路請求。",
 			"proxy_placeholder": "在此輸入 Proxy 位址，範例：http://host:port",
-			"stream_clients": "串流媒體",
+			"stream_clients": "串流客戶端",
 			"stream_clients_hint": "處理串流資訊時，如果需要跳過某個步驟，可以通過設定環境變數 {var} 來控制。"
 		},
 		"themes": {
@@ -343,7 +345,7 @@
 			"load_font_file_hint": "加載 .ttf、.otf 或 .woff 文件。這些文件將顯示在上述兩個下拉選單中。",
 			"open_player": "按下播放鍵時打開音樂播放器",
 			"open_player_hint": "播放歌曲、專輯或播放清單，會顯示完整的播放界面。關閉時，則開始播放後返回您之前的瀏覽頁面。",
-			"tabbed_player": "播放介面中的歌詞與佇列",
+			"tabbed_player": "播放介面中的歌詞與待播清單",
 			"tabbed_player_hint": "開啟時，可以分別查看不同的視圖，並通過界面上的兩個按鈕來切換。關閉時，這兩個按鈕只會打開側邊欄，這些側邊欄會一直顯示，以便同時查看它們。",
 			"artwork_background": "封面背景",
 			"artwork_background_hint": "將播放器的界面背景設為播放歌曲的封面，並使其模糊顯示。關閉後，界面將顯示為純色。",
@@ -358,7 +360,7 @@
 			"font_filter": "字體",
 			"experimental": "實驗性功能",
 			"app_icon": "應用程式圖示",
-			"app_icon_hint": "PNG 將替換標題列、系統欄和本視窗中的圖示。捷徑與檔案總管將保留已安裝的版本。",
+			"app_icon_hint": "PNG 將替換系統匣和 Alt-Tab 視窗的圖示。工作列與檔案總管的圖示不會受到此影響。",
 			"app_icon_pick": "選擇…",
 			"app_icon_dialog": "選擇應用程式圖示",
 			"app_icon_filter": "PNG"
@@ -370,10 +372,10 @@
 			"quality_auto": "自動",
 			"quality_high": "高",
 			"autoplay": "自動播放相似的歌曲",
-			"autoplay_hint": "在播放列表結束時，自動播放推薦的歌曲。",
-			"prevent_duplicates": "防止播放隊列中出現重複歌曲",
-			"prevent_duplicates_hint": "避免在當前播放列表中添加已經存在的歌曲。",
-			"sticky_shuffle": "在不同的播放清單中維持隨機播放",
+			"autoplay_hint": "在待播清單結束時，自動播放推薦的歌曲。",
+			"prevent_duplicates": "防止待播清單中出現重複歌曲",
+			"prevent_duplicates_hint": "避免在待播清單中添加已經存在的歌曲。",
+			"sticky_shuffle": "在不同的待播清單中維持隨機播放",
 			"sticky_shuffle_hint": "此功能僅適用於正在播放的內容。開始播放專輯或播放清單後，它們將按照順序播放。",
 			"play_history_hint": "記住您最近播放過的歌曲，用於提供個性化的推薦。",
 			"music_videos": "啟用 MV",
@@ -397,7 +399,9 @@
 			"crossfade_hint": "將每首歌曲的結尾與下一首的開頭連接起來。在歌曲過渡時，同時運行第二個音訊解碼器，這會需要更多的記憶體。",
 			"crossfade_duration": "淡入淡出持續時間",
 			"crossfade_duration_hint": "過渡持續的時間。較短曲目的過渡時間會縮短，因此一個過渡不會在另一個過渡完成之前開始。",
-			"crossfade_seconds": "{secs} 秒"
+			"crossfade_seconds": "{secs} 秒",
+			"normalize_volume": "音量標準化",
+			"normalize_volume_hint": "將不同音訊的平均音量調整至相同的目標水準，以避免使用者在切換不同曲目或影片時，需要頻繁手動調整音量。"
 		},
 		"data": {
 			"clear_cache": "清除縮圖與串流的快取",
@@ -483,6 +487,45 @@
 			"preview_status": "成員清單",
 			"preview_you": "您",
 			"preview_card": "個人頁面卡"
+		},
+		"hotkeys": {
+			"action_next_track_hint": "跳過當前播放，進入下一首。",
+			"action_prev_track_hint": "回到待播清單中的上一首歌曲。",
+			"action_toggle_shuffle_hint": "切換待播清單的隨機播放。",
+			"title": "全域快捷鍵",
+			"description": "即使 Limusic 最小化或在後台運行，也可以使用自定義的快捷鍵來控制播放。",
+			"enable": "啟用全域快捷鍵",
+			"enable_hint": "全域快捷鍵已禁用。啟用後，即可在整個系統範圍內捕獲快捷鍵。",
+			"off": "關閉",
+			"rebind": "重新綁定",
+			"recording": "按下快捷鍵…",
+			"wayland_hint": "在 GNOME (Wayland) 系統下可能無法正常工作。",
+			"clear": "清除快捷鍵",
+			"reset": "恢復至預設",
+			"conflict": "該快捷鍵已被 \"{action}\" 註冊",
+			"failed_register": "無法註冊快捷方式（可能已被另一個應用程式使用）",
+			"section_playback": "播放",
+			"section_audio": "音訊",
+			"section_window": "視窗",
+			"action_play_pause": "播放 / 暫停",
+			"action_play_pause_hint": "切換播放。",
+			"action_next_track": "下一首",
+			"action_prev_track": "上一首",
+			"action_volume_up": "增加音量",
+			"action_volume_up_hint": "將播放音量增加 5%。",
+			"action_volume_down": "減小音量",
+			"action_volume_down_hint": "將播放音量減少 5%。",
+			"action_mute_toggle": "切換靜音",
+			"action_mute_toggle_hint": "切換到靜音模式和之前的音量。",
+			"action_seek_forward": "快轉",
+			"action_seek_forward_hint": "快轉 10 秒。",
+			"action_seek_backward": "倒退",
+			"action_seek_backward_hint": "倒退 10 秒。",
+			"action_toggle_shuffle": "切換隨機播放",
+			"action_toggle_repeat": "切換循環播放",
+			"action_toggle_repeat_hint": "循環播放模式：關閉、所有、單曲。",
+			"action_show_app": "打開 Limusic",
+			"action_show_app_hint": "顯示 Limusic 視窗。"
 		}
 	},
 	"dialogs": {
@@ -524,8 +567,8 @@
 			"search_anywhere": "快速導覽",
 			"refresh_page": "重新整理頁面",
 			"toggle_now_playing": "切換當前播放的界面",
-			"volume_up": "調大音量",
-			"volume_down": "調小音量",
+			"volume_up": "增加音量",
+			"volume_down": "減小音量",
 			"zoom_in": "放大介面",
 			"zoom_out": "縮小介面",
 			"reset_zoom": "重設介面大小",
@@ -671,7 +714,7 @@
 	},
 	"toasts": {
 		"could_not_play": "無法播放 — 請嘗試打開它",
-		"could_not_queue": "無法加入播放清單 — 請嘗試打開它",
+		"could_not_queue": "無法加入待播清單 — 請嘗試打開它",
 		"could_not_load_playlist": "無法載入播放清單 — 請嘗試打開它",
 		"could_not_load_more": "無法載入更多資訊",
 		"could_not_copy_link": "無法複製連結。請手動反白文字並按下 Ctrl+C。",
@@ -724,5 +767,11 @@
 		"signed_in_as": "已使用 {name} 的身份登入",
 		"switched_to": "切換至 {name}",
 		"could_not_add": "無法新增 — 請嘗試打開它"
+	},
+	"errors": {
+		"unreachable": "無法連接到 YouTube Music。請檢查您的網絡連接。",
+		"offline_title": "沒有網路連接",
+		"offline_body": "Limusic 無法訪問 YouTube Music。請檢查您的網絡連接，然後重試。",
+		"generic_title": "糟糕，發生了一點錯誤"
 	}
 }

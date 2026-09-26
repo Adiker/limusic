@@ -201,9 +201,12 @@
 		goto(`/list?${q.toString()}`);
 	}
 
+	// One key per view of the feed — the base feed, or this mood chip's filter of it.
+	const homeKey = () => (selected ? `home:${selected}` : 'home');
+
 	async function load(params: string | null = selected) {
 		selected = params;
-		const key = params ? `home:${params}` : 'home';
+		const key = homeKey();
 		const hit = getCached<HomePage>(key);
 		forgotten = params ? null : getCached<HomeSection>(FORGOTTEN_KEY);
 		if (hit) {
@@ -211,9 +214,15 @@
 			loading = false;
 			noteForgotten();
 			cater(hit, params);
-		} else {
-			loading = true;
+			// Show the cached feed and leave it alone for this visit. A background revalidation
+			// replaces the whole feed on return and re-lays out every section under the restored
+			// scroll position — trading freshness for a stable page. The five minutes runs from
+			// the last write, not the visit: putCached re-stamps the entry on every write, and
+			// loadMore writes here too, so a session that keeps scrolling home can sit on the
+			// same page 1 content well past five minutes.
+			return;
 		}
+		loading = true;
 		error = null;
 		try {
 			const fresh = await api.getHome(params ?? undefined);
@@ -246,6 +255,9 @@
 				// An empty page would leave the sentinel in view with nothing to show — treat it as the end.
 				continuation: more.sections.length ? more.continuation : undefined
 			};
+			// The appended pages live only in the response otherwise — cache the whole feed, or a
+			// back-navigation off the first page shows a stub of home and the restore clamps early.
+			putCached(homeKey(), home);
 			noteForgotten();
 		} catch (e) {
 			// Stop auto-loading and offer a retry — auto-retrying a visible sentinel would spin.

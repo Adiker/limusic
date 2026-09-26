@@ -207,6 +207,7 @@ const UI_SETTINGS: [&str; 23] = [
     "volume",
     "proxy",
     "quality",
+    "normalize_volume",
     "enable_history",
     "disabled_stream_clients",
     "discord_rpc",
@@ -250,7 +251,7 @@ pub async fn video_stream(
     }
     // The webview picks the height from its own box, so clamp it here rather than trusting it.
     let max_height = max_height.clamp(144, 1080);
-    match state.orchestrator.resolve_video(&video_id, max_height).await {
+    match state.orchestrator.resolve_video(&video_id, max_height, &state.disabled_clients()).await {
         Some(url) => {
             state.put_video_url(&video_id, url);
             Ok(crate::videoproxy::url_for(&video_id))
@@ -319,6 +320,11 @@ pub async fn set_setting(
     // to follow without waiting for the next track.
     if key == "discord_rpc_config" {
         state.set_discord_config(&value);
+    }
+    // Retune the track that's playing. Unlike crossfade below, this one has to apply to what the
+    // user is hearing right now: the switch exists so they can A/B the same loud section (#298).
+    if key == "normalize_volume" {
+        state.reapply_gain().await;
     }
     // Both halves are one player setting. Applies from the next track change: the transition the
     // user is already hearing keeps the length it started with.

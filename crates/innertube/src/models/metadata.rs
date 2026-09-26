@@ -684,6 +684,17 @@ pub(crate) fn first_artist_id(runs: &[Value]) -> Option<String> {
     })
 }
 
+/// The album's name from a byline: the run that links an `MPRE…` album ("Delara • Sjelen • 2026").
+/// Structural, so a music video's "Artist • 50M views" yields nothing rather than a view count,
+/// and it reads the same in every locale. context/08.
+pub(crate) fn album_from_runs(runs: &[Value]) -> Option<String> {
+    runs.iter().find_map(|r| {
+        let id = r.get("navigationEndpoint")?.get("browseEndpoint")?.get("browseId")?.as_str()?;
+        let text = r.get("text")?.as_str()?.trim();
+        (id.starts_with("MPRE") && !text.is_empty()).then(|| text.to_owned())
+    })
+}
+
 /// The track's rating from its menu's `likeStatus` (`LIKE` / `INDIFFERENT` / `DISLIKE`).
 /// Tolerant: grabs the first `likeStatus` anywhere in the node, and reads anything it doesn't
 /// recognise as unrated rather than dropping the row. context/08.
@@ -793,7 +804,7 @@ fn parse_panel_video(node: &Value) -> Option<SongItem> {
         artists,
         artist_id,
         artist_runs: byline_runs.map(|r| artist_runs(r)).unwrap_or_default(),
-        album: None,
+        album: byline_runs.and_then(|r| album_from_runs(r)),
         album_id: album_id(node),
         duration,
         play_count: None,
@@ -1548,6 +1559,34 @@ mod tests {
             ] } }
         });
         assert_eq!(parse_next(&root).items[0].artists, "Delara");
+    }
+
+    /// Radio and autoplay rows scrobbled album-less because the panel parser never read the
+    /// byline's album run (issue #309). A music video's byline links no album and must stay empty.
+    #[test]
+    fn panel_album_is_the_linked_byline_run() {
+        let row = |id: &str, byline: Value| {
+            json!({ "playlistPanelVideoRenderer": {
+                "videoId": id,
+                "title": { "runs": [{ "text": "T" }] },
+                "longBylineText": { "runs": byline }
+            }})
+        };
+        let artist = json!({ "text": "Delara", "navigationEndpoint": { "browseEndpoint": { "browseId": "UCdelara" } } });
+        let song = row(
+            "song",
+            json!([
+                artist, { "text": " • " },
+                { "text": "Sjelen", "navigationEndpoint": { "browseEndpoint": { "browseId": "MPREb_sjelen" } } },
+                { "text": " • " }, { "text": "2026" }
+            ]),
+        );
+        let video = row("video", json!([artist, { "text": " • " }, { "text": "50M views" }]));
+        let root =
+            json!({ "contents": { "playlistPanelRenderer": { "contents": [song, video] } } });
+        let items = parse_next(&root).items;
+        assert_eq!(items[0].album.as_deref(), Some("Sjelen"));
+        assert_eq!(items[1].album, None);
     }
 
     #[test]

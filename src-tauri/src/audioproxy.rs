@@ -61,10 +61,8 @@ const CHUNK: u64 = 4 * 1024 * 1024;
 const STALL: Duration = Duration::from_secs(20);
 
 /// `send()` (or one body read) with the stall guard on it.
-async fn no_stall<F: std::future::Future<Output = T>, T>(f: F) -> Result<T, io::Error> {
-    tokio::time::timeout(STALL, f)
-        .await
-        .map_err(|_| io::Error::other("audio proxy: upstream stalled"))
+pub(crate) async fn no_stall<F: std::future::Future<Output = T>, T>(f: F) -> Result<T, io::Error> {
+    tokio::time::timeout(STALL, f).await.map_err(|_| io::Error::other("upstream stalled"))
 }
 
 /// Keep at most this many stream URLs registered. A registration is the URL plus its headers (a
@@ -151,11 +149,14 @@ pub fn start() {
     });
 }
 
-/// Register one googlevideo URL (with the headers it needs) and return the loopback URL mpv should
-/// be handed. `None` means the direct URL must be used: the proxy never came up, the kill-switch
-/// is set, or the URL is empty.
+/// Register one YouTube stream URL (with the headers it needs) and return the loopback URL mpv
+/// should be handed. `None` means the direct URL must be used: the proxy never came up, the
+/// kill-switch is set, or the URL is not one of YouTube's stream hosts (an RSS-feed podcast's
+/// enclosure is not throttled, and may not honour ranges, #294).
 pub fn register(url: &str, headers: &HashMap<String, String>) -> Option<String> {
-    if url.is_empty() || std::env::var_os("LIMUSIC_NO_AUDIO_PROXY").is_some() {
+    if !crate::orchestrator::is_youtube_stream(url)
+        || std::env::var_os("LIMUSIC_NO_AUDIO_PROXY").is_some()
+    {
         return None;
     }
     let (port, token) = ENDPOINT.get()?;

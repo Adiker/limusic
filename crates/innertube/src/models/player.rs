@@ -229,9 +229,14 @@ pub enum AudioQuality {
 }
 
 /// Pick the best audio format for the requested quality. Port of `YTPlayerUtils.findFormat`,
-/// context/03. Returns a reference into `adaptive_formats`.
+/// context/03. Returns a reference into `adaptive_formats`, or into `formats` when there is no
+/// adaptive audio: a podcast added to the library by RSS feed is not hosted by YouTube, and WEB_REMIX
+/// answers with one progressive `audio/mpeg` entry pointing at the feed's own enclosure (#294).
 pub fn find_format(data: &StreamingData, quality: AudioQuality) -> Option<&Format> {
-    let audio: Vec<&Format> = data.adaptive_formats.iter().filter(|f| f.is_audio()).collect();
+    let mut audio: Vec<&Format> = data.adaptive_formats.iter().filter(|f| f.is_audio()).collect();
+    if audio.is_empty() {
+        audio = data.formats.iter().flatten().filter(|f| f.is_audio()).collect();
+    }
     if audio.is_empty() {
         return None;
     }
@@ -370,6 +375,23 @@ mod tests {
         let sd = serde_json::from_str::<PlayerResponse>(json).unwrap().streaming_data.unwrap();
         assert_eq!(find_format(&sd, AudioQuality::High).unwrap().url.as_deref(), Some("en"));
         assert_eq!(find_format(&sd, AudioQuality::Low).unwrap().url.as_deref(), Some("en"));
+    }
+
+    /// An RSS-feed podcast episode (#294): no adaptive formats, only the feed's own mp3 as a
+    /// progressive format. Shape from a live WEB_REMIX response.
+    #[test]
+    fn find_format_falls_back_to_a_progressive_rss_enclosure() {
+        let json = r#"{
+            "playabilityStatus": { "status": "OK" },
+            "streamingData": { "expiresInSeconds": "21540", "formats": [
+                { "itag": 15, "url": "https://www.podtrac.com/pts/redirect.mp3/x.mp3", "mimeType": "audio/mpeg",
+                  "contentLength": "0", "approxDurationMs": "5656000",
+                  "audioTrack": { "displayName": "Ep. 079", "audioIsDefault": true } }
+            ] }
+        }"#;
+        let sd = serde_json::from_str::<PlayerResponse>(json).unwrap().streaming_data.unwrap();
+        assert_eq!(find_format(&sd, AudioQuality::High).unwrap().itag, 15);
+        assert_eq!(find_format(&sd, AudioQuality::Low).unwrap().itag, 15);
     }
 
     /// Video-only picker (plan 031): VP9 only, capped by height, 60fps preferred over the 30fps

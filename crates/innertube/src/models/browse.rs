@@ -1062,6 +1062,17 @@ fn browse_target(id: &str) -> (&'static str, String) {
     (browse_kind_from_id(id), id.to_owned())
 }
 
+/// A podcast opened by its playlist id (`VLPL…`, e.g. from a pasted `playlist?list=` link) lists
+/// its episodes with no header at all: no title, no artwork. The show page (`MPSP` + the same id)
+/// carries both, so this names it for a second fetch (#294).
+pub(crate) fn podcast_show_id(browse_id: &str, root: &Value) -> Option<String> {
+    let id = browse_id.strip_prefix("VL")?;
+    let episodes = find_all(root, "musicVideoType")
+        .iter()
+        .any(|t| t.as_str() == Some("MUSIC_VIDEO_TYPE_PODCAST_EPISODE"));
+    (episodes && playlist_header(root).is_none()).then(|| format!("MPSP{id}"))
+}
+
 /// The playlist/album header node — recursion finds the detail renderer even when it's wrapped in
 /// an editable-playlist header.
 fn playlist_header(root: &Value) -> Option<&Value> {
@@ -2111,6 +2122,26 @@ mod tests {
         assert!(first.thumbnail.as_deref().unwrap().contains("xOXghljqUGw"));
         // A continuation has no header, so no show name, but the rows still come through.
         assert_eq!(parse_playlist_continuation(&root).items.len(), 2);
+    }
+
+    // A show opened as `VLPL…` has episode rows but no header; the `MPSP` page has one (#294).
+    #[test]
+    fn a_headerless_podcast_playlist_points_at_its_show_page() {
+        let row = json!({ "musicResponsiveListItemRenderer": { "overlay": { "musicItemThumbnailOverlayRenderer": {
+            "content": { "musicPlayButtonRenderer": { "playNavigationEndpoint": { "watchEndpoint": {
+                "videoId": "kNmVirXA1po",
+                "watchEndpointMusicSupportedConfigs": { "watchEndpointMusicConfig": {
+                    "musicVideoType": "MUSIC_VIDEO_TYPE_PODCAST_EPISODE" } } } } } } } } } });
+        let bare = json!({ "contents": { "musicPlaylistShelfRenderer": { "contents": [row] } } });
+        assert_eq!(podcast_show_id("VLPLabc", &bare).as_deref(), Some("MPSPPLabc"));
+        assert_eq!(podcast_show_id("MPSPPLabc", &bare), None, "already the show page");
+
+        let mut headed = bare.clone();
+        headed["header"] = json!({ "musicResponsiveHeaderRenderer": { "title": { "runs": [{ "text": "Show" }] } } });
+        assert_eq!(podcast_show_id("VLPLabc", &headed), None);
+
+        let music = json!({ "contents": { "musicPlaylistShelfRenderer": { "contents": [] } } });
+        assert_eq!(podcast_show_id("VLPLabc", &music), None, "an ordinary headerless list");
     }
 
     // The home feed's Podcasts chip returns carousels of the same episode rows, which name their

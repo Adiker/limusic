@@ -496,6 +496,10 @@ impl InnerTube {
     ) -> Result<PlaylistPage, Error> {
         let params = sort.map(|(s, desc)| s.params(desc));
         let value = self.browse(client, Some(browse_id), params).await?;
+        if let Some(show) = browse::podcast_show_id(browse_id, &value) {
+            let value = self.browse(client, Some(&show), params).await?;
+            return Ok(browse::parse_playlist(&value));
+        }
         Ok(browse::parse_playlist(&value))
     }
 

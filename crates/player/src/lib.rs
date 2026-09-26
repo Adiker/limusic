@@ -41,6 +41,16 @@ pub enum PlayerEvent {
     /// One track died (end-file with error, e.g. its URL 403'd). mpv may have auto-advanced
     /// into the next playlist entry or gone idle — the orchestrator asks [`Player::is_idle`].
     TrackFailed(String),
+    /// mpv could not open the audio device, so the file ended with an error that has nothing to do
+    /// with the stream: the device went away under it (sleep/resume, unplugged, a driver restart).
+    /// Kept apart from [`PlayerEvent::TrackFailed`] because the two want opposite handling, see
+    /// `AppState::on_audio_device_lost`.
+    AudioDeviceLost,
+    /// The crossfade preload deck failed to open the *next* track (dead or 403 URL). Kept apart
+    /// from [`PlayerEvent::TrackFailed`] because reporting it as that would skip the track the
+    /// user is hearing; what is owed is evicting the next track's cached URL, see
+    /// `AppState::on_lookahead_failed`.
+    LookaheadFailed(String),
     Error(String),
 }
 
@@ -53,8 +63,10 @@ fn friendly_error(e: &libmpv2::Error) -> String {
     match e {
         libmpv2::Error::Loadfile { error } => friendly_error(error),
         libmpv2::Error::Raw(code) => match *code {
+            // Not necessarily YouTube: mpv reads from the loopback audio proxy, so this also
+            // covers the proxy failing to reach googlevideo. Say only what is known.
             mpv_error::LoadingFailed => {
-                "Couldn't load this track — YouTube rejected the stream link".to_owned()
+                "Couldn't load this track. The stream link was refused.".to_owned()
             }
             mpv_error::NothingToPlay => "This stream contains no playable audio".to_owned(),
             mpv_error::UnknownFormat => "Unrecognized audio format".to_owned(),
@@ -62,6 +74,18 @@ fn friendly_error(e: &libmpv2::Error) -> String {
             other => format!("Playback failed (mpv error {other})"),
         },
         other => format!("Playback failed ({other})"),
+    }
+}
+
+/// Did this end-file error come from the audio output rather than the stream? Windows reports it
+/// after a sleep/resume (WASAPI re-enumerates and the old device is gone), Linux and macOS after a
+/// device is unplugged or the sound server restarts.
+fn is_ao_init_failed(e: &libmpv2::Error) -> bool {
+    use libmpv2::mpv_error;
+    match e {
+        libmpv2::Error::Loadfile { error } => is_ao_init_failed(error),
+        libmpv2::Error::Raw(code) => *code == mpv_error::AoInitFailed,
+        _ => false,
     }
 }
 
@@ -154,7 +178,21 @@ fn new_mpv(cache_dir: &str) -> Result<Mpv, Error> {
     // pre-init phase returns PROPERTY_NOT_FOUND on this mpv build).
     let mpv = Mpv::new()?;
     mpv.set_property("vid", "no")?; // audio only
+                                    // The app resolves every URL itself; mpv shelling out to youtube-dl is never right and buries
+                                    // the real failure. A stream that 403s went "Stream ends prematurely" -> ytdl_hook ->
+                                    // "youtube-dl failed: not found" -> "Failed to recognize file format", so the user was told
+                                    // their audio format was wrong when the download had been refused (issue #292).
+    mpv.set_property("ytdl", "no")?;
     mpv.set_property("gapless-audio", "yes")?;
+    // mpv's native Matroska demuxer floors WebM DiscardPadding nanoseconds to Opus samples. For
+    // values one nanosecond below a sample boundary (YouTube emits 6,833,333 ns), that leaves one
+    // unwanted sample at EOF and an audible pop between otherwise-continuous tracks. FFmpeg's
+    // demuxer rounds the padding correctly without altering the stream bytes.
+    mpv.set_property("demuxer", "lavf")?;
+    // Open the appended remote entry while the current track is still playing. `gapless-audio`
+    // keeps the output device alive, but on its own does not guarantee that the next HTTP stream
+    // and demuxer are ready before the buffered tail reaches the playlist boundary.
+    mpv.set_property("prefetch-playlist", "yes")?;
     mpv.set_property("cache", "yes")?;
     mpv.set_property("cache-on-disk", "yes")?;
     mpv.set_property("demuxer-cache-dir", cache_dir)?;
@@ -400,6 +438,20 @@ impl Player {
         Ok(())
     }
 
+    /// Stop playback outright and empty the playlist: mpv goes idle and stays there.
+    ///
+    /// Not [`Self::clear_playlist`], which keeps the entry mpv is on. This exists for the audio
+    /// device disappearing under a loaded file: mpv ends that file with an error and, with no
+    /// `keep-open` and `prefetch-playlist` on, walks straight into the appended gapless lookahead
+    /// (already open) and tries it too. By the time the app hears about the failure that next
+    /// entry is the current one, so `playlist-clear` would leave it playing, which is a track the
+    /// user never asked for starting by itself. Issue #267.
+    pub fn stop(&self) -> Result<(), Error> {
+        self.drop_preload(true);
+        self.mpv().command("stop", &[])?;
+        Ok(())
+    }
+
     /// True when mpv has nothing loaded (playlist exhausted or the last load failed). The
     /// orchestrator uses this after a track ends/fails to tell "gaplessly advanced into the
     /// lookahead" apart from "stalled — load the next track explicitly".
@@ -571,13 +623,18 @@ impl Player {
 /// path stays exactly the filterless one it was before pitch existed.
 ///
 /// A positive gain carries a limiter: lifting a quiet track pushes its peaks past full scale, and
-/// without one they would clip at the output. `level=disabled` stops alimiter from re-normalizing
-/// the result, which would undo the gain.
+/// without one they would clip at the output. Its threshold is full scale (`limit=1`), so it only
+/// touches what would genuinely clip: a lower ceiling pulls down every peak of every boosted
+/// track, which is audible gain-riding on music that was never going to clip (#298, #300).
+/// `level=disabled` stops alimiter from re-normalizing the result, which would undo the gain.
+/// `latency=1` is essential for gapless playback: alimiter looks 5 ms ahead, and latency
+/// compensation trims that initial delay and drains the same number of buffered samples at EOF
+/// instead of dropping the outgoing tail when mpv rebuilds the graph for the next playlist entry.
 fn af_chain(gain_db: Option<f64>, semitones: i32) -> String {
     let mut chain = Vec::new();
     match gain_db {
         Some(g) if g > 0.0 => {
-            chain.push(format!("lavfi=[volume={g}dB,alimiter=limit=0.98:level=disabled]"))
+            chain.push(format!("lavfi=[volume={g}dB,alimiter=limit=1:level=disabled:latency=1]"))
         }
         Some(g) => chain.push(format!("lavfi=[volume={g}dB]")),
         None => {}
@@ -758,15 +815,34 @@ fn event_loop(mut ev: EventContext, deck: usize, decks: Arc<Decks>) {
                 // through here instead of Event::EndFile — in our usage (no async get/set/command
                 // replies) an Err from wait_event *is* a failed track.
                 if !live() {
+                    // Not every silent deck is a preload: `start_crossfade` flips `active` to the
+                    // incoming deck the moment an overlap starts, so for the length of the fade
+                    // the deck going *out* is the one that isn't live. Its stream dying there is
+                    // the end of a track the user already heard, and reporting it as a lookahead
+                    // failure would clear the *next* track's preload and evict its cached URL.
+                    // A preload can't be the one erroring here: one arriving mid-fade is held in
+                    // `pending` until `finish_fade`, which clears `fading` before it is loaded.
+                    if decks.fading.load(Ordering::Acquire) {
+                        tracing::warn!(deck, error = %friendly_error(&e), "outgoing track died mid-fade");
+                        continue;
+                    }
                     // The preload died before anyone heard it. Reporting it would skip the track
                     // that is actually playing; dropping the preload instead means this track
                     // reaches its own end normally and the app loads the next one explicitly
-                    // (`state::on_track_ended` asks `is_idle` for exactly this case).
+                    // (`state::on_track_ended` asks `is_idle` for exactly this case). It is still
+                    // reported, as its own event, so the dead URL is evicted from the cache. `let _`,
+                    // not `break`: this loop is what the playing track depends on.
                     tracing::warn!(deck, error = %friendly_error(&e), "crossfade preload failed");
                     decks.preloaded.store(false, Ordering::Release);
+                    let _ = tx.send(PlayerEvent::LookaheadFailed(friendly_error(&e)));
                     continue;
                 }
-                if tx.send(PlayerEvent::TrackFailed(friendly_error(&e))).is_err() {
+                let ev = if is_ao_init_failed(&e) {
+                    PlayerEvent::AudioDeviceLost
+                } else {
+                    PlayerEvent::TrackFailed(friendly_error(&e))
+                };
+                if tx.send(ev).is_err() {
                     break;
                 }
             }
@@ -991,14 +1067,17 @@ fn perceptual_to_mpv(percent: i64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{af_chain, loadfile_args, perceptual_to_mpv, quoted};
+    use super::{af_chain, is_ao_init_failed, loadfile_args, perceptual_to_mpv, quoted};
 
     #[test]
     fn gain_and_pitch_share_one_chain() {
         // The bug this exists for: either setter clobbering the other's filter.
         assert_eq!(af_chain(None, 0), "");
         assert_eq!(af_chain(Some(-3.5), 0), "lavfi=[volume=-3.5dB]");
-        assert_eq!(af_chain(Some(4.0), 0), "lavfi=[volume=4dB,alimiter=limit=0.98:level=disabled]");
+        assert_eq!(
+            af_chain(Some(4.0), 0),
+            "lavfi=[volume=4dB,alimiter=limit=1:level=disabled:latency=1]"
+        );
         assert_eq!(af_chain(None, 12), "rubberband=pitch-scale=2");
         assert_eq!(af_chain(Some(-6.0), -12), "lavfi=[volume=-6dB],rubberband=pitch-scale=0.5");
         // One semitone up is the twelfth root of two.
@@ -1059,6 +1138,19 @@ mod tests {
         );
         p.set_http_proxy(None).unwrap();
         assert_eq!(p.mpv().get_property::<String>("http-proxy").unwrap(), "");
+
+        // Gapless audio only keeps the output device open. The appended remote file also has to
+        // be opened before the current track reaches EOF, or its HTTP/demux startup becomes an
+        // audible pause at the boundary.
+        assert!(
+            p.mpv().get_property::<bool>("prefetch-playlist").unwrap(),
+            "gapless lookahead prefetch is disabled"
+        );
+        assert_eq!(
+            p.mpv().get_property::<String>("demuxer").unwrap(),
+            "lavf",
+            "native Matroska demuxing reintroduces a boundary sample"
+        );
 
         // Seek latency. A 12 MiB back buffer was pruned well before a long mix ended, so a backward
         // seek hit the network and stalled; the default 1 s buffering gate is most of the rest of
@@ -1214,5 +1306,19 @@ mod tests {
         // Monotonic, and finer steps at the loud end than the quiet one.
         assert!((1..=100).all(|s| perceptual_to_mpv(s) > perceptual_to_mpv(s - 1)));
         assert!(db(100) - db(99) < db(2) - db(1));
+    }
+
+    #[test]
+    fn audio_device_errors_are_not_dead_streams() {
+        use libmpv2::{mpv_error, Error};
+        // The branch that decides whether a PC waking from sleep holds its place or walks the
+        // whole queue playing every track it touches (issue #267).
+        assert!(is_ao_init_failed(&Error::Raw(mpv_error::AoInitFailed)));
+        assert!(is_ao_init_failed(&Error::Loadfile {
+            error: std::rc::Rc::new(Error::Raw(mpv_error::AoInitFailed))
+        }));
+        // A dead or expired stream URL still has to reach the fallback clients.
+        assert!(!is_ao_init_failed(&Error::Raw(mpv_error::LoadingFailed)));
+        assert!(!is_ao_init_failed(&Error::Raw(mpv_error::NothingToPlay)));
     }
 }
