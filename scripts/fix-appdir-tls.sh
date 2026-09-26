@@ -111,15 +111,29 @@ HOST_BASELINE="libGL.so.1 libEGL.so.1 libGLX.so.0 libGLdispatch.so.0 libOpenGL.s
 # host's job; everything else has to travel with us, or we just move "cannot open shared object
 # file" one library along (jackd2's libjack needs libdb-5.3, which Arch doesn't ship at all).
 bundle_deps_of() {
-  local of="$1" name path
-  while read -r name path; do
-    case "$name" in libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|ld-linux*) continue;; esac
-    case " $(echo "$HOST_BASELINE" | tr -s ' \n' ' ') " in *" $name "*) continue;; esac
-    [ -e "$APPDIR/usr/lib/$name" ] && continue
-    [ -e "$path" ] || continue
-    cp -L "$path" "$APPDIR/usr/lib/$name"
-    echo "==> bundled $name (dependency of $(basename "$of"))"
-  done < <(ldd "$of" | awk '/=> \//{print $1, $3}')
+  local name path of
+  local -a pending=("$1")
+  local cursor=0
+  declare -A visited=()
+
+  # Manual additions can have their own dependencies. Walk the closure, preferring the AppDir's
+  # copies so this does not silently mix another host library stack into the bundle.
+  while ((cursor < ${#pending[@]})); do
+    of="${pending[$cursor]}"
+    cursor=$((cursor + 1))
+    [ -n "${visited[$of]:-}" ] && continue
+    visited["$of"]=1
+
+    while read -r name path; do
+      case "$name" in libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|ld-linux*) continue;; esac
+      case " $(echo "$HOST_BASELINE" | tr -s ' \n' ' ') " in *" $name "*) continue;; esac
+      [ -e "$APPDIR/usr/lib/$name" ] && continue
+      [ -e "$path" ] || continue
+      cp -L "$path" "$APPDIR/usr/lib/$name"
+      echo "==> bundled $name (dependency of $(basename "$of"))"
+      pending+=("$APPDIR/usr/lib/$name")
+    done < <(LD_LIBRARY_PATH="$APPDIR/usr/lib:$APPDIR/usr/lib64" ldd "$of" | awk '/=> \//{print $1, $3}')
+  done
 }
 
 # 1. libjack: bundle the build host's copy. Prefer a real jackd2 libjack over a pipewire-jack shim
@@ -240,6 +254,18 @@ else
   echo "==> bundled gst-plugin-scanner from $SCANNER"
   bundle_deps_of "$SCANNER"
 fi
+
+# linuxdeploy excludes some optional system audio libraries even when a bundled ELF object has a
+# hard DT_NEEDED edge to them. Audit the whole AppDir and close those edges here; recent Ubuntu
+# mpv builds link libpipewire directly, although PipeWire is not installed on every supported host.
+# Keep the explicit host baseline above narrow and bundle the rest.
+for root in "$APPDIR/usr/lib" "$APPDIR/usr/lib64" "$APPDIR/usr/bin"; do
+  [ -d "$root" ] || continue
+  while IFS= read -r -d '' elf; do
+    elf64 "$elf" || continue
+    bundle_deps_of "$elf"
+  done < <(find "$root" -type f -print0)
+done
 
 # 1e. Move the gnutls stack off the library path. It has to be the host's, because Ubuntu's gnutls
 #     hardcodes /etc/ssl/certs/ca-certificates.crt as its trust store and openSUSE has no such file
