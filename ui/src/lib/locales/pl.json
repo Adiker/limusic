@@ -360,7 +360,7 @@
 			"font_filter": "Czcionki",
 			"experimental": "Eksperymentalne",
 			"app_icon": "Ikona aplikacji",
-			"app_icon_hint": "Plik PNG zastępuje ikonę na pasku zadań, w zasobniku i w tym oknie. Skróty i menedżer plików zachowują zainstalowaną ikonę.",
+			"app_icon_hint": "Plik PNG zastępuje ikonę w zasobniku, w tym oknie i na liście Alt-Tab. Skróty, menedżer plików i przycisk na pasku zadań Windows zachowują zainstalowaną ikonę.",
 			"app_icon_pick": "Wybierz…",
 			"app_icon_dialog": "Wybierz ikonę aplikacji",
 			"app_icon_filter": "Obraz PNG"
@@ -399,7 +399,9 @@
 			"crossfade_hint": "Jeden utwór płynnie przechodzi w drugi. Zużywa trochę więcej pamięci, bo w tym momencie grają dwa utwory naraz.",
 			"crossfade_duration": "Czas trwania płynnego przejścia",
 			"crossfade_duration_hint": "Jak długo utwory się nakładają. Krótkie utwory mają krótsze przejścia, więc płynne przejście nigdy nie zaczyna się, zanim poprzedni utwór się nie skończy.",
-			"crossfade_seconds": "{secs}s"
+			"crossfade_seconds": "{secs}s",
+			"normalize_volume": "Normalizacja głośności",
+			"normalize_volume_hint": "Wyrównaj głośność odtwarzania utworów, żeby cicha produkcja nie ginęła przy następnym nagraniu. Wyłącz, aby usłyszeć każdy utwór dokładnie tak, jak został zmasterowany."
 		},
 		"data": {
 			"clear_cache": "Wyczyść pamięć podręczną obrazów i strumieni",
@@ -765,5 +767,11 @@
 		"signed_in_as": "Zalogowano jako {name}",
 		"switched_to": "Przełączono na {name}",
 		"could_not_add": "Nie udało się tego dodać. Spróbuj to otworzyć"
+	},
+	"errors": {
+		"unreachable": "Nie można połączyć się z YouTube Music. Sprawdź połączenie.",
+		"offline_title": "Brak połączenia",
+		"offline_body": "Limusic nie może połączyć się z YouTube Music. Sprawdź połączenie internetowe i spróbuj ponownie.",
+		"generic_title": "Coś poszło nie tak"
 	}
 }

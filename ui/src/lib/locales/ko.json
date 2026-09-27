@@ -17,7 +17,9 @@
 		"pending": "로딩 중인 페이지에서 선택한 곡 {count}개 탐색 중...",
 		"local_playlist": "컴퓨터에 저장된 파일은 유튜브 재생목록에 추가할 수 없습니다.",
 		"account_changed": "계정 변경으로 인한 곡 추가 중단.",
-		"playlist_partial": "{added}곡을 {playlist}에 추가함; 중복 {duplicates}곡; 미확인 {remaining}곡. {error}"
+		"playlist_partial": "{added}곡을 {playlist}에 추가함; 중복 {duplicates}곡; 미확인 {remaining}곡. {error}",
+		"remove": "이 재생목록에서 삭",
+		"remove_confirm": "{count}개를 삭제하시겠습니까?"
 	},
 	"common": {
 		"loading": "로딩 중...",
@@ -83,7 +85,8 @@
 		"play_all": "전체 재생",
 		"top_result": "인기 검색결과",
 		"all_results_for": "“{query}” 전체 검색 결과",
-		"refresh": "새로고침"
+		"refresh": "새로고침",
+		"videos": "동영상"
 	},
 	"nav": {
 		"home": "홈",
@@ -160,7 +163,8 @@
 		"remove_dislike": "싫어요 취소",
 		"add_to_playlist": "플레이리스트에 추가",
 		"pin_to_top": "상단에 고정",
-		"unpin": "고정 해제"
+		"unpin": "고정 해제",
+		"remove_from_this_playlist": "이 재생목록에서 삭제"
 	},
 	"home": {
 		"good_morning": "좋은 아침이에요",
@@ -271,7 +275,9 @@
 			"data": "데이터 및 저장 공간",
 			"data_hint": "네트워크 및 캐시 파일 설정.",
 			"about": "앱 정보",
-			"about_hint": "버전, 업데이트 및 변경 사항 설정."
+			"about_hint": "버전, 업데이트 및 변경 사항 설정.",
+			"hotkeys": "글로벌 단축키",
+			"hotkeys_hint": "시스템 전체에서 재생을 제어할 수 있는 단축키입니다."
 		},
 		"sections": {
 			"language": "언어",
@@ -352,7 +358,7 @@
 			"font_filter": "글꼴",
 			"experimental": "실험실",
 			"app_icon": "앱 아이콘",
-			"app_icon_hint": "선택한 PNG 파일이 작업 표시줄, 시스템 트레이 및 현재 창의 아이콘을 대체합니다. 단축 아이콘과 파일 관리자에는 원래 설치된 아이콘이 그대로 유지됩니다.",
+			"app_icon_hint": "PNG 파일로 시스템 트레이, 현재 창, Alt-Tab 화면의 아이콘을 변경합니다. 바로가기 아이콘, 파일 관리자, Windows 작업 표시줄 버튼은 원래 설치된 기본 아이콘으로 유지됩니다.",
 			"app_icon_pick": "선택 …",
 			"app_icon_dialog": "앱 아이콘 선택",
 			"app_icon_filter": "PNG 이미지",
@@ -388,7 +394,14 @@
 			"lastfm_primary_artist": "주 아티스트만 가져옵니다",
 			"lastfm_primary_artist_hint": "첫번째로 등록된 아티스트만 Last.fm으로 전송하여, 재생 기록이 실제 아티스트의 페이지에 정상적으로 누적되도록 합니다. \"&\"로 연결된 이름은 분리하지 않고 그대로 유지합니다.",
 			"lastfm_primary_strict": "\"&\"로 연결된 아티스트 이름도 분리하여, 첫번째 아티스트만 남깁니다",
-			"lastfm_primary_strict_hint": "\"태연 & 티파니\"는 \"태연\"으로 기록됩니다. 이름에 \"&\"가 포함된 듀오의 이름도 함께 축소됩니다."
+			"lastfm_primary_strict_hint": "\"태연 & 티파니\"는 \"태연\"으로 기록됩니다. 이름에 \"&\"가 포함된 듀오의 이름도 함께 축소됩니다.",
+			"normalize_volume": "음량 자동 맞춤",
+			"normalize_volume_hint": "트랙 간의 재생 음량을 균일하게 맞춰, 마스터링 음량이 작은 곡이 다름 곡에 묻히지 않도록 합니다. 각 트랙을 원문 마스터링 상태 그대로 감상하시려면 이 기능을 끄세요.",
+			"crossfade": "크로스페이드",
+			"crossfade_hint": "재생 중인 곡이 끝날 때 다음 곡이 자연스럽게 겹치며 시작되도록 합니다. 곡이 전환 되는 동안 두 개의 오디오 디코더가 동시에 실행되므로 메모리를 약간 더 사용합니다.",
+			"crossfade_duration": "크로스페이드 시간",
+			"crossfade_duration_hint": "곡이 겹쳐서 재생되는 시간이에요. 짧은 곡은 페이드 시간이 줄어들어, 이전 곡이 끝나기 전에 다음 페이드가 시작되지 않도록 조절해요.",
+			"crossfade_seconds": "{secs}초"
 		},
 		"data": {
 			"clear_cache": "이미지 및 스트리밍 캐시 삭제",
@@ -474,6 +487,45 @@
 			"preview_status": "멤버 목록",
 			"preview_you": "내 프로필",
 			"preview_card": "프로필 카드"
+		},
+		"hotkeys": {
+			"enable": "전역 단축키 활성화",
+			"enable_hint": "전역 단축키가 비활성화되어 있습니다. 시스템 전체에서 단축키를 사용하려면 활성화 하세요.",
+			"off": "비활성화",
+			"rebind": "단축키 변경",
+			"recording": "조합키를 누른 상태에서 키를 입력하세요...",
+			"wayland_hint": "GNOME (Wayland) 환경에서는 작동하지 않을 수 있습니다.",
+			"clear": "단축키 초기화",
+			"reset": "기본값으로 초기화",
+			"conflict": "이미 \"{action}\" 기능에 지정된 단축키입니다",
+			"failed_register": "시스템에 단축키를 등록할 수 없습니다. (다른 앱에서 사용 중일 수 있음)",
+			"section_playback": "재생",
+			"section_audio": "오디오",
+			"section_window": "창",
+			"action_play_pause": "재생 / 일시정지",
+			"action_play_pause_hint": "재생 및 일시 정지 상태를 전환합니다.",
+			"action_next_track": "다음 트랙",
+			"action_next_track_hint": "대기열의 다음 곡으로 넘어갑니다.",
+			"action_prev_track": "이전 트랙",
+			"action_prev_track_hint": "대기열의 이전 곡으로 돌아갑니다.",
+			"action_volume_up": "볼륨 올리기",
+			"action_volume_up_hint": "재생 볼륨을 5% 올립니다.",
+			"action_volume_down": "볼륨 내리기",
+			"action_volume_down_hint": "재생 볼륨을 5% 낮니다.",
+			"action_mute_toggle": "음소거 / 음소거해제",
+			"action_mute_toggle_hint": "소리를 끄거나 이전 볼륨으로 되돌립니다.",
+			"action_seek_forward": "앞으로 이동",
+			"action_seek_forward_hint": "현재 곡을 10초 앞으로 이동합니다.",
+			"action_seek_backward": "뒤로 이동",
+			"action_seek_backward_hint": "현재 곡을 10초 뒤로 이동합니다.",
+			"action_toggle_shuffle": "셔플 전환",
+			"action_toggle_shuffle_hint": "대기열의 셔플 기능을 켜거나 끕니다.",
+			"action_toggle_repeat": "반복 재생 전환",
+			"action_toggle_repeat_hint": "반복 재생 모드를 전환: 끔, 전체 반복, 한 곡 반복.",
+			"action_show_app": "앱 화면 표",
+			"action_show_app_hint": "Limusic 창을 맨 앞으로 가져옵니다.",
+			"title": "전역 단축키",
+			"description": "Limusic 창을 최소화하거나 백그라운드에서 실행 중일 때도 맞춤형 단축키로 재생을 제어할 수 있어요."
 		}
 	},
 	"dialogs": {
@@ -713,6 +765,13 @@
 		"subscribed": "{name} 구독",
 		"unsubscribed": "구독이 해제되었습니다",
 		"signed_in_as": "{name} 계정으로 로그인 완료",
-		"switched_to": "{name}(으)로 전환했습니다"
+		"switched_to": "{name}(으)로 전환했습니다",
+		"could_not_add": "추가할 수 없어요. 대신 직접 열어보세요"
+	},
+	"errors": {
+		"unreachable": "YouTube Music에 연결할 수 없습니다. 네트워크 연결을 확인해 주세요.",
+		"offline_title": "연결 끊",
+		"offline_body": "Limusic이 YouTube Music에 연결할 수 없습니다. 인터넷 연결을 확인한 후 다시 시도해 주세요.",
+		"generic_title": "문제가 발생했습니다"
 	}
 }

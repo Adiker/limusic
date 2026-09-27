@@ -35,7 +35,11 @@
 		selection.count;
 		confirmRemove = false;
 	});
-	const canAdd = $derived(selection.count > 0 && selection.songs.every((s) => !isLocalId(s.video_id)));
+	// Local files can be added to a playlist kept on this machine, but cannot be downloaded again.
+	const canAdd = $derived(selection.count > 0);
+	const canDownload = $derived(
+		selection.count > 0 && selection.songs.every((song) => !isLocalId(song.video_id))
+	);
 	const blocked = $derived(busy || selection.selectingAll || selection.pending > 0);
 
 	function onKey(e: KeyboardEvent) {
@@ -67,7 +71,7 @@
 	}
 
 	async function download() {
-		if (blocked || !selection.count || !canAdd) return;
+		if (blocked || !selection.count || !canDownload) return;
 		busy = true;
 		try {
 			await queueDownloads([...selection.songs]);
@@ -75,9 +79,11 @@
 			// The shared player store owns normal toasts; this branch is only for a missing folder or
 			// another backend validation error that prevented enqueueing.
 			toast.error(String(e));
+		} finally {
+			busy = false;
 		}
-		finally { busy = false; }
 	}
+
 </script>
 
 <!-- Floating, like the update banner and the toast above it, rather than a strip wedged between the
@@ -121,7 +127,7 @@
 						<HugeiconsIcon icon={PlayListAddIcon} class="h-4 w-4" />
 					</Button>
 				{/if}
-				{#if canAdd}
+				{#if canDownload}
 					<Button variant="ghost" size="sm" disabled={blocked} onkeydown={onKey} onclick={download}>
 						{t('downloads.title')}
 					</Button>

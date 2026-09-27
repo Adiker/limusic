@@ -5,8 +5,8 @@ use serde::Serialize;
 use crate::blocklist;
 use crate::clients::YouTubeClient;
 use crate::models::browse::{
-    self, AlbumPage, ArtistPage, BrowseItem, HistoryGroup, HomePage, PlaylistContinuation,
-    PlaylistPage, PlaylistSort, SearchResults,
+    self, AlbumPage, ArtistPage, BrowseItem, HistoryGroup, HomePage, MoodSection,
+    PlaylistContinuation, PlaylistPage, PlaylistSort, SearchResults,
 };
 use crate::models::context::Context;
 use crate::models::lyrics::{self, PlainLyrics, TimedLyricLine};
@@ -442,6 +442,14 @@ impl InnerTube {
         }
         page.sections.retain(|s| !s.items.is_empty());
         Ok(page)
+    }
+
+    /// Moods & Genres (`FEmusic_moods_and_genres`): the tiles the search page browses from. A tile's
+    /// `params` opens its playlists via `browse_grid("FEmusic_moods_and_genres_category", ..)`.
+    /// Works signed out. context/08.
+    pub async fn moods(&self, client: &YouTubeClient) -> Result<Vec<MoodSection>, Error> {
+        let value = self.browse(client, Some("FEmusic_moods_and_genres"), None).await?;
+        Ok(browse::parse_moods(&value))
     }
 
     /// Play history (`FEmusic_history`), in YouTube's own date buckets (Today, Yesterday, …).

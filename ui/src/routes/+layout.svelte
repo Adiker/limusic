@@ -6,7 +6,8 @@
 	import {
 		CheckmarkCircle02Icon,
 		AlertCircleIcon,
-		InformationCircleIcon
+		InformationCircleIcon,
+		Cancel01Icon
 	} from '@hugeicons/core-free-icons';
 	import { browser } from '$app/environment';
 	import { afterNavigate } from '$app/navigation';
@@ -33,6 +34,7 @@
 	import QueuePanel from '$lib/components/QueuePanel.svelte';
 	import LyricsPanel from '$lib/components/LyricsPanel.svelte';
 	import AddToPlaylist from '$lib/components/AddToPlaylist.svelte';
+	import NewPlaylistDialog from '$lib/components/NewPlaylistDialog.svelte';
 	import SettingsDialog from '$lib/components/SettingsDialog.svelte';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
 	import ChannelPicker from '$lib/components/ChannelPicker.svelte';
@@ -52,6 +54,7 @@
 	import { initErrorLog } from '$lib/errlog';
 	import {
 		updateState,
+		availableMessage,
 		installUpdate,
 		openDownloadPage,
 		checkForUpdatesQuiet,
@@ -290,6 +293,7 @@
 	<CommandPalette />
 	<KeyboardShortcuts />
 	<AddToPlaylist />
+	<NewPlaylistDialog />
 	<ShareDialog />
 	<SettingsDialog />
 	<ChannelPicker />
@@ -303,7 +307,7 @@
 			transition:fly={{ y: 16, duration: 220, easing: cubicOut }}
 			class="fixed bottom-24 left-1/2 z-[100] flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-card px-4 py-2 text-sm shadow-lg"
 		>
-			<span>{t('settings.about.update_available', { version: updateState.available.version })}</span>
+			<span>{availableMessage(updateState.available)}</span>
 			{#if updateState.canInstall}
 				<Button size="sm" onclick={installUpdate} disabled={updateState.installing}>
 					{updateState.installing ? t('common.loading') : t('settings.about.install_update')}
@@ -314,11 +318,15 @@
 				<Button size="sm" onclick={openDownloadPage}>{t('settings.about.download_page')}</Button>
 			{/if}
 			{#if !updateState.installing}
-				<button
-					class="text-muted-foreground hover:text-foreground"
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					class="-mr-2 text-muted-foreground hover:text-foreground"
 					aria-label={t('common.close')}
-					onclick={() => (updateState.available = null)}>✕</button
+					onclick={() => (updateState.available = null)}
 				>
+					<HugeiconsIcon icon={Cancel01Icon} strokeWidth={2} />
+				</Button>
 			{/if}
 		</div>
 	{/if}

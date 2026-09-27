@@ -345,6 +345,51 @@ pub fn parse_home(root: &Value) -> HomePage {
     HomePage { chips, sections, continuation: continuation_token(root) }
 }
 
+/// One tile of Moods & Genres (`musicNavigationButtonRenderer`): a label, the `params` that browse
+/// `FEmusic_moods_and_genres_category` into that mood's playlists, and YouTube's own colour for it.
+#[derive(Debug, Clone, Serialize)]
+pub struct Mood {
+    pub title: String,
+    pub params: String,
+    /// `#rrggbb`, from the tile's `leftStripeColor` (ARGB, alpha always opaque).
+    pub color: String,
+}
+
+/// A titled grid of mood tiles ("Moods & moments", "Genres"), in YouTube's order and language.
+#[derive(Debug, Clone, Serialize)]
+pub struct MoodSection {
+    pub title: String,
+    pub items: Vec<Mood>,
+}
+
+/// Parse a `FEmusic_moods_and_genres` response: one `gridRenderer` per section. context/08.
+pub fn parse_moods(root: &Value) -> Vec<MoodSection> {
+    find_all(root, "gridRenderer")
+        .into_iter()
+        .filter_map(|grid| {
+            let title = find_all(grid.get("header")?, "gridHeaderRenderer")
+                .into_iter()
+                .find_map(|h| runs_text(h.get("title")))?;
+            let items: Vec<Mood> = find_all(grid.get("items")?, "musicNavigationButtonRenderer")
+                .into_iter()
+                .filter_map(|b| {
+                    let params = find_all(b.get("clickCommand")?, "browseEndpoint")
+                        .into_iter()
+                        .find_map(|e| e.get("params")?.as_str())?
+                        .to_owned();
+                    let argb = b.get("solid")?.get("leftStripeColor")?.as_u64()?;
+                    Some(Mood {
+                        title: runs_text(b.get("buttonText"))?,
+                        params,
+                        color: format!("#{:06x}", argb & 0xff_ffff),
+                    })
+                })
+                .collect();
+            (!items.is_empty()).then_some(MoodSection { title, items })
+        })
+        .collect()
+}
+
 /// One date bucket of the play history ("Today", "Yesterday", "This week"). context/08.
 #[derive(Debug, Clone, Serialize)]
 pub struct HistoryGroup {
@@ -2164,5 +2209,46 @@ mod tests {
             ("song", "abc", "Episode 12")
         );
         assert_eq!(card.subtitle.as_deref(), Some("The Show"));
+    }
+
+    #[test]
+    fn parses_moods_grid() {
+        let tile = |text: &str, color: u64, params: &str| {
+            json!({ "musicNavigationButtonRenderer": {
+                "buttonText": { "runs": [{ "text": text }] },
+                "solid": { "leftStripeColor": color },
+                "clickCommand": { "browseEndpoint": {
+                    "browseId": "FEmusic_moods_and_genres_category", "params": params
+                } }
+            } })
+        };
+        let root = json!({ "contents": { "sectionListRenderer": { "contents": [
+            { "gridRenderer": {
+                "header": { "gridHeaderRenderer": { "title": { "runs": [{ "text": "Moods & moments" }] } } },
+                "items": [tile("Chill", 4288988671, "P_CHILL"), tile("Gaming", 4284506208, "P_GAME")]
+            } },
+            { "gridRenderer": {
+                "header": { "gridHeaderRenderer": { "title": { "runs": [{ "text": "Genres" }] } } },
+                // No colour → dropped rather than drawn in a guessed one.
+                "items": [tile("Jazz", 4288988671, "P_JAZZ"), json!({ "musicNavigationButtonRenderer": {
+                    "buttonText": { "runs": [{ "text": "Bare" }] },
+                    "clickCommand": { "browseEndpoint": { "params": "P_BARE" } }
+                } })]
+            } }
+        ] } } });
+        let s = parse_moods(&root);
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0].title, "Moods & moments");
+        assert_eq!(
+            (
+                s[0].items[0].title.as_str(),
+                s[0].items[0].params.as_str(),
+                s[0].items[0].color.as_str()
+            ),
+            ("Chill", "P_CHILL", "#a4c5ff")
+        );
+        assert_eq!(s[0].items[1].color, "#606060");
+        assert_eq!(s[1].items.len(), 1);
+        assert_eq!(s[1].items[0].title, "Jazz");
     }
 }
