@@ -132,11 +132,15 @@ jobs:
             # Fetch into FETCH_HEAD instead of refs/tags/$TAG so the fork tag remains untouched.
             git fetch --no-tags upstream "refs/tags/$TAG"
             upstream_commit="$(git rev-parse FETCH_HEAD^{commit})"
-            git merge --no-edit "$upstream_commit" || {
-              echo "::error::the fork branch cannot be merged automatically with upstream $TAG"
-              git status --short
-              exit 1
-            }
+            if ! git merge --no-edit "$upstream_commit"; then
+              echo "::warning::merge had conflicts, retrying with upstream-preferred conflict resolution"
+              git merge --abort || true
+              git merge --no-edit -X theirs "$upstream_commit" || {
+                echo "::error::the fork branch cannot be merged automatically with upstream $TAG"
+                git status --short
+                exit 1
+              }
+            fi
             source_sha="$(git rev-parse HEAD)"
             git push "$FORK_URL" "HEAD:refs/tags/$TAG"
           fi
