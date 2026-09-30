@@ -531,7 +531,11 @@
 }
 
 /* The blurred cover behind a hero (HomeHero, NowPlaying, the album and library headers), on its
-   own compositing layer. That promotion is the whole point of the class: left unpromoted,
+   own compositing layer. Put it on the element that holds the blurred image *and* the gradient
+   that fades it out, clipped (`overflow-hidden`), never on the image alone: two layers land a pixel
+   apart during WebKitGTK's animated wheel scroll, and a row of the raw wash flickers past the
+   fade's last line. NowPlaying's image carries it directly because it has no fade and never
+   scrolls. That promotion is the whole point of the class: left unpromoted,
    WebKitGTK re-runs the 40px gaussian over the element every time anything underneath it repaints,
    and the artwork tint below repaints the entire document on every frame of its crossfade. In the
    now-playing view the wash is the size of the window, so a track change spent more time
@@ -542,8 +546,14 @@
    all of it, so the wash stays. (An earlier note in NowPlaying.svelte has promotion measuring as
    noise: that was the video case, where the damage is the video *under* the blur every frame and
    the layer has to be re-rasterized regardless. Still true, and still why the wash is dropped
-   while a video plays.) */
-.art-wash {
+   while a video plays.)
+
+   Not on Chromium (WebView2, Windows), where the promotion is what costs the frames (#341). There
+   the wash's layer is re-blurred every time something above it repaints, and every hover animation
+   that creates a layer pays overlap tests against it. Unpromoted, the blur is rasterized into the
+   page's tiles once. Measured 2026-09-28, perf/scroll.mjs, 1920x1080, 4x CPU, frames over 20 ms:
+   lyrics panel idle while playing 100% -> 4-11%, Home top hover 53% -> 30%. */
+html:not(.chromium) .art-wash {
 	will-change: transform;
 }
 

@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 use innertube::{
     AlbumPage, ArtistPage, BrowseItem, HistoryGroup, HomePage, MoodSection, PlaylistContinuation,
-    PlaylistPage, PlaylistSort, Rating, SearchResults, SongItem,
+    PlaylistPage, PlaylistSort, Rating, SearchResults, SearchSuggestions, SongItem,
 };
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use crate::blocked::BlockedArtist;
 use crate::downloads::{CollectionRequest, DownloadCollection, DownloadLibrary};
@@ -50,6 +50,13 @@ pub async fn search_all(
 ) -> Result<SearchResults, String> {
     let client = metadata_client(&state)?;
     state.it.search_all(client, &query, record_history).await.map_err(|e| e.to_string())
+}
+
+/// Typeahead completions + a few matching rows, signed in (see `InnerTube::search_suggestions`).
+#[tauri::command]
+pub async fn search_suggestions(state: St<'_>, query: String) -> Result<SearchSuggestions, String> {
+    let client = metadata_client(&state)?;
+    state.it.search_suggestions(client, &query).await.map_err(|e| e.to_string())
 }
 
 /// Filtered "Show more" search for one category (albums / artists / playlists).
@@ -225,7 +232,9 @@ const UI_SETTINGS: &[&str] = &[
     "discord_rpc",
     "discord_rpc_config",
     "close_to_tray",
+    "track_notifications",
     "autostart",
+    "start_minimized",
     "autoplay",
     "hide_videos",
     "prevent_duplicates",
@@ -233,6 +242,7 @@ const UI_SETTINGS: &[&str] = &[
     "update_channel",
     "lyrics_providers",
     "music_videos",
+    "ambient_light",
     "sticky_shuffle",
     "system_titlebar",
     "lastfm_primary_artist",
@@ -273,12 +283,50 @@ pub async fn video_stream(
     }
 }
 
+/// The glow around the music video, where mpv draws the picture (Linux): the newest small frame
+/// other than `after` (nativevideo.rs has the layout), or nothing if none came within a quarter
+/// second. Raw bytes, so the ~22 KB a frame skips JSON both ways.
+#[tauri::command]
+pub async fn ambient_frame(after: u32) -> tauri::ipc::Response {
+    #[cfg(target_os = "linux")]
+    let frame = crate::nativevideo::next_frame(after).await.map(|f| f.to_vec());
+    // Typed: off Linux a bare `None` leaves nothing to infer from, and the PR checks only build on
+    // Linux, so this broke rc.3's Windows and macOS builds with every check green.
+    #[cfg(not(target_os = "linux"))]
+    let frame: Option<Vec<u8>> = {
+        let _ = after;
+        None
+    };
+    tauri::ipc::Response::new(frame.unwrap_or_default())
+}
+
+/// Where the page's hole for the music video is (`[x, y, w, h]`, CSS pixels, viewport-relative),
+/// or `None` when it has none. mpv draws the picture there, underneath the webview
+/// (nativevideo.rs). `false` means no picture is up, and for a rect that there never will be: the
+/// page falls back to the `<video>` element.
+#[tauri::command]
+pub async fn native_video_rect(
+    app: tauri::AppHandle,
+    state: St<'_>,
+    rect: Option<[f64; 4]>,
+) -> Result<bool, String> {
+    #[cfg(target_os = "linux")]
+    return Ok(crate::nativevideo::set_rect(&app, state.inner().clone(), rect).await);
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state, rect);
+        Ok(false)
+    }
+}
+
 /// Forget a resolved music-video URL, so the next `video_stream` for this id resolves a fresh one.
 /// The player view calls this when the `<video>` element fails to load, which is what an expired
-/// or revoked googlevideo link looks like from the webview.
+/// or revoked googlevideo link looks like from the webview. It also sends that track's next resolve
+/// to VISIONOS first, so a WEB_REMIX URL that failed is not rebuilt from the same reply.
 #[tauri::command]
 pub async fn forget_video_stream(state: St<'_>, video_id: String) -> Result<(), String> {
     state.forget_video_url(&video_id);
+    state.orchestrator.mark_video_failed(&video_id);
     Ok(())
 }
 
@@ -310,6 +358,7 @@ pub async fn get_settings(state: St<'_>) -> Result<serde_json::Value, String> {
     map.entry("download_quality").or_insert_with(|| {
         serde_json::Value::String(crate::downloads::download_quality(&state.db))
     });
+    map.insert("native_video".into(), crate::state::native_video().to_string().into());
     Ok(serde_json::Value::Object(map))
 }
 
@@ -323,7 +372,25 @@ pub async fn set_setting(
     if !UI_SETTINGS.contains(&key.as_str()) {
         return Err(format!("unknown setting: {key}"));
     }
+    // A login entry registered before `--autostart` existed doesn't carry it, and without it the
+    // setting never applies. `enable` rewrites the entry. Before the write, so a failure leaves the
+    // setting off.
+    if key == "start_minimized" && value == "true" {
+        use tauri_plugin_autostart::ManagerExt;
+        let al = app.autolaunch();
+        if al.is_enabled().unwrap_or(false) {
+            al.enable().map_err(|e| format!("autostart: {e}"))?;
+        }
+    }
     state.db.set_setting(&key, &value);
+    // A music video track already playing gets its picture now rather than from the next track.
+    if key == "music_videos" && value == "true" {
+        state.inner().attach_current_video().await;
+    }
+    #[cfg(target_os = "linux")]
+    if key == "ambient_light" {
+        crate::set_webgl(&app, value == "true");
+    }
     // Presence connects/clears the moment it's toggled — the user shouldn't have to skip a track
     // to see it take effect.
     if key == "discord_rpc" {
@@ -760,6 +827,24 @@ pub async fn open_mini(app: tauri::AppHandle) -> Result<(), String> {
 pub async fn close_mini(app: tauri::AppHandle) -> Result<(), String> {
     crate::tray::show_main(&app);
     Ok(())
+}
+
+/// The arguments this process was launched with, handed over once (#348). See `LAUNCH_ARGS`.
+#[tauri::command]
+pub fn take_launch_args() -> Vec<String> {
+    std::mem::take(&mut *crate::LAUNCH_ARGS.lock().unwrap())
+}
+
+#[tauri::command]
+pub async fn show_main(state: St<'_>, window: tauri::WebviewWindow) -> Result<bool, String> {
+    if crate::should_start_minimized(&state.db) {
+        return Ok(false);
+    }
+    window.show().map_err(|e| e.to_string())?;
+    window.unminimize().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+    crate::tray::set_main_visible(window.app_handle(), true);
+    Ok(true)
 }
 
 // --- browse / library (context/08) ---------------------------------------------------------

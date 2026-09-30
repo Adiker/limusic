@@ -257,7 +257,18 @@
 	// mid-drag would collapse the slider under its own thumb.
 	let volHover = $state(false);
 	let volDragging = $state(false);
-	const volOpen = $derived(volHover || volDragging);
+	// Scrolling the cover is the volume, as in Now Playing, and the slider opens while it is live
+	// (plus a second to read it). Only the cover: on the whole view, scrolling the lyrics or the
+	// empty backdrop changed the volume too (#344).
+	let volWheel = $state(false);
+	let volWheelTimer: ReturnType<typeof setTimeout>;
+	function onArtWheel(e: WheelEvent) {
+		wheelVolume(e);
+		volWheel = true;
+		clearTimeout(volWheelTimer);
+		volWheelTimer = setTimeout(() => (volWheel = false), 1000);
+	}
+	const volOpen = $derived(volHover || volDragging || volWheel);
 
 	// Lyrics and queue, each a sticky switch (lyrics on by default). Both fit beside the player only
 	// from 90rem: below that the lyrics column would be ~20 characters wide at theater size, so the
@@ -301,10 +312,9 @@
 <!-- Above the whole app including the titlebar (the chrome tops out at z-20): fullscreen means
      fullscreen. Below the dialogs and menus (z-50 and up) and the toast/update banners (z-100),
      which have to stay reachable from in here: Ctrl+K opened the palette behind this view. -->
-<!-- svelte-ignore a11y_no_static_element_interactions -- wheel is the volume gesture, move only wakes the chrome -->
+<!-- svelte-ignore a11y_no_static_element_interactions -- move only wakes the chrome -->
 <section
 	transition:fade={{ duration: 220 }}
-	onwheel={wheelVolume}
 	onpointermove={wake}
 	class="theater fixed inset-0 z-40 flex flex-col overflow-hidden bg-background text-foreground {idle
 		? 'cursor-none'
@@ -377,7 +387,8 @@
 			class="mx-auto w-full self-center {lyricsShown || queueShown ? 'max-w-[30rem]' : 'max-w-[34rem]'}"
 			style="--art:min(100%, 100vh - 25rem)"
 		>
-			<div class="relative mx-auto" style="width:var(--art);max-width:100%">
+			<!-- svelte-ignore a11y_no_static_element_interactions -- wheel is the volume gesture -->
+			<div class="relative mx-auto" style="width:var(--art);max-width:100%" onwheel={onArtWheel}>
 				<!-- The light the cover sits in. Bigger than the cover and behind it, so it reads as a
 				     spill rather than an outline. -->
 				<div
@@ -615,13 +626,16 @@
 		{/if}
 		<!-- === The queue, on the backdrop like the lyrics and for the same reason. It keeps its
 		     scrollbar: a playlist queue runs to thousands of rows, and it is the only thing here you
-		     scroll by hand. So the wheel is the list's, not the volume's (stopped before it reaches
-		     the section). === -->
+		     scroll by hand.
+		     `relative z-0` gives it its own stacking context, and that is what keeps the scrollbar on
+		     screen. Without it, every transform transition in the lyrics next door (the word pop, the
+		     active line's scale) blanked the thumb on WebKitGTK for as long as it ran, 100-300 ms each,
+		     several times a second through a word-synced song (#343). perf/theaterprobe.py, real
+		     screen captures: thumb missing in 10 of 30 before, 0 of 30 after. === -->
 		{#if queueShown}
 			<div
 				in:fly={{ y: 24, duration: 400, easing: cubicOut }}
-				onwheel={(e) => e.stopPropagation()}
-				class="hidden h-full min-h-0 flex-col overflow-hidden lg:flex"
+				class="relative z-0 hidden h-full min-h-0 flex-col overflow-hidden lg:flex"
 			>
 				<QueueList scrollMemory={queueScrollMemory} />
 			</div>

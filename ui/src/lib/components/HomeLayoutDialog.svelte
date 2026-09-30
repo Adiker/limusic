@@ -170,7 +170,7 @@
 		<!-- The page is the preview, so the overlay only shades the side the panel is on and leaves the
 		     rest readable. No blur: a full-window backdrop-filter is what WebKitGTK chokes on. -->
 		<Dialog.Overlay
-			class="bg-transparent bg-gradient-to-l from-black/50 via-black/15 to-transparent supports-backdrop-filter:backdrop-blur-none"
+			class="bg-transparent bg-gradient-to-l from-black/50 via-black/15 to-transparent"
 		/>
 		<!-- Floats clear of the titlebar and the window's rounded corner: flush to the edge, its square
 		     corner would poke out past the window's round one. -->

@@ -182,7 +182,10 @@
 	}
 </script>
 
+<!-- type="button": SearchSuggest keeps a hidden trigger inside the search <form>, and a default
+     submit button there is what Enter clicks, opening this menu at the top left (#334). -->
 <button
+	type="button"
 	class="{triggerClass} {menuOpen ? 'opacity-100' : ''}"
 	onclick={openMenu}
 	aria-label={t('a11y.playlist_options')}

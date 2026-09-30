@@ -59,16 +59,16 @@
 	<!-- Lit by its own artwork. 96px because blur-2xl throws away everything finer anyway (the same
 	     reasoning as HomeHero), and a failed size just leaves the plain card. -->
 	{#if item.thumbnail && washOk}
-		<img
-			src={thumb(item.thumbnail, 96)}
-			alt=""
-			aria-hidden="true"
-			class="art-wash pointer-events-none absolute inset-0 -z-10 h-full w-full scale-125 object-cover opacity-60 blur-2xl"
-			onerror={() => (washOk = false)}
-		/>
-		<div
-			class="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-card/30 via-card/75 to-card"
-		></div>
+		<!-- The wash and its fade share one layer (`art-wash` on the wrapper): see HomeHero. -->
+		<div class="art-wash pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
+			<img
+				src={thumb(item.thumbnail, 96)}
+				alt=""
+				class="absolute inset-0 h-full w-full scale-125 object-cover opacity-60 blur-2xl"
+				onerror={() => (washOk = false)}
+			/>
+			<div class="absolute inset-0 bg-gradient-to-b from-card/30 via-card/75 to-card"></div>
+		</div>
 	{/if}
 	<div class="flex items-center gap-4 p-5">
 		<div

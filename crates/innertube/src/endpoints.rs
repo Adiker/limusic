@@ -6,7 +6,7 @@ use crate::blocklist;
 use crate::clients::YouTubeClient;
 use crate::models::browse::{
     self, AlbumPage, ArtistPage, BrowseItem, HistoryGroup, HomePage, MoodSection,
-    PlaylistContinuation, PlaylistPage, PlaylistSort, SearchResults,
+    PlaylistContinuation, PlaylistPage, PlaylistSort, SearchResults, SearchSuggestions,
 };
 use crate::models::context::Context;
 use crate::models::lyrics::{self, PlainLyrics, TimedLyricLine};
@@ -173,6 +173,29 @@ impl InnerTube {
         let mut r = browse::parse_search_all(&value);
         self.drop_video_cards(&mut r.top);
         self.drop_video_cards(&mut r.songs);
+        Ok(r)
+    }
+
+    /// Typeahead for the search field and Ctrl+K: query completions plus a few matching songs,
+    /// artists and albums. context/08.
+    ///
+    /// Sent with the account, unlike a preview `search` (#203): this is the request YTM's own
+    /// search box sends signed in on every keystroke, so it is not written to search history, and
+    /// the account is what ranks the user's own listening first and returns their past searches.
+    pub async fn search_suggestions(
+        &self,
+        client: &YouTubeClient,
+        input: &str,
+    ) -> Result<SearchSuggestions, Error> {
+        #[derive(Serialize)]
+        struct Body {
+            context: Context,
+            input: String,
+        }
+        let body = Body { context: self.context_for(client), input: input.to_owned() };
+        let value = self.post("music/get_search_suggestions", client, &body, true).await?;
+        let mut r = browse::parse_search_suggestions(&value);
+        self.drop_video_cards(&mut r.items);
         Ok(r)
     }
 
@@ -593,6 +616,12 @@ impl InnerTube {
     ) -> Result<Vec<BrowseItem>, Error> {
         let value = self.browse(client, Some(browse_id), params).await?;
         let mut items = browse::parse_library(&value);
+        // A mood category is several shelves flattened into one grid, and YouTube puts the same
+        // playlist on more than one of them (Chill had 85 repeats). A repeat is fatal on the UI
+        // side for the same reason as in `library_grid`: the grid is keyed, and one duplicate key
+        // leaves the page on its skeleton forever. Issue #355.
+        let mut seen = std::collections::HashSet::new();
+        items.retain(|i| seen.insert(i.id.clone()));
         self.drop_video_cards(&mut items);
         self.drop_blocked_cards(&mut items);
         Ok(items)

@@ -135,18 +135,32 @@
 		canRight = row.scrollLeft + row.clientWidth < row.scrollWidth - 4;
 	}
 
+	let hovered = false;
 	const measureOnEnter = (el: HTMLElement) => {
-		el.addEventListener('pointerenter', update);
-		return () => el.removeEventListener('pointerenter', update);
+		const enter = () => {
+			hovered = true;
+			update();
+		};
+		const leave = () => (hovered = false);
+		el.addEventListener('pointerenter', enter);
+		el.addEventListener('pointerleave', leave);
+		return () => {
+			el.removeEventListener('pointerenter', enter);
+			el.removeEventListener('pointerleave', leave);
+		};
 	};
 
 	function page(dir: 1 | -1) {
 		row?.scrollBy({ left: dir * Math.round(row.clientWidth * 0.9), behavior: 'smooth' });
 	}
 
+	// Re-measure when the content changes under the pointer, and only then. Measuring at mount reads
+	// scrollWidth before content-visibility has skipped anything, which makes WebKitGTK lay out every
+	// shelf on the page synchronously: going back to Home spent ~640 of its ~870 ms there with 8
+	// shelves (perf/navprobe.py). The arrows only show on hover, and pointerenter measures then.
 	$effect(() => {
-		items; // re-measure when content changes
-		update();
+		items;
+		if (hovered) update();
 	});
 </script>
 

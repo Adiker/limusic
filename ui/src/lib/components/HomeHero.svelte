@@ -41,9 +41,13 @@
 	     in a strip; now it runs on well past the header, under the mood chips and the first section,
 	     and fades into the page instead of ending at a line. -z-10 puts it under everything that
 	     follows, inside the stacking context home's wrapper opens (`isolate`), so it can never slip
-	     behind the window's own background. -->
+	     behind the window's own background.
+	     `art-wash` is on the canvas, not the image, so the wash and the gradients that fade it out
+	     rasterize into one layer. With the image promoted alone, WebKitGTK's animated wheel scroll
+	     put the two layers a pixel apart at some offsets, and a row of the raw wash flickered under
+	     the fade's last line (perf/navprobe.py --hold --wheel: 8 of 20 captures). -->
 	<div
-		class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[30rem] overflow-hidden"
+		class="art-wash pointer-events-none absolute inset-x-0 top-0 -z-10 h-[30rem] overflow-hidden"
 		aria-hidden="true"
 	>
 		{#if personal.home.backdrop && playback.now?.thumbnail && !artFailed}
@@ -53,7 +57,7 @@
 			<img
 				src={thumb(playback.now.thumbnail, 96)}
 				alt=""
-				class="art-wash absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl"
+				class="absolute inset-0 h-full w-full scale-110 object-cover opacity-70 blur-2xl"
 				onerror={() => (artFailed = true)}
 			/>
 		{:else}

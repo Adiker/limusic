@@ -342,6 +342,12 @@ export interface SearchResults {
 	playlists: BrowseItem[];
 }
 
+/** Typeahead under a search field: query completions, then a few matching rows. */
+export interface SearchSuggestions {
+	queries: { text: string; /** One of the account's own past searches. */ history: boolean }[];
+	items: BrowseItem[];
+}
+
 export interface AlbumPage {
 	title?: string;
 	artist?: string;
@@ -390,6 +396,10 @@ export const searchVideos = (query: string) => invoke<SongItem[]>('search_videos
 /** Unfiltered search → categorized sections. */
 export const searchAll = (query: string, recordHistory = false) =>
 	invoke<SearchResults>('search_all', { query, recordHistory });
+/** The typeahead. Signed in, yet never written to search history: it's the request YTM's own
+ *  search box sends on every keystroke. */
+export const searchSuggestions = (query: string) =>
+	invoke<SearchSuggestions>('search_suggestions', { query });
 /** Filtered "Show more" card search for one category (albums / artists / playlists). */
 export const searchCards = (query: string, category: 'albums' | 'artists' | 'playlists') =>
 	invoke<BrowseItem[]>('search_cards', { query, category });
@@ -440,6 +450,22 @@ export const videoStream = (videoId: string, maxHeight: number) =>
 /** Drop the backend's memory of this track's video URL, after the element failed to load it. */
 export const forgetVideoStream = (videoId: string) =>
 	invoke<void>('forget_video_stream', { videoId });
+
+/** Linux: where the page's hole for the music video is (`[x, y, w, h]`, CSS pixels, relative to
+ *  the viewport), or null when there is none. mpv draws the picture there, under the webview. Resolves
+ *  whether the picture is up; `false` for a rect means it never will be (no GL), so fall back to
+ *  the `<video>` element. */
+export const nativeVideoRect = (rect: [number, number, number, number] | null) =>
+	invoke<boolean>('native_video_rect', { rect });
+
+/** Linux: the newest small frame of mpv's picture other than `after`, for the ambient light, as
+ *  `[seq, w, h]` little-endian u32s and then RGBA rows bottom-up. Empty when none came within a
+ *  quarter second. Asking is also what keeps Rust grabbing them (nativevideo.rs).
+ *  An ArrayBuffer, except once Tauri has fallen back from its custom protocol to postMessage (it
+ *  does for the rest of the page's life after any IPC fetch fails): raw bytes then arrive as a
+ *  plain array of numbers. */
+export const ambientFrame = (after: number) =>
+	invoke<ArrayBuffer | number[]>('ambient_frame', { after });
 
 /** What the event stream already reported, for a webview that started after it did. */
 export interface PlaybackSnapshot {
@@ -770,6 +796,9 @@ export const onRating = (cb: (videoId: string, rating: Rating) => void): Promise
 	listen<{ videoId: string; rating: Rating }>('rating', (e) =>
 		cb(e.payload.videoId, e.payload.rating)
 	);
+/** Linux: mpv has this track's music video (or will as soon as the track starts). */
+export const onVideoReady = (cb: (videoId: string) => void): Promise<UnlistenFn> =>
+	listen<string>('video-ready', (e) => cb(e.payload));
 export const onQueueChanged = (cb: (q: QueueState) => void): Promise<UnlistenFn> =>
 	listen<QueueState>('queue-changed', (e) => cb(e.payload));
 /**
@@ -809,6 +838,11 @@ export const onQueueAppended = (cb: (q: QueueAppended) => void): Promise<Unliste
 /** Main window shown/hidden (close-to-tray, the mini player). WebKitGTK never tells the page. */
 export const onUiVisible = (cb: (v: boolean) => void): Promise<UnlistenFn> =>
 	listen<boolean>('ui-visible', (e) => cb(e.payload));
+/** `limusic-app <link>` (#348): the arguments a cold launch was given, handed over once... */
+export const takeLaunchArgs = () => invoke<string[]>('take_launch_args');
+/** ...and those of a second launch while this one runs. */
+export const onOpenLink = (cb: (args: string[]) => void): Promise<UnlistenFn> =>
+	listen<string[]>('open-link', (e) => cb(e.payload));
 export const onPosition = (cb: (p: number) => void): Promise<UnlistenFn> =>
 	listen<{ position: number }>('position', (e) => cb(e.payload.position));
 export const onDuration = (cb: (d: number) => void): Promise<UnlistenFn> =>

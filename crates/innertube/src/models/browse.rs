@@ -588,6 +588,52 @@ pub fn parse_search_all(root: &Value) -> SearchResults {
     r
 }
 
+/// The typeahead under a search field: query completions, then a few matching songs, artists and
+/// albums. context/08.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchSuggestions {
+    pub queries: Vec<QuerySuggestion>,
+    pub items: Vec<BrowseItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuerySuggestion {
+    pub text: String,
+    /// One of the account's own past searches (only a signed-in request gets these).
+    pub history: bool,
+}
+
+/// Parse a `music/get_search_suggestions` response: `searchSuggestionsSectionRenderer`s holding
+/// `searchSuggestionRenderer` / `historySuggestionRenderer` completions and
+/// `musicResponsiveListItemRenderer` rows, walked in order so YouTube's ranking survives.
+pub fn parse_search_suggestions(root: &Value) -> SearchSuggestions {
+    let mut r = SearchSuggestions::default();
+    for section in find_all(root, "searchSuggestionsSectionRenderer") {
+        for c in section.get("contents").and_then(Value::as_array).into_iter().flatten() {
+            if let Some(li) = c.get("musicResponsiveListItemRenderer") {
+                r.items.extend(list_item_to_browse_item(li));
+                continue;
+            }
+            let (s, history) = match c.get("historySuggestionRenderer") {
+                Some(s) => (s, true),
+                None => match c.get("searchSuggestionRenderer") {
+                    Some(s) => (s, false),
+                    None => continue,
+                },
+            };
+            // The endpoint's query is the completion to run; the runs are the same text split
+            // for bolding, kept only as a fallback.
+            let text = find_first_str(s, "query").or_else(|| runs_text(s.get("suggestion")));
+            if let Some(text) = text {
+                r.queries.push(QuerySuggestion { text, history });
+            }
+        }
+    }
+    r
+}
+
 /// Route a search row into its category bucket by the kind its navigation implies.
 fn bucket_item(li: &Value, r: &mut SearchResults) {
     let Some(bi) = list_item_to_browse_item(li) else { return };
@@ -1700,6 +1746,36 @@ mod tests {
         // A normal playlist response has no signInEndpoint.
         let ok = json!({ "contents": { "musicPlaylistShelfRenderer": { "contents": [] } } });
         assert!(!is_signed_out(&ok));
+    }
+
+    #[test]
+    fn parses_search_suggestions() {
+        // A real signed-out response for "la vien rose".
+        let root: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/search_suggestions.json"))
+                .unwrap();
+        let s = parse_search_suggestions(&root);
+        let q: Vec<&str> = s.queries.iter().map(|q| q.text.as_str()).collect();
+        assert_eq!(q[0], "la vie en rose karaoke");
+        assert_eq!(q.len(), 6);
+        assert!(s.queries.iter().all(|q| !q.history));
+        let first = &s.items[0];
+        assert_eq!((first.kind, first.id.as_str()), ("song", "y7fN6YNFnJ4"));
+        assert_eq!(
+            (first.title.as_str(), first.subtitle.as_deref()),
+            ("La Vie En Rose", Some("Emily Watts"))
+        );
+        assert_eq!(s.items.len(), 3);
+
+        let signed_in = json!({ "contents": [{ "searchSuggestionsSectionRenderer": { "contents": [
+            { "historySuggestionRenderer": {
+                "suggestion": { "runs": [{ "text": "la vie" }, { "text": " en rose", "bold": true }] },
+                "navigationEndpoint": { "searchEndpoint": { "query": "la vie en rose" } }
+            } }
+        ] } }] });
+        let s = parse_search_suggestions(&signed_in);
+        assert_eq!(s.queries[0].text, "la vie en rose");
+        assert!(s.queries[0].history);
     }
 
     #[test]

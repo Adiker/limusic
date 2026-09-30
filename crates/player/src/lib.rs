@@ -12,6 +12,9 @@ use libmpv2::events::{Event, EventContext, PropertyData};
 use libmpv2::{Format, Mpv};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
+mod video;
+pub use video::{GlDisplay, VideoRenderer};
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("mpv: {0}")]
@@ -51,6 +54,11 @@ pub enum PlayerEvent {
     /// user is hearing; what is owed is evicting the next track's cached URL, see
     /// `AppState::on_lookahead_failed`.
     LookaheadFailed(String),
+    /// mpv could not open the music video for the audio file it names (exactly as mpv was handed
+    /// it). The sound is unaffected; the app decides whether another stream for the picture is
+    /// worth trying. The open is a network round trip, so a skip or a crossfade can land first,
+    /// and the file named is then no longer the one playing.
+    VideoFailed(String),
     Error(String),
 }
 
@@ -147,6 +155,13 @@ struct Decks {
     loop_file: AtomicBool,
     cache_dir: String,
     tx: UnboundedSender<PlayerEvent>,
+    /// Music videos waiting for (or attached to) the audio file they belong to. See `video.rs`.
+    videos: Mutex<video::Videos>,
+    /// Someone can see the picture, so the deck being heard decodes it.
+    video_visible: AtomicBool,
+    /// Set by the video renderer: deck b needs a render context of its own before it can show a
+    /// picture, and only the GL thread can make one.
+    on_new_deck: OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl Decks {
@@ -177,11 +192,30 @@ fn new_mpv(cache_dir: &str) -> Result<Mpv, Error> {
     // Mirror the Phase-0 spike: create, then set_property (setting some options during the
     // pre-init phase returns PROPERTY_NOT_FOUND on this mpv build).
     let mpv = Mpv::new()?;
-    mpv.set_property("vid", "no")?; // audio only
-                                    // The app resolves every URL itself; mpv shelling out to youtube-dl is never right and buries
-                                    // the real failure. A stream that 403s went "Stream ends prematurely" -> ytdl_hook ->
-                                    // "youtube-dl failed: not found" -> "Failed to recognize file format", so the user was told
-                                    // their audio format was wrong when the download had been refused (issue #292).
+    // No picture until the app asks for one (`set_video_visible`). When it does, it goes through
+    // the render API to the app's own GL surface: pinned, because left to probe mpv opens a window
+    // of its own. `video-timing-offset=0` because otherwise each render call blocks until its
+    // frame's display time, and it is made on the app's UI thread. See video.rs.
+    mpv.set_property("vid", "no")?;
+    // The OSD off: the app has its own seek bar, and mpv otherwise draws its own into the picture
+    // on every seek.
+    // Best-effort, unlike everything around them: an mpv that refused one of these would otherwise
+    // fail the whole player, and the music must never depend on the picture.
+    for (key, value) in [
+        ("vo", "libmpv"),
+        ("hwdec", "auto-safe"),
+        ("video-timing-offset", "0"),
+        ("osd-level", "0"),
+        ("osd-bar", "no"),
+    ] {
+        if let Err(e) = mpv.set_property(key, value) {
+            tracing::warn!(key, error = %e, "mpv refused a video option");
+        }
+    }
+    // The app resolves every URL itself; mpv shelling out to youtube-dl is never right and buries
+    // the real failure. A stream that 403s went "Stream ends prematurely" -> ytdl_hook ->
+    // "youtube-dl failed: not found" -> "Failed to recognize file format", so the user was told
+    // their audio format was wrong when the download had been refused (issue #292).
     mpv.set_property("ytdl", "no")?;
     mpv.set_property("gapless-audio", "yes")?;
     // mpv's native Matroska demuxer floors WebM DiscardPadding nanoseconds to Opus samples. For
@@ -298,6 +332,9 @@ impl Player {
             loop_file: AtomicBool::new(false),
             cache_dir: cache_dir.to_owned(),
             tx,
+            videos: Mutex::new(video::Videos::default()),
+            video_visible: AtomicBool::new(false),
+            on_new_deck: OnceLock::new(),
         });
         spawn_deck_events(&a, 0, decks.clone())?;
         Ok(Player { decks, events: Some(rx), af: Mutex::new((None, 0)) })
@@ -318,6 +355,9 @@ impl Player {
         let m = Arc::new(new_mpv(&self.decks.cache_dir)?);
         spawn_deck_events(&m, deck, self.decks.clone())?;
         let _ = self.decks.b.set(m);
+        if let Some(wake) = self.decks.on_new_deck.get() {
+            wake();
+        }
         Ok(self.decks.b.get().expect("deck b just set").clone())
     }
 
@@ -775,6 +815,7 @@ fn event_loop(mut ev: EventContext, deck: usize, decks: Arc<Decks>) {
                     // A cancelled preload gets here too (mpv delivers the event before the
                     // `stop`), which is what the generation check is for.
                     Event::FileLoaded => {
+                        video::file_loaded(&decks, deck);
                         if !live()
                             && decks.preload_armed.load(Ordering::SeqCst)
                                 == decks.preload_gen.load(Ordering::SeqCst)
@@ -928,6 +969,7 @@ fn start_crossfade(decks: &Arc<Decks>, from: usize, fade: f64) {
     let gen = decks.fade_gen.load(Ordering::SeqCst);
     decks.fading.store(true, Ordering::Release);
     decks.active.store(1 - from, Ordering::SeqCst);
+    video::deck_swapped(decks);
     let _ = incoming.set_property("pause", false);
     let _ = decks.tx.send(PlayerEvent::TrackEnded);
     // mpv reported the incoming track's duration when it was *preloaded*, while this deck was

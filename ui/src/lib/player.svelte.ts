@@ -59,7 +59,12 @@ export const prefs = $state({
 	musicVideos: false,
 	/** `discord_rpc`. Two places toggle it (the titlebar button and the Discord settings tab) and
 	 *  each drew its own indicator, so turning it off in one left the other stale. One owner. */
-	discordRpc: false
+	discordRpc: false,
+	/** Linux: mpv draws the music video under the page (nativevideo.rs) instead of a `<video>`
+	 *  element. Cleared if it turns out there is no GL surface, which hands the picture back. */
+	nativeVideo: false,
+	/** `ambient_light`: the player view glows with the music video's colours (Ambient.svelte). */
+	ambient: false
 });
 
 /** App-managed offline library. The complete snapshot is sent only for structural changes;
@@ -134,6 +139,11 @@ function patchDownloadProgress(p: api.DownloadProgress) {
 	item.sizeBytes = p.sizeBytes;
 	item.error = p.error;
 }
+
+/** Linux: the tracks mpv has the music video for (`video-ready`), so the view knows a picture is
+ *  coming rather than showing a black box for a track with none.
+ *  ponytail: grows by one short key per music video played, for the session. */
+export const videoReady: Record<string, true> = $state({});
 
 /** videoId → the in-flight or settled loopback URL for its music video (null when it has none).
  *
@@ -1435,11 +1445,12 @@ export function initApp(mini = false): () => void {
 			// Warm the music video now rather than when the view opens: the resolve is a round trip
 			// to YouTube, and paid here it overlaps the track starting instead of the user's click.
 			// Not in the mini player, which has no player view to show it in.
-			if (!mini && prefs.musicVideos && n.isVideo) videoUrlFor(n.videoId);
+			if (!mini && prefs.musicVideos && !prefs.nativeVideo && n.isVideo) videoUrlFor(n.videoId);
 		}),
 		// YouTube's own answer for a track whose row never stated one (issue #93). Into the
 		// override map as well as the player bar: the same song is on screen as a list row too,
 		// and `ratingOf` reads that map for every row that is not the playing one.
+		api.onVideoReady((videoId) => (videoReady[videoId] = true)),
 		api.onRating((videoId, rating) => {
 			ratings[videoId] = rating;
 			capOverrides(ratings);
@@ -1553,6 +1564,8 @@ export function initApp(mini = false): () => void {
 	api.getSettings()
 		.then((s) => {
 			prefs.musicVideos = s.music_videos === 'true';
+			prefs.nativeVideo = s.native_video === 'true';
+			prefs.ambient = s.ambient_light === 'true';
 			prefs.discordRpc = s.discord_rpc === 'true';
 			// Half of what the app shows is YouTube's own text, and Rust asks for it in the language
 			// this setting holds (#274). It reads the setting at startup, before the SPA exists to

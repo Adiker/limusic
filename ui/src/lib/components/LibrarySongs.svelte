@@ -239,16 +239,19 @@
 	<!-- The header of the list rather than a page header: a rounded band the covers of your own
 	     library tint, so the tab has a face without pretending to be a playlist page. -->
 	<div class="relative mb-4 overflow-hidden rounded-2xl border">
-		{#if covers[0] && !artFailed}
-			<!-- 96px: blur-2xl throws away every detail bigger than a few pixels anyway (HomeHero). -->
-			<img
-				src={thumb(covers[0], 96)}
-				alt=""
-				class="pointer-events-none absolute inset-0 h-full w-full art-wash scale-110 object-cover opacity-60 blur-2xl"
-				onerror={() => (artFailed = true)}
-			/>
-		{/if}
-		<div class="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-background/40"></div>
+		<!-- The wash and its fade share one layer (`art-wash` on the wrapper): see HomeHero. -->
+		<div class="art-wash pointer-events-none absolute inset-0 overflow-hidden">
+			{#if covers[0] && !artFailed}
+				<!-- 96px: blur-2xl throws away every detail bigger than a few pixels anyway (HomeHero). -->
+				<img
+					src={thumb(covers[0], 96)}
+					alt=""
+					class="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl"
+					onerror={() => (artFailed = true)}
+				/>
+			{/if}
+			<div class="absolute inset-0 bg-gradient-to-r from-background via-background/80 to-background/40"></div>
+		</div>
 		<div class="relative flex flex-wrap items-center gap-4 p-4">
 			{#if covers.length >= 4}
 				<div class="grid h-28 w-28 shrink-0 grid-cols-2 grid-rows-2 overflow-hidden rounded-xl shadow-lg">

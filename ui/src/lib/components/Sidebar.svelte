@@ -126,7 +126,7 @@
 				{/if}
 				<HugeiconsIcon
 					icon={n.icon}
-					class="h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-110"
+					class="h-5 w-5 shrink-0"
 				/>
 				<span class="hidden {wide('lg:inline')}">{n.label}</span>
 			</a>
@@ -140,7 +140,7 @@
 		>
 			<HugeiconsIcon
 				icon={Settings01Icon}
-				class="h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-110"
+				class="h-5 w-5 shrink-0"
 			/>
 			<span class="hidden {wide('lg:inline')}">{t('nav.settings')}</span>
 		</button>
