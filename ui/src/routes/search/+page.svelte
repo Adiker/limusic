@@ -28,6 +28,7 @@
 	import MediaCard from '$lib/components/MediaCard.svelte';
 	import MediaCardSkeleton from '$lib/components/MediaCardSkeleton.svelte';
 	import SearchSuggest from '$lib/components/SearchSuggest.svelte';
+	import LinkInput from '$lib/components/LinkInput.svelte';
 	import SectionHeading from '$lib/components/SectionHeading.svelte';
 	import Shelf from '$lib/components/Shelf.svelte';
 	import TopResult from '$lib/components/TopResult.svelte';
@@ -399,38 +400,41 @@
 			? 'bg-background'
 			: ''}"
 	>
-		<form
-			class="relative max-w-2xl"
-			onsubmit={(e) => {
-				e.preventDefault();
-				runSearch();
-			}}
-		>
-			<HugeiconsIcon
-				icon={Search01Icon}
-				class="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-muted-foreground"
-			/>
-			<SearchSuggest
-				bind:value={query}
-				placeholder={t('common.search_placeholder')}
-				inputClass="h-12 rounded-full bg-card/80 pl-12 text-base shadow-sm md:text-base"
-				onpick={() => {
-					lastQuery = query;
-					noteSearch(query);
+		<div class="flex max-w-5xl flex-col gap-2 sm:flex-row">
+			<form
+				class="relative min-w-0 flex-1 sm:flex-[2]"
+				onsubmit={(e) => {
+					e.preventDefault();
+					runSearch();
 				}}
-			/>
-			{#if query}
-				<button
-					type="button"
-					class="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
-					aria-label={t('a11y.clear_search')}
-					title={t('a11y.clear_search')}
-					onclick={(e) => clearSearch(e.currentTarget.form?.querySelector('input'))}
-				>
-					<HugeiconsIcon icon={Cancel01Icon} class="h-4 w-4" />
-				</button>
-			{/if}
-		</form>
+			>
+				<HugeiconsIcon
+					icon={Search01Icon}
+					class="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-muted-foreground"
+				/>
+				<SearchSuggest
+					bind:value={query}
+					placeholder={t('common.search_placeholder')}
+					inputClass="h-12 rounded-full bg-card/80 pl-12 text-base shadow-sm md:text-base"
+					onpick={() => {
+						lastQuery = query;
+						noteSearch(query);
+					}}
+				/>
+				{#if query}
+					<button
+						type="button"
+						class="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+						aria-label={t('a11y.clear_search')}
+						title={t('a11y.clear_search')}
+						onclick={(e) => clearSearch(e.currentTarget.form?.querySelector('input'))}
+					>
+						<HugeiconsIcon icon={Cancel01Icon} class="h-4 w-4" />
+					</button>
+				{/if}
+			</form>
+			<LinkInput large class="flex-1" />
+		</div>
 		{#if res || searching}
 			<div class="mt-3 flex items-center gap-2">
 				<div class="rail flex min-w-0 flex-1 gap-2 overflow-x-auto" role="group" aria-label={t('search.filters')}>

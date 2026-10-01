@@ -693,6 +693,7 @@
 		},
 		"link": {
 			"title": "Open link",
+			"placeholder": "Paste YouTube URL",
 			"desc": "Paste a YouTube Music link to a song, playlist, album or artist.",
 			"open": "Open",
 			"invalid_link": "That is not a YouTube Music link"
