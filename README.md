@@ -34,6 +34,8 @@ YouTube Music client, and grew from there.
 
 - **Ad-free playback**: streams come straight from YouTube's API, ads never do
 - **Search & browse**: songs, albums, artists, playlists and the YTM home feed, with results previewing as you type
+- **Open a URL**: paste a YouTube or YouTube Music link beside search in Home or Search; songs
+  start playing, and playlists, albums and artists open their page ([usage](docs/OPEN-LINKS.md))
 - **Sign in** with your YouTube Music account: in-app Google login or cookie-paste, several accounts at once with switching between them
 - **Your library**: playlists, liked songs, saved albums and artists, your uploads, and write actions (like, add to playlist, create/edit/delete playlists including cover art, subscribe, save to library)
 - **History**: everything you have played, in YouTube Music's own day buckets
@@ -50,7 +52,9 @@ YouTube Music client, and grew from there.
 - **OS media keys** and now-playing integration (MPRIS on Linux, SMTC on Windows, plus playback buttons on the Windows taskbar preview)
 - **System tray**: close the window, keep the music; play/pause and skip from the tray, optional start-on-login
 - **Listen Together**: synced listening rooms over a small self-hosted relay
-- **Keyboard and mouse**: `Ctrl+K` searches from anywhere, `Ctrl+H` lists every shortcut, right-click menus throughout, `Ctrl` and the wheel zooms the interface
+- **Keyboard and mouse**: `Ctrl+K` searches from anywhere, `Ctrl+L` focuses the URL field (or opens
+  the link dialog on other pages), `Ctrl+H` lists every shortcut, right-click menus throughout,
+  `Ctrl` and the wheel zooms the interface. On macOS, use `⌘` instead of `Ctrl`, and `⌘/` for the shortcut list
 - **Six languages**: English, Spanish, French, Turkish, Brazilian Portuguese and Indonesian, with more in progress
 - **Self-updating builds** (AppImage on Linux, setup.exe on Windows, .app on macOS)
 - **Make it yours**: accent palettes, custom colors, your own fonts, corner roundness, a custom app icon, and an adaptive theme that recolors the app from the playing cover
