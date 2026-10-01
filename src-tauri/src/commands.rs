@@ -372,15 +372,26 @@ pub async fn set_setting(
     if !UI_SETTINGS.contains(&key.as_str()) {
         return Err(format!("unknown setting: {key}"));
     }
-    // A login entry registered before `--autostart` existed doesn't carry it, and without it the
-    // setting never applies. `enable` rewrites the entry. Before the write, so a failure leaves the
-    // setting off.
-    if key == "start_minimized" && value == "true" {
+    // Registers/removes the login autostart entry on toggle; the OS persists it from there, and
+    // startup repoints an existing entry at the running binary (lib.rs). Before the write, so a
+    // failure leaves the setting as it was. A dev build would register itself, and at login its
+    // window needs a vite server that isn't running.
+    if key == "autostart" {
+        if tauri::is_dev() {
+            return Err(
+                "autostart: a dev build can't register itself, use an installed build".into()
+            );
+        }
         use tauri_plugin_autostart::ManagerExt;
         let al = app.autolaunch();
-        if al.is_enabled().unwrap_or(false) {
-            al.enable().map_err(|e| format!("autostart: {e}"))?;
-        }
+        let res = if value == "true" {
+            al.enable()
+        } else if al.is_enabled().unwrap_or(false) {
+            al.disable()
+        } else {
+            Ok(())
+        };
+        res.map_err(|e| format!("autostart: {e}"))?;
     }
     state.db.set_setting(&key, &value);
     // A music video track already playing gets its picture now rather than from the next track.
@@ -434,21 +445,6 @@ pub async fn set_setting(
         if let Some(w) = app.get_webview_window("main") {
             w.set_decorations(value == "true").map_err(|e| format!("decorations: {e}"))?;
         }
-    }
-    // Registers/removes the login autostart entry on toggle; the OS persists it from there.
-    // ponytail: no startup re-sync against the OS state — add reconciliation only if drift is
-    // ever reported.
-    if key == "autostart" {
-        use tauri_plugin_autostart::ManagerExt;
-        let al = app.autolaunch();
-        let res = if value == "true" {
-            al.enable()
-        } else if al.is_enabled().unwrap_or(false) {
-            al.disable()
-        } else {
-            Ok(())
-        };
-        res.map_err(|e| format!("autostart: {e}"))?;
     }
     Ok(())
 }
@@ -827,6 +823,12 @@ pub async fn open_mini(app: tauri::AppHandle) -> Result<(), String> {
 pub async fn close_mini(app: tauri::AppHandle) -> Result<(), String> {
     crate::tray::show_main(&app);
     Ok(())
+}
+
+/// The widget's shrink/expand button (#301).
+#[tauri::command]
+pub async fn set_mini_compact(app: tauri::AppHandle, compact: bool) -> Result<(), String> {
+    crate::mini::set_compact(&app, compact)
 }
 
 /// The arguments this process was launched with, handed over once (#348). See `LAUNCH_ARGS`.
@@ -1324,15 +1326,20 @@ pub async fn sync_playlist_index(
 
 /// `false` means the playlist already had the track and YouTube added nothing — not an error, but
 /// the UI must not draw an optimistic row for it (there is no real row to remove later).
+/// With `allow_duplicates` set to `true`, `true` is returned for a duplicate that was added on purpose.
 #[tauri::command]
 pub async fn add_to_playlist(
     state: St<'_>,
     playlist_id: String,
     video_id: String,
+    allow_duplicates: Option<bool>,
 ) -> Result<bool, String> {
     let client = editable_playlist(&state, &playlist_id)?;
-    let added =
-        state.it.playlist_add(client, &playlist_id, &video_id).await.map_err(|e| e.to_string())?;
+    let added = state
+        .it
+        .playlist_add(client, &playlist_id, &video_id, allow_duplicates.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())?;
     // Also on `false`: YouTube refusing a duplicate means the playlist holds the track, which is
     // exactly what the index should say. A stale index is how it got asked in the first place.
     state.db.add_playlist_track(&playlist_id, &video_id);

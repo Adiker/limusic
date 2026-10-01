@@ -566,6 +566,8 @@ export const removeGoogleAccount = (id: string) => invoke<void>('remove_google_a
 export const openMini = () => invoke<void>('open_mini');
 /** Close the widget and bring the app back. */
 export const closeMini = () => invoke<void>('close_mini');
+/** Shrink the widget to its compact size, or back (#301). Remembered for the next open. */
+export const setMiniCompact = (compact: boolean) => invoke<void>('set_mini_compact', { compact });
 
 // --- browse / library (context/08) ---------------------------------------------------------
 /** `params` is a `HomeChip.params` token — omit for the unfiltered feed. */
@@ -747,8 +749,8 @@ export const unblockArtist = (key: string) => invoke<BlockedArtist[]>('unblock_a
  *  un-likes in the same call. */
 export const rate = (videoId: string, rating: Rating) => invoke<void>('rate', { videoId, rating });
 /** `false` = the playlist already had this track, so YouTube added nothing. */
-export const addToPlaylist = (playlistId: string, videoId: string) =>
-	invoke<boolean>('add_to_playlist', { playlistId, videoId });
+export const addToPlaylist = (playlistId: string, videoId: string, allowDuplicates = false) =>
+	invoke<boolean>('add_to_playlist', { playlistId, videoId, allowDuplicates });
 export const removeFromPlaylist = (playlistId: string, videoId: string, setVideoId: string) =>
 	invoke<void>('remove_from_playlist', { playlistId, videoId, setVideoId });
 

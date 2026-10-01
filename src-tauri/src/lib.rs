@@ -591,6 +591,22 @@ pub fn run() {
             downloads::allow_paths(&handle, &app_state.db);
             app_state.downloads.resume_queued();
 
+            // The login entry runs whichever binary last wrote it. A dev build that wrote it leaves
+            // the login launch loading the vite server, which isn't running then: tray icon, no
+            // window, "Could not connect to localhost". An AppImage moved after enabling leaves it
+            // pointing at nothing. So an installed build repoints an existing entry at itself.
+            // Only an existing one: `is_enabled` is false after a Task Manager disable on Windows,
+            // and that choice is the user's.
+            if !tauri::is_dev() {
+                use tauri_plugin_autostart::ManagerExt;
+                let al = app.autolaunch();
+                if al.is_enabled().unwrap_or(false) {
+                    if let Err(e) = al.enable() {
+                        tracing::warn!(error = %e, "could not repoint the autostart entry");
+                    }
+                }
+            }
+
             // System tray: playback controls + show/quit while running in the background.
             if let Err(e) = tray::init(&handle) {
                 tracing::warn!(error = %e, "tray init failed (continuing without tray)");
@@ -854,6 +870,7 @@ pub fn run() {
             commands::remove_google_account,
             commands::open_mini,
             commands::close_mini,
+            commands::set_mini_compact,
             commands::show_main,
             commands::take_launch_args,
             commands::get_home,
@@ -1049,8 +1066,12 @@ fn spawn_event_pump(
                     // Keep the tray's toggle label honest — this arm is the same chokepoint
                     // MPRIS uses, so tray state can't drift from media-key state.
                     tray::set_playing(&app, playing);
-                    state.lt_on_play_state(playing).await; // Listen Together host → broadcast
                 }
+                // Listen Together host: broadcast a pause/resume. Not from `Playing`, which also
+                // flips when a track runs out, and that arrives here after the next track was
+                // announced (`on_track_ended` loads it on this pump), with the old track's end as
+                // the position. Guests then seek the new track to it, past the end of a shorter one.
+                PlayerEvent::Paused(paused) => state.lt_on_play_state(!paused).await,
                 PlayerEvent::TrackEnded => {
                     state.on_track_ended().await;
                 }
