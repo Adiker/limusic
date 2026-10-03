@@ -132,9 +132,6 @@ export type RepeatMode = 'off' | 'all' | 'one';
 export interface QueueState {
 	items: SongItem[];
 	currentIndex: number;
-	/** Start of the previously-played run: `items[playedFrom..currentIndex]` has actually been
-	 *  heard. Not `0..currentIndex`: a playlist opened at track 7 has six untouched tracks first. */
-	playedFrom?: number;
 	shuffle?: boolean;
 	repeat?: RepeatMode;
 	/** What seeded the queue (playlist/album title, "<song> Radio") — the "Next from" header. */
@@ -412,20 +409,20 @@ export const removeFromQueue = (index: number) => invoke<void>('remove_from_queu
 export const moveInQueue = (from: number, to: number) =>
 	invoke<void>('move_in_queue', { from, to });
 /**
- * "Play next": insert tracks at the front of the "Next in queue" block, behind any earlier
- * "Play next" adds. `from` is the album/playlist they came from — it heads the block in the panel.
+ * "Play next": insert tracks right behind the playing one, behind any earlier "Play next" adds.
+ * `from` is the album/playlist they came from.
  */
 export const playNext = (items: SongItem[], from?: string) =>
 	invoke<void>('play_next', { items, from });
 /**
- * "Add to queue": the tracks go at the *back* of the same block — after everything already queued
- * by hand, ahead of the playing context and anything the app generated behind it.
- * `continuation` is the source page's next-page token — the backend walks the rest of a long
- * playlist into the queue in the background.
+ * "Add to queue": the tracks go at the tail of the queue, behind the rest of the playing album or
+ * playlist and anything added before, ahead of autoplay (#369). On a radio they go ahead of the
+ * generated tracks instead. `continuation` is the source page's next-page token: the backend walks
+ * the rest of a long playlist into the queue in the background.
  */
 export const addToQueue = (items: SongItem[], from?: string, continuation?: string) =>
 	invoke<void>('add_to_queue', { items, from, continuation });
-/** Clear every upcoming manually-queued track (the "Next in queue" section). */
+/** Clear every upcoming track added by hand, with Play next or Add to queue. */
 export const clearQueued = () => invoke<void>('clear_queued');
 export const nextTrack = () => invoke<void>('next_track');
 export const prevTrack = () => invoke<void>('prev_track');
@@ -451,16 +448,17 @@ export const videoStream = (videoId: string, maxHeight: number) =>
 export const forgetVideoStream = (videoId: string) =>
 	invoke<void>('forget_video_stream', { videoId });
 
-/** Linux: where the page's hole for the music video is (`[x, y, w, h]`, CSS pixels, relative to
- *  the viewport), or null when there is none. mpv draws the picture there, under the webview. Resolves
- *  whether the picture is up; `false` for a rect means it never will be (no GL), so fall back to
- *  the `<video>` element. */
+/** Linux and Windows: where the page's hole for the music video is (`[x, y, w, h]`, CSS pixels,
+ *  relative to the viewport), or null when there is none. mpv draws the picture there, under the
+ *  webview. Resolves whether the picture is up; `false` for a rect means it never will be (no
+ *  surface), so fall back to the `<video>` element. `dpr` carries the page zoom to Windows. */
 export const nativeVideoRect = (rect: [number, number, number, number] | null) =>
-	invoke<boolean>('native_video_rect', { rect });
+	invoke<boolean>('native_video_rect', { rect, dpr: devicePixelRatio });
 
-/** Linux: the newest small frame of mpv's picture other than `after`, for the ambient light, as
- *  `[seq, w, h]` little-endian u32s and then RGBA rows bottom-up. Empty when none came within a
- *  quarter second. Asking is also what keeps Rust grabbing them (nativevideo.rs).
+/** Linux and Windows: the newest small frame of mpv's picture other than `after`, for the ambient
+ *  light, as `[seq, w, h]` little-endian u32s and then RGBA rows bottom-up. Empty when there is no
+ *  new one (Linux waits a quarter second for it). Asking is also what keeps Rust grabbing them
+ *  (nativevideo.rs; on Windows each ask is one grab, nativevideo_windows.rs).
  *  An ArrayBuffer, except once Tauri has fallen back from its custom protocol to postMessage (it
  *  does for the rest of the page's life after any IPC fetch fails): raw bytes then arrive as a
  *  plain array of numbers. */
@@ -798,7 +796,7 @@ export const onRating = (cb: (videoId: string, rating: Rating) => void): Promise
 	listen<{ videoId: string; rating: Rating }>('rating', (e) =>
 		cb(e.payload.videoId, e.payload.rating)
 	);
-/** Linux: mpv has this track's music video (or will as soon as the track starts). */
+/** Linux and Windows: mpv has this track's music video (or will as soon as the track starts). */
 export const onVideoReady = (cb: (videoId: string) => void): Promise<UnlistenFn> =>
 	listen<string>('video-ready', (e) => cb(e.payload));
 export const onQueueChanged = (cb: (q: QueueState) => void): Promise<UnlistenFn> =>
@@ -811,7 +809,6 @@ export const onQueueChanged = (cb: (q: QueueState) => void): Promise<UnlistenFn>
  */
 export interface QueueIndex {
 	currentIndex: number;
-	playedFrom?: number;
 	shuffle?: boolean;
 	repeat?: RepeatMode;
 	sourceName?: string | null;
@@ -832,7 +829,6 @@ export interface QueueAppended {
 	items: SongItem[];
 	len: number;
 	currentIndex: number;
-	playedFrom?: number;
 }
 
 export const onQueueAppended = (cb: (q: QueueAppended) => void): Promise<UnlistenFn> =>
