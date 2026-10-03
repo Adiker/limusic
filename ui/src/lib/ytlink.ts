@@ -2,7 +2,7 @@
 // playlists are only ever reachable by URL: they don't show up in search and aren't in the
 // library, so without this there is no way into them.
 //
-// Pure and route-free on purpose — the dialog decides what "open" means (see LinkDialog).
+// Pure and route-free on purpose — browse.ts decides what "open" means for every link entry point.
 import type { BrowseItem } from './api';
 
 export type LinkTarget = { kind: BrowseItem['kind']; id: string };

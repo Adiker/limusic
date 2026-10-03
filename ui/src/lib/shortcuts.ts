@@ -12,6 +12,8 @@ export const IS_MAC = browser && navigator.platform.startsWith('Mac');
  *  hint. Mac takes the bare glyph; everywhere else the `+` is part of the spelling. */
 export const MOD = IS_MAC ? '⌘' : 'Ctrl+';
 
+export const OPEN_LINK_COMBO = `${MOD}L`;
+
 /** macOS keeps ⌘H for the system "hide the window", so the shortcuts list answers to ⌘/ there. */
 export const HELP_KEY = IS_MAC ? '/' : 'H';
 
@@ -61,7 +63,7 @@ export function initShortcuts(mini = false) {
 		// Ctrl+Alt belongs to the global hotkeys (Ctrl+Alt+M would otherwise mute here too and the
 		// two toggles cancel out), and on Windows it is also how AltGr arrives, typing a character.
 		if (e.altKey) return;
-		if (mini && ('kKeE'.includes(e.key) || isHelpKey(e.key))) return;
+		if (mini && ('kKeElL'.includes(e.key) || isHelpKey(e.key))) return;
 		// Out of the switch because the key is per-platform: on macOS ⌘H has to fall through
 		// untouched, so the window still hides.
 		if (isHelpKey(e.key)) {
@@ -77,6 +79,18 @@ export function initShortcuts(mini = false) {
 			return;
 		}
 		switch (e.key) {
+			case 'l':
+			case 'L': {
+				// Prefer the current dialog's field; never focus a page behind a modal.
+				const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]');
+				const input = (dialog ?? document).querySelector<HTMLInputElement>('[data-link-input]');
+				if (input) {
+					input.focus();
+					input.select();
+				} else if (!dialog) ui.linkOpen = true;
+				else return;
+				break;
+			}
 			// Toggles, so the key that opened the palette also dismisses it.
 			case 'k':
 			case 'K':

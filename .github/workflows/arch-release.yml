@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing fork release tag to package (for example v0.8.1)
+        description: Existing fork release tag, or a full commit SHA for a dry run
         required: true
         type: string
       dry_run:
@@ -27,35 +27,61 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - name: Resolve the tag
+      - name: Resolve the source ref
         id: rel
         shell: bash
+        env:
+          BUILD_REF: ${{ inputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          TAG="${{ inputs.tag }}"
+          TAG="$BUILD_REF"
+          if [ "$DRY_RUN" = "true" ] && [[ "$TAG" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-            echo "::error::invalid release tag: $TAG"
+            echo "::error::expected a stable release tag, or a full commit SHA with dry_run=true: $TAG"
             exit 1
           }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout the fork release tag
+      - name: Checkout the fork source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ steps.rel.outputs.tag }}
           persist-credentials: false
 
-      - name: Check the tag matches the app version
+      - name: Resolve the package version and pinned source
+        id: app
+        env:
+          RELEASE_VERSION: ${{ steps.rel.outputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
+          set -euo pipefail
           version="$(jq -r .version src-tauri/tauri.conf.json)"
-          [ "$version" = "${{ steps.rel.outputs.version }}" ] || {
-            echo "::error::tauri.conf.json says $version but the tag says ${{ steps.rel.outputs.version }}"
+          source_sha="$(git rev-parse HEAD)"
+          if [ "$DRY_RUN" = "true" ]; then
+            # Arch pkgver cannot contain a hyphen. Keep prereleases distinct, and identify the
+            # exact test build in its package name without changing the application's version.
+            package_version="${version//-/}.g${source_sha:0:7}"
+          else
+            [ "$version" = "$RELEASE_VERSION" ] || {
+              echo "::error::tauri.conf.json says $version but the tag says $RELEASE_VERSION"
+              exit 1
+            }
+            package_version="$version"
+          fi
+          [[ "$package_version" =~ ^[0-9A-Za-z.+_]+$ ]] || {
+            echo "::error::invalid Arch package version: $package_version"
             exit 1
           }
+          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
       # Build recipe changes live on the default branch, while the application source remains the
       # exact fork release tag. This lets a package-workflow fix be retried without retagging a
-      # published release; the PKGBUILD itself fetches the pinned tag as its source.
+      # published release; the PKGBUILD fetches the exact commit resolved from the source ref.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
@@ -71,13 +97,17 @@ jobs:
       - name: Build in the official Arch Linux image
         env:
           LIMUSIC_SOURCE_REPO: ${{ github.repository }}
+          LIMUSIC_SOURCE_REF: ${{ steps.app.outputs.source_sha }}
+          LIMUSIC_SOURCE_DIR: limusic-${{ steps.app.outputs.source_sha }}
         run: |
           set -euo pipefail
           cp arch-recipe/pkg/arch/PKGBUILD pkg/arch/PKGBUILD
           cp arch-recipe/pkg/arch/limusic.desktop pkg/arch/limusic.desktop
-          sed -i "s/^pkgver=.*/pkgver=${{ steps.rel.outputs.version }}/" pkg/arch/PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.app.outputs.version }}/" pkg/arch/PKGBUILD
           docker run --rm \
             -e LIMUSIC_SOURCE_REPO \
+            -e LIMUSIC_SOURCE_REF \
+            -e LIMUSIC_SOURCE_DIR \
             -v "$GITHUB_WORKSPACE:/workspace" \
             archlinux:latest bash -euo pipefail -c '
               pacman -Sy --noconfirm --needed \
@@ -93,8 +123,8 @@ jobs:
         if: ${{ inputs.dry_run }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: limusic-arch-${{ steps.rel.outputs.tag }}
-          path: pkg/arch/limusic-${{ steps.rel.outputs.version }}-[0-9]*-x86_64.pkg.tar.zst
+          name: limusic-arch-dry-run-${{ github.run_id }}
+          path: pkg/arch/limusic-${{ steps.app.outputs.version }}-[0-9]*-x86_64.pkg.tar.zst
           if-no-files-found: error
           retention-days: 7
 
