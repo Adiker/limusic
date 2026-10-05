@@ -290,6 +290,7 @@ impl Orchestrator {
         let mut login_wanted = false;
         if let Some(r) = main_resp.as_ref().filter(|_| !main_ok) {
             login_wanted = r.playability_status.status == "LOGIN_REQUIRED";
+            crate::import::note_playability(r.playability_status.reason.as_deref());
             tracing::debug!(
                 client = main_key,
                 status = %r.playability_status.status,
@@ -364,6 +365,7 @@ impl Orchestrator {
                     Ok(r) if r.playability_status.is_ok() => (key.to_owned(), r),
                     Ok(r) => {
                         login_wanted |= r.playability_status.status == "LOGIN_REQUIRED";
+                        crate::import::note_playability(r.playability_status.reason.as_deref());
                         tracing::debug!(
                             client = key,
                             status = %r.playability_status.status,
@@ -637,6 +639,7 @@ impl Orchestrator {
                 let resp =
                     self.it.player(client, video_id, None, sts, pot.as_deref()).await.ok()?;
                 if !resp.playability_status.is_ok() {
+                    crate::import::note_playability(resp.playability_status.reason.as_deref());
                     tracing::debug!(video_id, status = %resp.playability_status.status, "video: WEB_REMIX not OK");
                     return None;
                 }
@@ -667,6 +670,7 @@ impl Orchestrator {
             }
         };
         if !resp.playability_status.is_ok() {
+            crate::import::note_playability(resp.playability_status.reason.as_deref());
             tracing::debug!(
                 video_id,
                 client = key,

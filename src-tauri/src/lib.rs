@@ -11,6 +11,7 @@ mod discord;
 mod downloads;
 mod hotkeys;
 mod http;
+mod import;
 #[cfg(target_os = "linux")]
 mod inhibit;
 mod lastfm;
@@ -29,6 +30,7 @@ mod orchestrator;
 mod potoken;
 mod romanize;
 mod session;
+mod spotify;
 mod state;
 #[cfg(target_os = "windows")]
 mod taskbar;
@@ -891,6 +893,7 @@ pub fn run() {
             commands::get_library,
             commands::get_library_albums,
             commands::get_library_artists,
+            commands::get_library_subscriptions,
             commands::get_upload_albums,
             commands::get_history,
             commands::get_playlist,
@@ -926,6 +929,17 @@ pub fn run() {
             commands::set_playlist_sort,
             commands::delete_playlist,
             commands::subscribe,
+            commands::import_read,
+            commands::import_read_file,
+            commands::import_start,
+            commands::import_status,
+            commands::import_rows,
+            commands::import_pick,
+            commands::import_create,
+            commands::import_cancel,
+            commands::import_source,
+            commands::import_update,
+            commands::import_resolve,
             commands::lt_get_state,
             commands::lt_set_server_url,
             commands::lt_create_room,
