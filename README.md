@@ -55,7 +55,7 @@ YouTube Music client, and grew from there.
 - **Keyboard and mouse**: `Ctrl+K` searches from anywhere, `Ctrl+L` focuses the URL field (or opens
   the link dialog on other pages), `Ctrl+H` lists every shortcut, right-click menus throughout,
   `Ctrl` and the wheel zooms the interface. On macOS, use `⌘` instead of `Ctrl`, and `⌘/` for the shortcut list
-- **Six languages**: English, Spanish, French, Turkish, Brazilian Portuguese and Indonesian, with more in progress
+- **Fifteen languages**: English, German, Spanish, French, Indonesian, Italian, Japanese, Korean, Polish, Brazilian Portuguese, Romanian, Russian, Turkish, Ukrainian and Traditional Chinese, with more in progress on [Weblate](https://hosted.weblate.org/projects/limusic/)
 - **Self-updating builds** (AppImage on Linux, setup.exe on Windows, .app on macOS)
 - **Make it yours**: accent palettes, custom colors, your own fonts, corner roundness, a custom app icon, and an adaptive theme that recolors the app from the playing cover
 

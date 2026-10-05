@@ -514,6 +514,16 @@ impl InnerTube {
         self.library_grid(client, "FEmusic_library_corpus_track_artists").await
     }
 
+    /// The artists the signed-in user subscribes to (`FEmusic_library_corpus_artists`), YouTube
+    /// Music's Library ▸ Artists ▸ Subscriptions. Same list rows as `library_artists`, but they
+    /// link the channel itself rather than `MPLA` + it. Needs login.
+    pub async fn library_subscriptions(
+        &self,
+        client: &YouTubeClient,
+    ) -> Result<Vec<BrowseItem>, Error> {
+        self.library_grid(client, "FEmusic_library_corpus_artists").await
+    }
+
     /// A playlist or album page by browseId (`VL…` / `MPRE…`). context/08.
     ///
     /// `sort` asks YouTube to order the tracks — see `PlaylistSort::params`. Passing `None` gets
@@ -793,6 +803,19 @@ impl InnerTube {
             Err(Error::AlreadyInPlaylist) => Ok(false),
             Err(e) => Err(e),
         }
+    }
+
+    /// Add many videos in one `browse/edit_playlist` call, in order. The edit is all or nothing,
+    /// and one track the playlist already holds fails the whole batch (`edit_rejection`), so the
+    /// caller passes only videos it knows are new. Used by the Spotify import (#375).
+    pub async fn playlist_add_many(
+        &self,
+        client: &YouTubeClient,
+        playlist_id: &str,
+        video_ids: &[String],
+    ) -> Result<(), Error> {
+        let actions = video_ids.iter().map(|v| add_video_action(v, false)).collect();
+        self.edit_playlist_actions(client, playlist_id, actions).await
     }
 
     /// Remove a video from a playlist. Needs `set_video_id` (the item's playlistSetVideoId).

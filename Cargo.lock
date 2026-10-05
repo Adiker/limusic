@@ -2995,7 +2995,7 @@ dependencies = [
 
 [[package]]
 name = "innertube"
-version = "1.1.0"
+version = "1.2.0-rc.2"
 dependencies = [
  "hex",
  "reqwest 0.12.28",
@@ -3372,11 +3372,12 @@ dependencies = [
 
 [[package]]
 name = "limusic-app"
-version = "1.1.0"
+version = "1.2.0-rc.2"
 dependencies = [
  "any_ascii",
  "anyhow",
  "base64 0.22.1",
+ "csv",
  "discord-rich-presence",
  "fs2",
  "futures-util",
@@ -3403,6 +3404,7 @@ dependencies = [
  "serde",
  "serde_json",
  "souvlaki",
+ "strsim",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -3418,11 +3420,13 @@ dependencies = [
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
+ "unicode-normalization",
  "urlencoding",
  "wana_kana",
  "webkit2gtk",
  "windows 0.61.3",
  "zbus 5.18.0",
+ "zip",
 ]
 
 [[package]]
@@ -3692,7 +3696,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "listen-protocol"
-version = "1.1.0"
+version = "1.2.0-rc.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4623,7 +4627,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "player"
-version = "1.1.0"
+version = "1.2.0-rc.2"
 dependencies = [
  "libc",
  "libmpv2",
@@ -6184,7 +6188,7 @@ dependencies = [
 
 [[package]]
 name = "sync-server"
-version = "1.1.0"
+version = "1.2.0-rc.2"
 dependencies = [
  "futures-util",
  "listen-protocol",
@@ -8937,6 +8941,7 @@ checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
 dependencies = [
  "arbitrary",
  "crc32fast",
+ "flate2",
  "indexmap 2.14.0",
  "memchr",
 ]

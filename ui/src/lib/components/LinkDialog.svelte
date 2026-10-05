@@ -10,11 +10,19 @@
 	import { parseYtLink } from '$lib/ytlink';
 	import { toast, ui } from '$lib/player.svelte';
 	import { t } from '$lib/i18n.svelte';
+	import { isSpotifyLink, openSpotifyLink } from '$lib/import.svelte';
 
 	let url = $state('');
 
 	function submit(e: Event) {
 		e.preventDefault();
+		// A Spotify link opens its YouTube Music counterpart, or the import for a playlist (#375).
+		if (isSpotifyLink(url)) {
+			ui.linkOpen = false;
+			openSpotifyLink(url.trim());
+			url = '';
+			return;
+		}
 		const target = parseYtLink(url);
 		if (!target) {
 			toast.error(t('dialogs.link.invalid_link'));
@@ -32,6 +40,8 @@
 		const fromArgs = (args: string[]) => {
 			const given = args.filter((a) => !a.startsWith('-'));
 			if (!given.length) return;
+			const spotify = given.find(isSpotifyLink);
+			if (spotify) return openSpotifyLink(spotify);
 			const target = given.map(parseYtLink).find((x) => x);
 			if (target) openLinkTarget(target);
 			else toast.error(t('dialogs.link.invalid_link'));
