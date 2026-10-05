@@ -643,6 +643,7 @@
 		},
 		"link": {
 			"title": "Otwórz link",
+			"placeholder": "Wklej URL YouTube",
 			"desc": "Wklej link YouTube Music do utworu, playlisty, albumu lub wykonawcy.",
 			"open": "Otwórz",
 			"invalid_link": "To nie jest link YouTube Music"

@@ -410,6 +410,17 @@ jobs:
         if: ${{ inputs.dry_run }}
         run: echo "dry_run - every build step and guard passed; release assets left untouched."
 
+      - name: Dry run, keep the AppImage as an artifact
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: limusic-appimage-dry-run-${{ github.run_id }}
+          path: |
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/appimage/*.AppImage.sig
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Attach the AppImage + deb, teach latest.json about Linux
         if: ${{ !inputs.dry_run }}
         env:

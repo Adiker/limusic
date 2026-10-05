@@ -21,14 +21,16 @@ depends=(
 )
 makedepends=('base-devel' 'git' 'rustup' 'nodejs' 'npm' 'mold')
 _source_repo="${LIMUSIC_SOURCE_REPO:-Adiker/limusic}"
+_source_ref="${LIMUSIC_SOURCE_REF:-refs/tags/v${pkgver}}"
+_source_dir="${LIMUSIC_SOURCE_DIR:-${pkgname}-${pkgver}}"
 source=(
-  "$pkgname-$pkgver.tar.gz::https://github.com/${_source_repo}/archive/refs/tags/v${pkgver}.tar.gz"
+  "$pkgname-$pkgver.tar.gz::https://github.com/${_source_repo}/archive/${_source_ref}.tar.gz"
   'limusic.desktop'
 )
 sha256sums=('SKIP' 'SKIP')
 
 build() {
-  cd "$srcdir/$pkgname-$pkgver"
+  cd "$srcdir/$_source_dir"
 
   rustup toolchain install stable --profile minimal
   export RUSTUP_TOOLCHAIN=stable
@@ -44,7 +46,7 @@ build() {
 }
 
 package() {
-  cd "$srcdir/$pkgname-$pkgver"
+  cd "$srcdir/$_source_dir"
 
   install -Dm755 target/release/limusic-app "$pkgdir/usr/bin/limusic"
   install -Dm644 "$srcdir/limusic.desktop" \

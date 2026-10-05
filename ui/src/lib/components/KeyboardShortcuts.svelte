@@ -3,7 +3,7 @@
 	// where they are discoverable. It documents the zoom keys too (zoom.svelte.ts owns those) — from the
 	// outside they are the same feature, and a list that only covers half of them is worse than none.
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { HELP_COMBO, MOD, MUTE_COMBO } from '$lib/shortcuts';
+	import { HELP_COMBO, MOD, MUTE_COMBO, OPEN_LINK_COMBO } from '$lib/shortcuts';
 	import { ui } from '$lib/player.svelte';
 	import { t } from '$lib/i18n.svelte';
 
@@ -27,6 +27,7 @@
 			rows: [
 				[t('dialogs.shortcuts.refresh_page'), 'F5'],
 				[t('dialogs.shortcuts.search_anywhere'), `${MOD}K`],
+				[t('dialogs.link.title'), OPEN_LINK_COMBO],
 				[t('dialogs.shortcuts.toggle_now_playing'), `${MOD}E`],
 				[t('dialogs.shortcuts.zoom_in'), `${MOD}+`],
 				[t('dialogs.shortcuts.zoom_out'), `${MOD}-`],

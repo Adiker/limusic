@@ -3,6 +3,7 @@
 	import { HugeiconsIcon } from '@hugeicons/svelte';
 	import { HistoryIcon, Search01Icon } from '@hugeicons/core-free-icons';
 	import SearchSuggest from '$lib/components/SearchSuggest.svelte';
+	import LinkInput from '$lib/components/LinkInput.svelte';
 	import { auth, personal, playback } from '$lib/player.svelte';
 	import { thumb } from '$lib/thumb';
 	import { t, type TranslationKey } from '$lib/i18n.svelte';
@@ -78,7 +79,7 @@
 		></div>
 	</div>
 
-	<div class="flex items-center justify-between gap-6 px-6 pb-4 pt-10">
+	<div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-4 px-6 pb-4 pt-10">
 		<div class="flex min-w-0 items-center gap-4">
 			{#if auth.account?.signedIn && auth.account.thumbnail}
 				<!-- max-width:none defeats Tailwind Preflight's `img{max-width:100%}`, which in a tight box
@@ -95,7 +96,7 @@
 				{daypart}{auth.account?.name ? `, ${auth.account.name.split(' ')[0]}` : ''}
 			</h1>
 		</div>
-		<div class="flex shrink-0 items-center gap-2">
+		<div class="flex w-full min-w-0 flex-wrap items-center gap-2 lg:max-w-xl lg:flex-1">
 			<!-- Listen Together moved out of here and lives on the titlebar alone: history is the thing
 			     you reach for from the home page. -->
 			<button
@@ -106,7 +107,7 @@
 			>
 				<HugeiconsIcon icon={HistoryIcon} class="h-5 w-5" />
 			</button>
-			<form class="relative w-full max-w-xs" onsubmit={(e) => { e.preventDefault(); goSearch(); }}>
+			<form class="relative min-w-0 flex-1 basis-40" onsubmit={(e) => { e.preventDefault(); goSearch(); }}>
 				<HugeiconsIcon
 					icon={Search01Icon}
 					class="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground"
@@ -120,6 +121,7 @@
 					panelClass="right-0 w-[26rem]"
 				/>
 			</form>
+			<LinkInput class="flex-1 basis-40" />
 		</div>
 	</div>
 </header>

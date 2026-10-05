@@ -5,7 +5,8 @@ import { goto } from '$app/navigation';
 import * as api from './api';
 import type { BrowseItem, SongItem } from './api';
 import { t } from './i18n.svelte';
-import { enqueue, openAddManyToPlaylist, playFrom, playSong, toast, touchPick } from './player.svelte';
+import { enqueue, openAddManyToPlaylist, playFrom, playSong, startRadio, toast, touchPick } from './player.svelte';
+import type { LinkTarget } from './ytlink';
 
 /**
  * A song card carries everything a queue entry needs; the ⋯ menus take this shape. The one mapping
@@ -43,6 +44,13 @@ export const hrefFor = (i: BrowseItem): string =>
 			: i.kind === 'album'
 				? `/album/${encodeURIComponent(i.id)}`
 				: `/playlist/${encodeURIComponent(i.id)}`;
+
+/** Pasted links share one action across Home, Search, the dialog and launch arguments. */
+export function openLinkTarget(target: LinkTarget): void {
+	// A pasted song only carries an id; radio resolves its metadata before playing it.
+	if (target.kind === 'song') startRadio('song', target.id);
+	else goto(hrefFor({ ...target, title: '' }));
+}
 
 /** Primary click: a song plays, everything else opens its page. */
 export function openItem(item: BrowseItem): void {
