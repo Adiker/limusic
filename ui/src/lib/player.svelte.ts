@@ -20,6 +20,7 @@ import type { Personal } from './personal';
 import { appearance } from './theme.svelte';
 import { currentLocale, pushLocaleToRust, t } from './i18n.svelte';
 import { friendlyNetError } from './neterr';
+import { parseScrobbleConfig } from './scrobble';
 
 export const playback = $state({
 	now: null as NowPlaying | null,
@@ -67,7 +68,10 @@ export const prefs = $state({
 	ambient: false,
 	/** `autoplay`: the queue keeps going with similar songs. Switched from the queue panel as well
 	 *  as Settings, so both read it here. */
-	autoplay: true
+	autoplay: true,
+	/** The Scrobbling tab's on switch (`lastfm_config.enabled`). The track menu offers "Edit
+	 *  scrobble" only while it is on, so a user who paused scrobbling isn't shown it. */
+	scrobbling: true
 });
 
 /** App-managed offline library. The complete snapshot is sent only for structural changes;
@@ -1245,7 +1249,8 @@ export const ui = $state({
 	share: null as BrowseItem | null, // the share modal's target
 	toast: null as Toast | null,
 	settingsOpen: false, // the settings modal
-	settingsFocus: null as 'lyrics' | null, // a section to open settings on, once
+	settingsFocus: null as 'lyrics' | 'scrobbling' | null, // a section to open settings on, once
+	scrobbleTrack: null as SongItem | null, // "Edit scrobble" from a track menu: the track to edit
 	ltOpen: false, // the Listen Together modal
 	linkOpen: false, // the "open a pasted link" modal
 	paletteOpen: false, // the Ctrl+K search palette
@@ -1682,6 +1687,7 @@ export function initApp(mini = false): () => void {
 			prefs.ambient = s.ambient_light === 'true';
 			prefs.discordRpc = s.discord_rpc === 'true';
 			prefs.autoplay = s.autoplay !== 'false';
+			prefs.scrobbling = parseScrobbleConfig(s.lastfm_config).enabled;
 			// Half of what the app shows is YouTube's own text, and Rust asks for it in the language
 			// this setting holds (#274). It reads the setting at startup, before the SPA exists to
 			// tell it anything, so the two disagree on a fresh install, on a language taken from the
