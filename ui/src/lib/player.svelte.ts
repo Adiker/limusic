@@ -172,11 +172,16 @@ export const videoReady: Record<string, true> = $state({});
 const videoUrls = new Map<string, Promise<string | null>>();
 
 /** The picture ladder YouTube publishes, snapped up so the box is never upscaled, capped at 720
- *  because that is already more than the player view's box gets on a 1080p screen. `176` is `11rem`
- *  at the default root font size, the chrome above and below the box (see the `--vid` calc in
- *  NowPlaying.svelte). If the titlebar or the player bar changes height, this changes with it. */
+ *  because that is already more than the player view's box gets on a 1080p screen. What the window
+ *  keeps from the box's height, at the default root font size, mirrors NowPlaying.svelte's two
+ *  layouts. Original: `176` is `11rem`, the chrome above and below the box (the `--vid` calc).
+ *  New layout: `344` is the titlebar and the player bar (~110), the view's top row and padding
+ *  (80), and the title block under the picture (9.5rem, `VIDEO_SIDE`). If any of those changes
+ *  height, this does. */
 export function wantedVideoHeight() {
-	const px = (window.innerHeight - 176) * 0.85;
+	const px = appearance.stagePlayer
+		? window.innerHeight - 344
+		: (window.innerHeight - 176) * 0.85;
 	return [360, 480, 720].find((h) => h >= px) ?? 720;
 }
 
@@ -741,7 +746,7 @@ async function pushSaved(
 /**
  * Is this card in the library, wherever the library happens to live: saved on this machine, or on
  * the signed-in account. Albums and artists only answer once `loadLibraryExtras` has run, which is
- * why the menus kick it off when they open.
+ * why it runs with the library at startup and on sign-in, and again from a menu if that failed.
  *
  * Songs are not here: their library is Liked Music (Library ▸ Songs browses `FEmusic_liked_videos`),
  * so `isLiked` is the answer and TrackMenu uses it.
@@ -1637,6 +1642,7 @@ export function initApp(mini = false): () => void {
 			// are still there, and the backend answers both without touching YouTube.
 			if (!mini) {
 				loadLibrary(true);
+				if (a.signedIn) loadLibraryExtras();
 				loadSavedIndex();
 			}
 			if (!a.signedIn) {
@@ -1707,6 +1713,10 @@ export function initApp(mini = false): () => void {
 				return;
 			}
 			loadLibrary();
+			// Saved albums and artists too, rather than when the first card menu opens: that menu is
+			// already on screen by the time they arrive, offering "Save to library" for albums the
+			// account already holds (#364).
+			if (a.signedIn) loadLibraryExtras();
 			// The crawl behind this is the app's only bulk request, so it runs once here (and on a
 			// sign-in), never on navigation. It settles into the background while the first page
 			// paints from the stored index. Signed out there is no crawl, and the answer is the
