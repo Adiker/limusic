@@ -433,9 +433,10 @@
 <!-- The player bar's chevron, E, Esc (and the new layout's collapse button) are the keyboard
      equivalents of clicking the backdrop, so this stays a plain region rather than a control
      wrapping the whole view. -->
+<!-- Keep the view's background opaque while it slides so the page underneath cannot bleed through. -->
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
-	transition:fly={{ y: '100%', duration: 320, easing: cubicOut }}
+	transition:fly={{ y: '100%', duration: 320, easing: cubicOut, opacity: 1 }}
 	onoutrostart={() => ((settled = false), setHole(null))}
 	onintroend={() => (settled = true)}
 	bind:this={view}
