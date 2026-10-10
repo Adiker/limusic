@@ -58,7 +58,7 @@
 #      no sign-in, no thumbnails, no music video (issue #164). Rust is unaffected, it carries
 #      rustls, so the app looks alive. Fixed by moving the gnutls stack off the library path so the
 #      host's own copy, which knows where the host's trust store is, is what loads. Conditionally:
-#      see 1e, Arch cannot serve the chain and keeps ours.
+#      see 1e/2a, hosts on Nettle 4 keep just our legacy Nettle ABI alongside host TLS.
 #
 # ON PRUNING. v0.2.11 pruned eight libraries and broke worse than what it fixed, so the bar is high,
 # but "never prune" is the wrong rule — defect 3 above is only fixable by pruning. What made v0.2.11
@@ -280,10 +280,9 @@ done
 #
 #     Moved rather than deleted, because which copy wins is a runtime decision (2a). libavformat
 #     DT_NEEDs libgnutls and libarchive DT_NEEDs libnettle.so.8, so both are load-time dependencies
-#     of the app itself: a host that cannot serve the whole chain would go from "sign-in is broken"
-#     to "does not start", which is worse than the bug being fixed. Arch is exactly that host, its
-#     nettle 4.0 is libnettle.so.9. So the copies sit in a subdirectory the loader never looks in
-#     and 2a puts it back on the path when the host comes up short.
+#     of the app itself. Hosts on Nettle 4 provide .9/.7 instead of .8/.6, so 2a
+#     exposes just the legacy Nettle ABI there while retaining host GnuTLS. The
+#     full chain remains in a separate directory for hosts without loadable GnuTLS.
 #
 #     Measured against the shipped 0.6.8 AppDir in containers, trust anchors reachable by the
 #     webview's TLS stack, before -> after: openSUSE 0 -> 435, Debian 121 -> 121, Fedora 388 -> 388,
@@ -305,6 +304,15 @@ done
 rm -rf "$APPDIR/usr/lib/pkcs11" "$APPDIR/usr/lib64/pkcs11"
 [ -e "$FALLBACK/libgnutls.so.30" ] || {
   echo "no libgnutls.so.30 in the AppDir at all — did linuxdeploy stop bundling it?"; exit 1; }
+
+# Nettle 4 changes its sonames to .9/.7. The host's GnuTLS can use those while
+# libarchive/libsrt in this bundle still need .8/.6. Keep just the old Nettle ABI
+# available separately, so satisfying those consumers does not replace host TLS.
+COMPAT="$APPDIR/usr/lib/gnutls-compat"
+mkdir -p "$COMPAT"
+for soname in libnettle.so.8 libhogweed.so.6; do
+  [ ! -e "$FALLBACK/$soname" ] || cp -L "$FALLBACK/$soname" "$COMPAT/$soname"
+done
 
 # 2. Point GIO_EXTRA_MODULES at the AppDir's own module directories — never the host's, see the
 #    header. Appended rather than edited in place: AppRun *sources* the hook, so the last assignment
@@ -348,7 +356,7 @@ echo "==> bundled gio modules: $MODS"
 #     which is not on every user's PATH. AppRun.wrapped appends the existing LD_LIBRARY_PATH after
 #     its own AppDir entries, so what we export here is searched last, which is exactly right for a
 #     fallback.
-grep -q 'gnutls-fallback' "$HOOK" || cat >> "$HOOK" <<'EOF'
+grep -q 'gnutls-compat' "$HOOK" || cat >> "$HOOK" <<'EOF'
 
 # Limusic: the gnutls stack is deliberately off the library path (defect 6). Ubuntu's gnutls
 # hardcodes /etc/ssl/certs/ca-certificates.crt as its trust store, so on a host that keeps its CA
@@ -357,11 +365,16 @@ grep -q 'gnutls-fallback' "$HOOK" || cat >> "$HOOK" <<'EOF'
 #
 # That only works when the host can serve the whole chain, because a soname is loaded once per
 # process: the host's gnutls resolves libnettle.so.8 to ours if ours is on the path, and 3.8.10+
-# wants a symbol our nettle 3.9 does not have. So it is all of the host's or all of ours. Arch is
-# the "all of ours" case — nettle 4.0 there is libnettle.so.9, which cannot serve the bundled
-# libarchive and libsrt, so we put our own copies back and accept the compiled-in trust path, which
-# is the file Arch actually has. Whatever this picks, the check in scripts/appdir-foreign-check.sh
-# counts the trust anchors that come out of it.
+# wants a symbol our nettle 3.9 does not have. A host on Nettle 4 uses different
+# sonames, so its GnuTLS can coexist with just our legacy .8/.6 copies. Keep the
+# host's GnuTLS and trust store in that case; the full fallback is only for a host
+# whose own GnuTLS cannot load. The foreign-distro check counts the trust anchors.
+# Remove the prefix left by an older repair hook when repairing an existing AppDir.
+case "${LD_LIBRARY_PATH:-}" in
+  "$APPDIR/usr/lib/gnutls-fallback") unset LD_LIBRARY_PATH;;
+  "$APPDIR/usr/lib/gnutls-fallback":*)
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH#"$APPDIR/usr/lib/gnutls-fallback":}";;
+esac
 _gnutls_host=1
 for _so in libgnutls.so.30 libnettle.so.8 libhogweed.so.6; do
   _found=""
@@ -370,8 +383,20 @@ for _so in libgnutls.so.30 libnettle.so.8 libhogweed.so.6; do
   done
   [ -n "$_found" ] || _gnutls_host=""
 done
-[ -n "$_gnutls_host" ] || export LD_LIBRARY_PATH="$APPDIR/usr/lib/gnutls-fallback${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-unset _gnutls_host _so _found _d
+if [ -z "$_gnutls_host" ]; then
+  _gnutls_lib=""
+  for _d in /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib /lib64 /lib/x86_64-linux-gnu; do
+    [ -e "$_d/libgnutls.so.30" ] && { _gnutls_lib="$_d/libgnutls.so.30"; break; }
+  done
+  if [ -n "$_gnutls_lib" ] &&
+     _gnutls_deps="$(LD_LIBRARY_PATH='' ldd "$_gnutls_lib" 2>&1)" &&
+     ! printf '%s\n' "$_gnutls_deps" | grep -q 'not found'; then
+    export LD_LIBRARY_PATH="$APPDIR/usr/lib/gnutls-compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  else
+    export LD_LIBRARY_PATH="$APPDIR/usr/lib/gnutls-fallback${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  fi
+fi
+unset _gnutls_host _gnutls_lib _gnutls_deps _so _found _d
 EOF
 
 # 2b. Point GStreamer at the bundled plugins. Same shape as GIO_MODULE_DIR above and for the same
