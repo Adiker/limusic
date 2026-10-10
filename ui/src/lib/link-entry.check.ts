@@ -52,6 +52,7 @@ for (const platform of ['Linux', 'MacIntel']) {
 	let listener: ((event: KeyboardEvent) => void) | undefined;
 	let focused = 0;
 	let selected = 0;
+	let quits = 0;
 	const input = { focus: () => focused++, select: () => selected++ };
 	let pageInput: typeof input | null = input;
 	let dialog: { querySelector: () => typeof input | null } | null = null;
@@ -62,6 +63,7 @@ for (const platform of ['Linux', 'MacIntel']) {
 			browser: true,
 			navigator: { platform },
 			ui,
+			api: { quitApp: () => quits++ },
 			document: {
 				querySelector: (selector: string) => selector === '[data-link-input]' ? pageInput : dialog
 			},
@@ -108,11 +110,24 @@ for (const platform of ['Linux', 'MacIntel']) {
 	dialog = { querySelector: () => input };
 	assert.equal(press(), true); // select the URL in the already open link dialog
 	assert.equal(selected, 3);
+	assert.equal(press({ key: 'д', code: 'KeyL' }), true); // physical L with a Cyrillic layout
+	assert.equal(selected, 4);
+	assert.equal(press({ key: 'й', code: 'KeyQ' }), true); // upstream Quit survives the merge
+	assert.equal(quits, 1);
+	assert.equal(press({ key: 'Q' }), true);
+	assert.equal(quits, 2);
+	assert.equal(press({ key: 'q', repeat: true }), true);
+	assert.equal(press({ key: 'q', altKey: true }), false);
+	assert.equal(press({ key: 'q', defaultPrevented: true }), false);
+	assert.equal(quits, 2);
 	stop();
 	assert.equal(listener, undefined);
 	stop = initShortcuts(true);
 	assert.equal(press(), false); // no URL UI in the mini player
-	assert.equal(selected, 3);
+	assert.equal(press({ key: 'д', code: 'KeyL' }), false);
+	assert.equal(selected, 4);
+	assert.equal(press({ key: 'q' }), true); // quit remains available in the mini player
+	assert.equal(quits, 3);
 	stop();
 }
 
