@@ -232,6 +232,18 @@ jobs:
             echo "::warning::LASTFM_API_KEY / LASTFM_API_SECRET secrets not set — this Linux build ships without Last.fm scrobbling"
           fi
 
+      # Packaging repairs follow the workflow revision; the application checkout
+      # remains pinned to the release tag.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          path: ci-tools
+          sparse-checkout: |
+            scripts/fix-appdir-tls.sh
+            scripts/appdir-foreign-check.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Build + sign the AppImage, build the deb
         env:
           # Scoped to this step only — no other step (or third-party action) sees the signing key.
@@ -262,7 +274,7 @@ jobs:
           # coupled to the build host's config and leave the webview with no TLS backend anywhere
           # else. Repacking invalidates the bundler's signature, so the script re-signs — which is
           # why it runs inside this step, where the key is in scope.
-          scripts/fix-appdir-tls.sh
+          bash ci-tools/scripts/fix-appdir-tls.sh "$PWD/target/release/bundle/appimage"
 
       # v0.2.11 shipped an AppImage that couldn't start on a host without JACK, because libmpv
       # DT_NEEDs libjack.so.0 and linuxdeploy excludes it. Everything the bundle links must either be
@@ -303,17 +315,6 @@ jobs:
             exit 1
           fi
           echo "every DT_NEEDED is either bundled or a host baseline library"
-
-      # The source checkout above is pinned to the release tag. Keep CI-only verification helpers
-      # current with the workflow revision so a helper fix can be tested without moving a published
-      # release tag or changing the app source being built.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          ref: ${{ github.sha }}
-          path: ci-tools
-          sparse-checkout: scripts/appdir-foreign-check.sh
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
 
       # The static guards above only see this runner. Every failure in this family (v0.2.10's
       # undefined symbol, v0.2.11's missing libnettle.so.8 on Arch, v0.2.14's dead webviews on
