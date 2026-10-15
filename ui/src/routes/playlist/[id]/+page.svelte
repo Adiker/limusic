@@ -36,12 +36,14 @@
 	import EditPlaylistDialog from '$lib/components/EditPlaylistDialog.svelte';
 	import TrackFilter, { filterTracks } from '$lib/components/TrackFilter.svelte';
 	import TrackRowSkeleton from '$lib/components/TrackRowSkeleton.svelte';
+	import PlaylistSuggestions from '$lib/components/PlaylistSuggestions.svelte';
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import * as api from '$lib/api';
 	import { ON_REPEAT_ID } from '$lib/api';
 	import type { BrowseItem, PlaylistPage, SongItem } from '$lib/api';
 	import { getCached, putCached, invalidateCachedPrefix } from '$lib/pagecache';
 	import { thumb } from '$lib/thumb';
+	import { appearance } from '$lib/theme.svelte';
 	import { anchorMenu, fitMenu, NO_ANCHOR } from '$lib/menu';
 	import { rowWindow } from '$lib/rows';
 	import { rowScroller } from '$lib/rows.svelte';
@@ -74,6 +76,7 @@
 		toast,
 		toggleSaved,
 		bumpLibraryTrackCount,
+		noteSavedIn,
 		noteUnsavedFrom,
 		setRating,
 		patchLibraryPlaylist,
@@ -219,13 +222,15 @@
 	// The backdrop: a cover the playlist really has, else a random song's art. The collage isn't a
 	// cover anyone picked, and blown up behind the header it just repeats the rows below it.
 	// A playlist on this machine has the same problem: its thumbnail is only its first track's art.
-	const backdrop = $derived(
-		thumb(
+	// Blurred (#461), it is a 96px thumbnail: the 24px blur throws away everything finer, and the
+	// sharp 1200px one is what showed its pixels once stretched to the page's width.
+	const backdrop = $derived.by(() => {
+		const own =
 			pl?.cover ??
-				(pl?.thumbnail && !COLLAGE.test(pl.thumbnail) && !isLocalList ? pl.thumbnail : null),
-			1200
-		) ?? bgImage
-	);
+			(pl?.thumbnail && !COLLAGE.test(pl.thumbnail) && !isLocalList ? pl.thumbnail : null);
+		if (appearance.blurPlaylistHeader) return thumb(own ?? bgImage, 96);
+		return thumb(own, 1200) ?? bgImage;
+	});
 	// Only offer rename/delete on playlists the signed-in user actually owns (backend `owned` flag).
 	// Liked Music reports owned but can't be renamed/deleted, so exclude it explicitly.
 	const editable = $derived((pl?.owned ?? false) && !isLiked);
@@ -564,10 +569,68 @@
 		cacheCurrent();
 	});
 
+	// A suggestion (#395) joins the list the moment it is picked, and leaves again if YouTube
+	// refuses it. Answers whether it is in the playlist, so the shelf knows whether to take it back.
+	async function addSuggestion(song: SongItem): Promise<boolean> {
+		if (!pl) return false;
+		const pid = id;
+		const row: SongItem = { ...song, set_video_id: undefined };
+		// Picked from the dock with pages still to come, the foot of the list isn't loaded: appended
+		// here the row would sit mid-list, then come again with the last page. It arrives with that.
+		if (!pl.continuation) {
+			pl = { ...pl, items: [...pl.items, row] };
+			cacheCurrent();
+		}
+		const drop = () => {
+			if (pid !== id || !pl) return;
+			pl = { ...pl, items: pl.items.filter((t) => t !== row) };
+			cacheCurrent();
+		};
+		try {
+			const added = await api.addToPlaylist(pid, song.video_id);
+			noteSavedIn(pid, [song.video_id]);
+			if (!added) {
+				// Already in it (added elsewhere since the page loaded): the optimistic row would be
+				// a second copy, and the suggestion is spent either way.
+				drop();
+				toast(t('toasts.already_in', { playlist: pl?.title ?? '' }));
+				return true;
+			}
+			bumpLibraryTrackCount(pid, 1);
+			if (pid === id) fillSetVideoIds();
+			return true;
+		} catch (e) {
+			drop();
+			toast.error(String(e));
+			return false;
+		}
+	}
+
+	// One refetch loop at a time: picking five suggestions in a row would otherwise start five, each
+	// re-reading page 1 up to three times. A row added while one runs is caught by its next pass, or
+	// by the pass queued here.
+	let filling = false;
+	let fillQueued = false;
+	async function fillSetVideoIds() {
+		if (filling) {
+			fillQueued = true;
+			return;
+		}
+		filling = true;
+		try {
+			do {
+				fillQueued = false;
+				await fillPass();
+			} while (fillQueued);
+		} finally {
+			filling = false;
+		}
+	}
+
 	// Optimistic rows lack set_video_id, so "Remove from playlist" is hidden on them. Refetch and
 	// patch the real ids into place (merge, not replace — keeps loadMore pages and any row YouTube
 	// hasn't reflected yet). Retries because the add is eventually-consistent on YouTube's side.
-	async function fillSetVideoIds() {
+	async function fillPass() {
 		if (isLiked) return;
 		const pid = id;
 		for (const delay of [0, 2000, 4000]) {
@@ -985,19 +1048,24 @@
 		     album page. -->
 		<div class="content-in min-h-0 flex-1 overflow-y-auto" {@attach sc.attach}>
 			<div class="relative flex min-h-[38vh] shrink-0 items-end gap-6 overflow-hidden border-b p-6">
-				{#if backdrop}
-					<img
-						src={backdrop}
-						alt=""
-						class="pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
-					/>
-				{/if}
-				<!-- Fade the cover into the page so the text stays readable: solid at the bottom and on the
-				     left (behind the title), the image itself visible toward the top-right. -->
-				<div
-					class="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/20"
-				></div>
-				<div class="absolute inset-0 bg-gradient-to-r from-background via-background/50 to-transparent"></div>
+				<!-- The backdrop and its fade share one layer (`art-wash` on the wrapper): see HomeHero. -->
+				<div class="art-wash pointer-events-none absolute inset-0 overflow-hidden">
+					{#if backdrop}
+						<img
+							src={backdrop}
+							alt=""
+							class="absolute inset-0 h-full w-full object-cover object-center"
+							class:scale-110={appearance.blurPlaylistHeader}
+							style:filter={appearance.blurPlaylistHeader ? 'blur(24px)' : undefined}
+						/>
+					{/if}
+					<!-- Fade the cover into the page so the text stays readable: solid at the bottom and on the
+					     left (behind the title), the image itself visible toward the top-right. -->
+					<div
+						class="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/20"
+					></div>
+					<div class="absolute inset-0 bg-gradient-to-r from-background via-background/50 to-transparent"></div>
+				</div>
 				{#if isOnRepeat}
 					<div
 						class="relative flex h-40 w-40 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-lg"
@@ -1199,6 +1267,22 @@
 					{/if}
 				{/if}
 			</div>
+			<!-- After the last row, so only once every page is in (`inline`; the corner dock reaches it
+			     before then), and not under a filter's matches, which it would read as part of. Kept
+			     mounted under a filter all the same, so clearing one doesn't fetch a fresh batch. Outside
+			     the list's wrapper so a re-sort doesn't dim it. Every playlist of yours on YouTube: one
+			     with no shelf of its own gets its radio's. -->
+			{#if editable && !isLocalList}
+				{#key id}
+					<PlaylistSuggestions
+						playlistId={id}
+						token={pl.suggestions}
+						current={() => pl?.items ?? []}
+						onadd={addSuggestion}
+						inline={!pl.continuation && !filtering}
+					/>
+				{/key}
+			{/if}
 		</div>
 	{/if}
 </div>

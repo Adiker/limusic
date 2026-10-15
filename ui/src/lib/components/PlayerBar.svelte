@@ -9,6 +9,7 @@
 		RepeatIcon,
 		RepeatOne01Icon,
 		Queue01Icon,
+		Comment01Icon,
 		Mic01Icon,
 		VolumeHighIcon,
 		VolumeMute02Icon,
@@ -46,12 +47,16 @@
 		onToggleQueue,
 		queueOpen,
 		onToggleLyrics,
-		lyricsOpen
+		lyricsOpen,
+		onToggleComments,
+		commentsOpen
 	}: {
 		onToggleQueue: () => void;
 		queueOpen: boolean;
 		onToggleLyrics: () => void;
 		lyricsOpen: boolean;
+		onToggleComments: () => void;
+		commentsOpen: boolean;
 	} = $props();
 
 	// Pop the heart once when the user favourites (not when un-favouriting). Reset on animation end
@@ -320,7 +325,9 @@
 			</Button>
 		</div>
 		<div class="flex w-full max-w-md items-center gap-2 text-xs text-muted-foreground">
-			<span class="tabular-nums">{fmt(shownPosition)}</span>
+			<!-- Fixed slots, or the seek bar twitches as the position ticks: DM Sans has no tabular
+			     figures, so `tabular-nums` does nothing there (#463). -->
+			<span class="min-w-[5ch] text-right tabular-nums">{fmt(shownPosition)}</span>
 			<input
 				type="range"
 				class="range flex-1"
@@ -332,7 +339,7 @@
 				onchange={onSeekCommit}
 				aria-label={t('player.seek')}
 			/>
-			<span class="tabular-nums">{fmt(playback.duration)}</span>
+			<span class="min-w-[5ch] tabular-nums">{fmt(playback.duration)}</span>
 		</div>
 	</div>
 
@@ -381,6 +388,17 @@
 			>
 				<HugeiconsIcon icon={Mic01Icon} class="h-5 w-5" />
 			</Button>
+			<!-- A local file has no YouTube comment thread to open. -->
+			{#if playback.now && !api.isLocalId(playback.now.videoId)}
+				<Button
+					variant={commentsOpen ? 'secondary' : 'ghost'}
+					size="icon-sm"
+					onclick={onToggleComments}
+					aria-label={t('player.comments')}
+				>
+					<HugeiconsIcon icon={Comment01Icon} class="h-5 w-5" />
+				</Button>
+			{/if}
 			<Button
 				variant={queueOpen ? 'secondary' : 'ghost'}
 				size="icon-sm"
