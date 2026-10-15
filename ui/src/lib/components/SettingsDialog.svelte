@@ -233,6 +233,9 @@
 	// Off until the setting is turned on: still experimental, so nobody gets video they didn't ask
 	// for. Same test in `player.svelte.ts`, which hydrates `prefs` at launch.
 	const musicVideosOn = $derived(settings.music_videos === 'true');
+	// On by default, and only offered with music videos on: album songs that have a video start as
+	// it, with the song on the Song/Video switch (#442, #464). Rust reads it in `get_album`.
+	const videosFirstOn = $derived(settings.videos_first !== 'false');
 	// Off by default, and only offered with music videos on: it costs real GPU time on every frame.
 	const ambientOn = $derived(settings.ambient_light === 'true');
 	const preventDuplicatesOn = $derived(settings.prevent_duplicates === 'true');
@@ -244,6 +247,7 @@
 	const betaOn = $derived(settings.update_channel === 'beta');
 	const trayOn = $derived(settings.close_to_tray !== 'false');
 	const trackNotificationsOn = $derived(settings.track_notifications === 'true');
+	const trackNotificationsFocusedOn = $derived(settings.track_notifications_focused === 'true');
 	const autostartOn = $derived(settings.autostart === 'true');
 	const startMinimizedOn = $derived(settings.start_minimized === 'true');
 	// `native_chrome` is read-only and platform-derived (commands.rs). `overlay` is macOS, where the
@@ -330,6 +334,11 @@
 		await api.setSetting('music_videos', settings.music_videos);
 	}
 
+	async function setVideosFirst(on: boolean) {
+		settings.videos_first = on ? 'true' : 'false';
+		await api.setSetting('videos_first', settings.videos_first);
+	}
+
 	// `prefs` after the write: on Linux the write is also what turns WebGL on for the glow.
 	async function setAmbient(on: boolean) {
 		settings.ambient_light = on ? 'true' : 'false';
@@ -376,6 +385,11 @@
 	async function setTrackNotifications(on: boolean) {
 		settings.track_notifications = on ? 'true' : 'false';
 		await api.setSetting('track_notifications', settings.track_notifications);
+	}
+
+	async function setTrackNotificationsFocused(on: boolean) {
+		settings.track_notifications_focused = on ? 'true' : 'false';
+		await api.setSetting('track_notifications_focused', settings.track_notifications_focused);
 	}
 
 	// The backend flips the real window decorations; `win.chrome` is what the SPA keys its own
@@ -592,6 +606,13 @@
 									desc: t('settings.general.track_notifications_hint'),
 									control: trackNotificationsSwitch
 								})}
+								{#if trackNotificationsOn}
+									{@render row({
+										title: t('settings.general.track_notifications_focused'),
+										desc: t('settings.general.track_notifications_focused_hint'),
+										control: trackNotificationsFocusedSwitch
+									})}
+								{/if}
 								{@render row({
 									title: t('settings.general.autostart'),
 									desc: t('settings.general.autostart_hint'),
@@ -681,6 +702,12 @@
 									tall: true
 								})}
 								{#if musicVideosOn}
+									{@render row({
+										title: t('settings.playback.videos_first'),
+										desc: t('settings.playback.videos_first_hint'),
+										control: videosFirstSwitch,
+										tall: true
+									})}
 									{@render row({
 										title: t('settings.playback.ambient_light'),
 										badge: t('settings.themes.experimental'),
@@ -895,6 +922,10 @@
 		checked={trackNotificationsOn}
 		onCheckedChange={setTrackNotifications}
 	/>{/snippet}
+{#snippet trackNotificationsFocusedSwitch()}<Switch
+		checked={trackNotificationsFocusedOn}
+		onCheckedChange={setTrackNotificationsFocused}
+	/>{/snippet}
 {#snippet autostartSwitch()}<Switch checked={autostartOn} onCheckedChange={setAutostart} />{/snippet}
 {#snippet startMinimizedSwitch()}<Switch checked={startMinimizedOn} onCheckedChange={setStartMinimized} />{/snippet}
 {#snippet systemTitlebarSwitch()}<Switch
@@ -935,6 +966,7 @@
 	/>{/snippet}
 {#snippet normalizeSwitch()}<Switch checked={normalizeOn} onCheckedChange={setNormalize} />{/snippet}
 {#snippet musicVideoSwitch()}<Switch checked={musicVideosOn} onCheckedChange={setMusicVideos} />{/snippet}
+{#snippet videosFirstSwitch()}<Switch checked={videosFirstOn} onCheckedChange={setVideosFirst} />{/snippet}
 {#snippet ambientSwitch()}<Switch checked={ambientOn} onCheckedChange={setAmbient} />{/snippet}
 <!-- The GPU note, behind a warning glyph by the title: it matters to the few whose card is weak,
      and a paragraph under the switch read as a reason not to try it. A popover rather than a
