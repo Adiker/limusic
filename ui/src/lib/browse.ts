@@ -3,7 +3,8 @@
 // thing" can never drift apart between two components.
 import { goto } from '$app/navigation';
 import * as api from './api';
-import type { BrowseItem, SongItem } from './api';
+import type { ArtistPage, BrowseItem, SongItem } from './api';
+import { getCached, putCached } from './pagecache';
 import { t } from './i18n.svelte';
 import { enqueue, openAddManyToPlaylist, playFrom, playSong, startRadio, toast, touchPick } from './player.svelte';
 import type { LinkTarget } from './ytlink';
@@ -50,6 +51,21 @@ export function openLinkTarget(target: LinkTarget): void {
 	// A pasted song only carries an id; radio resolves its metadata before playing it.
 	if (target.kind === 'song') startRadio('song', target.id);
 	else goto(hrefFor({ ...target, title: '' }));
+}
+
+/** An artist's page through the browse cache, under the artist route's own key, so a visit there and
+ *  a section showing their photo share one fetch. Null when the channel can't be had. */
+export async function artistPage(id: string): Promise<ArtistPage | null> {
+	const key = `artist:${id}`;
+	const hit = getCached<ArtistPage>(key);
+	if (hit) return hit;
+	try {
+		const page = await api.getArtist(id);
+		putCached(key, page);
+		return page;
+	} catch {
+		return null;
+	}
 }
 
 /** Primary click: a song plays, everything else opens its page. */

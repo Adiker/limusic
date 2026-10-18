@@ -41,6 +41,18 @@ pub fn is_local_playlist(id: &str) -> bool {
     id.starts_with(LOCAL_PLAYLIST_PREFIX)
 }
 
+/// One play as it is being heard. See `AppState::hear`.
+#[derive(Default)]
+struct Listen {
+    /// Its `listens` row, from the moment it counts as a play (the latch in `on_position`).
+    row: Option<i64>,
+    /// Seconds actually heard, and how many of them the row has.
+    heard: f64,
+    saved: f64,
+    /// The previous position tick, which the next one is measured against.
+    last_pos: Option<f64>,
+}
+
 pub struct AppState {
     pub it: InnerTube,
     pub clients: Clients,
@@ -85,6 +97,8 @@ pub struct AppState {
     /// stalled the event pump behind `emit_queue`, `persist_queue`, `prime_lookahead` and the
     /// Listen Together broadcasts for nothing.
     history_pinged: AtomicBool,
+    /// The play being heard right now, for the listening stats (#396). See [`Self::hear`].
+    listen: std::sync::Mutex<Listen>,
     /// Mirror of mpv's pause flag (set in `media_set_playing`). Position ticks must consult this
     /// instead of assuming "playing" — mpv fires `time-pos` on seeks while paused too.
     is_playing: AtomicBool,
@@ -484,6 +498,7 @@ impl AppState {
             queue: Mutex::new(QueueState::default()),
             auth: tokio::sync::Mutex::default(),
             history_pinged: AtomicBool::new(false),
+            listen: std::sync::Mutex::default(),
             is_playing: AtomicBool::new(false),
             generation: AtomicU64::new(0),
             rate_epoch: AtomicU64::new(0),
@@ -1967,6 +1982,7 @@ impl AppState {
             q.playback_ping = q.lookahead_playback_ping.take();
             q.cpn = innertube::generate_cpn();
             self.history_pinged.store(false, Ordering::Relaxed);
+            self.end_listen();
             q.duration = 0.0;
         }
         if let Some(item) = self.current_item().await {
@@ -2233,6 +2249,7 @@ impl AppState {
             q.playback_ping = data.playback_ping.clone();
             q.cpn = innertube::generate_cpn();
             self.history_pinged.store(false, Ordering::Relaxed);
+            self.end_listen();
             q.duration = 0.0;
             let cur = q.current;
             if let Some(qi) = q.items.get_mut(cur) {
@@ -2798,6 +2815,7 @@ impl AppState {
     /// gated on the `enable_history` setting + being logged in. Best-effort (errors logged).
     pub async fn on_position(&self, pos: f64) {
         self.record_position(pos);
+        self.hear(pos);
         // Latched: nothing below can fire again for this play, so don't queue up behind the
         // queue mutex on every tick just to be told so. See `AppState::history_pinged`.
         if self.history_pinged.load(Ordering::Relaxed) {
@@ -2818,18 +2836,19 @@ impl AppState {
         };
         let Some((ping, cpn, played)) = crossed else { return };
 
-        // Local play count, on the same threshold. Deliberately not gated on `enable_history` or
-        // sign-in: that setting is about registering plays with YouTube, while this never leaves
-        // the machine and has to work signed out.
+        // Local play count (On Repeat, the stats page), on the same threshold. Deliberately not
+        // gated on `enable_history` or sign-in: that setting is about registering plays with
+        // YouTube, while this never leaves the machine and has to work signed out. Local files
+        // count too; On Repeat leaves them out when it reads.
         // ponytail: resuming a restored track from past the threshold counts it a second time (the
-        // watch-history ping has always done the same). One extra count per launch, for one song,
-        // against a month of plays. If it ever skews the list, pass the `pending_seek` offset into
-        // the latch and skip the record when the play didn't start near zero.
-        // Local files don't count: On Repeat is the only thing built from this table, and it's a
-        // YouTube Music playlist — a row pointing at a path on this disk doesn't belong in it.
-        if let Some(item) = played.filter(|i| !crate::local::is_local_song(&i.video_id)) {
+        // watch-history ping has always done the same). One extra count per launch, for one song.
+        // If it ever skews the stats, pass the `pending_seek` offset into the latch and skip the
+        // record when the play didn't start near zero.
+        if let Some(item) = played {
             if let Ok(json) = serde_json::to_string(&item) {
-                self.db.record_play(&item.video_id, &json, now_secs(), ON_REPEAT_WINDOW_SECS);
+                let mut l = self.listen.lock().unwrap();
+                l.row = self.db.record_listen(&item.video_id, &json, now_secs(), l.heard as i64);
+                l.saved = l.heard;
             }
         }
 
@@ -3207,10 +3226,45 @@ impl AppState {
         }
     }
 
-    /// Flush the latest known position to the DB immediately (e.g. on pause).
+    /// Flush the latest known position to the DB immediately (e.g. on pause), and the time heard
+    /// of the play it belongs to.
     pub fn flush_position(&self) {
         let pos = f64::from_bits(self.latest_position.load(Ordering::SeqCst));
         self.db.set_setting("queue_position", &pos.to_string());
+        self.save_listen(&mut self.listen.lock().unwrap());
+    }
+
+    /// Credit the time since the last position tick to the play being heard (#396). mpv ticks
+    /// several times a second while audio plays, so any other move is not listening: a jump back
+    /// (a seek, the next file starting), a jump forward of seconds (a seek), or a tick while paused
+    /// (a seek while paused). Written to the play's row every 30 s heard, so a crash loses at most
+    /// that; pause and exit write it at once (`flush_position`).
+    fn hear(&self, pos: f64) {
+        let mut l = self.listen.lock().unwrap();
+        if let Some(last) = l.last_pos {
+            let step = pos - last;
+            if step > 0.0 && step < 2.0 && self.is_playing.load(Ordering::Relaxed) {
+                l.heard += step;
+            }
+        }
+        l.last_pos = Some(pos);
+        if l.heard - l.saved >= 30.0 {
+            self.save_listen(&mut l);
+        }
+    }
+
+    fn save_listen(&self, l: &mut Listen) {
+        if let Some(row) = l.row.filter(|_| l.heard > l.saved) {
+            self.db.set_listen_secs(row, l.heard as i64);
+            l.saved = l.heard;
+        }
+    }
+
+    /// A new track starts: settle the play before it and count this one from zero.
+    fn end_listen(&self) {
+        let mut l = self.listen.lock().unwrap();
+        self.save_listen(&mut l);
+        *l = Listen::default();
     }
 
     /// Clear both cache tiers (settings "Clear caches"): the SQLite URL cache + mpv's on-disk
@@ -3374,6 +3428,16 @@ impl AppState {
             q.current_loudness_db = data.loudness_db;
             // What `on_track_failed` reads to evict and retry, and what the error toast names.
             q.current_client = Some(data.stream_client.clone());
+            // Fresh play → fresh history state, as in `start_current`. Without it a guest's latch
+            // stayed set after the first host track, so later ones were never counted and the
+            // first one's `listens` row soaked up the whole session (#396), and the watch-history
+            // ping went out with the last local track's ping. After the load, not before: the old
+            // track plays on through the resolve and that time is still its own.
+            q.playback_ping = data.playback_ping.clone();
+            q.cpn = innertube::generate_cpn();
+            self.history_pinged.store(false, Ordering::Relaxed);
+            self.end_listen();
+            q.duration = 0.0;
         }
         if let Some(item) = self.current_item().await {
             self.emit_now_playing(&item, "listen-together");
@@ -4408,7 +4472,7 @@ fn cache_horizon(now: i64, duration_secs: i64) -> i64 {
 }
 
 /// Parse a `"m:ss"` / `"h:mm:ss"` duration string to ms (0 if absent/unparseable).
-fn parse_duration_ms(s: Option<&str>) -> i64 {
+pub(crate) fn parse_duration_ms(s: Option<&str>) -> i64 {
     let Some(s) = s else { return 0 };
     let parts: Vec<i64> = s.split(':').filter_map(|p| p.trim().parse().ok()).collect();
     let secs = match parts.as_slice() {

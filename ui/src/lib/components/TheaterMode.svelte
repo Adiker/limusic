@@ -109,6 +109,23 @@
 	});
 	const calm = $derived(idle && !playback.paused && !overDock);
 
+	// The dock floats over the bottom of the stage. Once it has faded out, the lyrics and the queue
+	// grow down into its room until they end as far from the bottom edge as they start from the top
+	// (the header's height), instead of stopping over an empty band (#468). Not to the edge: that cut
+	// lines in half against the progress line. The picture keeps its size. Growing the columns at
+	// the bottom moves nothing already on screen, it only shows more of them. Waits out the dock's
+	// fade so the two never overlap, and gives the room back the moment the dock comes back.
+	let dockH = $state(0);
+	let roomFree = $state(false);
+	$effect(() => {
+		if (!calm) {
+			roomFree = false;
+			return;
+		}
+		const timer = setTimeout(() => (roomFree = true), 500);
+		return () => clearTimeout(timer);
+	});
+
 	function onKey(e: KeyboardEvent) {
 		wake();
 		// A dialog or menu open over this one (the palette, the shortcut sheet, a track menu) already
@@ -169,13 +186,37 @@
 	// wider screen shows the queue here, the one that had to be asked for.
 	const wide = new MediaQuery('(min-width: 64rem)');
 	const roomy = new MediaQuery('(min-width: 90rem)');
+	// A short screen (768 and 800px laptops) gets a slimmer dock and top strip: at full size the
+	// two took a third of the height away from the picture and the lyrics (#469).
+	const short = new MediaQuery('(max-height: 50rem)');
+	const headerH = $derived(short.current ? '4rem' : '5rem');
 	const queueShown = $derived(wide.current && appearance.theaterQueue);
 	const lyricsShown = $derived(
 		wide.current && appearance.theaterLyrics && (!queueShown || roomy.current)
 	);
-	const both = $derived(lyricsShown && queueShown);
+	// A song with nothing to read (no lyrics found, or instrumental) gets the spotlight instead of a
+	// half-screen column with one line at its top. The lyrics stay mounted, hidden, to fetch the next
+	// song's, and the layout moves only once a fetch has answered, never for the loading in between.
+	// Forgotten while no lyrics are mounted to keep it current.
+	let noLyrics = $state(false);
+	$effect(() => {
+		if (!lyricsShown) noLyrics = false;
+	});
+	const lyricsColumn = $derived(lyricsShown && !noLyrics);
+	// The column rises in when it appears, as the queue does with `in:fly`, and again each time a
+	// song with lyrics follows one without, which `in:` can't do for a column that was only hidden.
+	// Transform and opacity only (tw-animate's `animate-in` also animates `filter`).
+	let lyricsCol: HTMLElement | undefined = $state();
+	$effect(() => {
+		if (lyricsColumn && lyricsCol)
+			lyricsCol.animate([{ opacity: 0, transform: 'translateY(24px)' }, {}], {
+				duration: 400,
+				easing: 'cubic-bezier(0.33, 1, 0.68, 1)' // cubicOut
+			});
+	});
+	const both = $derived(lyricsColumn && queueShown);
 	/** A column beside the picture: it moves over to the left and its title gets smaller. */
-	const columns = $derived(lyricsShown || queueShown);
+	const columns = $derived(lyricsColumn || queueShown);
 	function toggleLyrics() {
 		const on = !lyricsShown;
 		setAppearance({ theaterLyrics: on, ...(on && !roomy.current && { theaterQueue: false }) });
@@ -190,14 +231,34 @@
 	// and its title is set larger, so it budgets more for it.
 	// ponytail: 8rem / 6.5rem are the title blocks at their largest, measured, not computed. Raise
 	// them if the block under the picture grows.
+	// A title too long for one line gets a second instead of an ellipsis (the "feat." credits are
+	// what the ellipsis used to eat), and only then does the picture give up a line's height for it:
+	// 2.25rem / 3rem at leading 1.15. Measured at one line (does it overflow?) or at two (did it
+	// wrap?), so the answer can't flip back and forth: the room it takes only narrows the line.
+	let titleEl: HTMLElement | undefined = $state();
+	let twoLines = $state(false);
+	$effect(() => {
+		const el = titleEl;
+		if (!el) return;
+		const ro = new ResizeObserver(() => {
+			twoLines = twoLines
+				? el.scrollHeight > parseFloat(getComputedStyle(el).lineHeight) * 1.5
+				: el.scrollWidth > el.clientWidth + 1;
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
+	const titleRoom = $derived(
+		`${columns ? 6.5 : 8}rem - ${twoLines ? (columns ? 2.6 : 3.5) : 0}rem`
+	);
 	const side = $derived(
 		columns
 			? showVideo()
-				? 'min(100cqw, (100cqh - 6.5rem) * 16 / 9)'
-				: 'min(100cqw, 100cqh - 6.5rem, 34rem)'
+				? `min(100cqw, (100cqh - ${titleRoom}) * 16 / 9)`
+				: `min(100cqw, 100cqh - ${titleRoom}, 34rem)`
 			: showVideo()
-				? 'min(100cqw, (100cqh - 8rem) * 16 / 9, 96rem)'
-				: 'min(100cqw, 100cqh - 8rem, 44rem)'
+				? `min(100cqw, (100cqh - ${titleRoom}) * 16 / 9, 96rem)`
+				: `min(100cqw, 100cqh - ${titleRoom}, 44rem)`
 	);
 
 	// Clicking the picture toggles playback and flashes the action just taken over it. Read `paused`
@@ -316,13 +377,15 @@
 		     1. the cover, pre-blurred into a small bitmap once per track and upscaled. No live
 		        filter. Behind the artwork-background setting, so it is still a one-click ablation.
 		        Stretched to the window (`100% 100%`) rather than cropped: at this blur nobody can see
-		        the square has been stretched, and `cover` would throw away its top and bottom. -->
+		        the square has been stretched, and `cover` would throw away its top and bottom.
+		        A new track's wash crossfades with the last one's: an entrance alone dropped the old
+		        one at once and dipped the room to the bare background on every song. -->
 		{#if appearance.artworkBackground && room.wash}
 			{#key room.wash}
 				<div
-					in:fade={{ duration: 700 }}
-					style="background-image:url({room.wash});background-size:100% 100%"
-					class="pointer-events-none absolute inset-0 opacity-50 dark:opacity-60"
+					transition:fade={{ duration: 700 }}
+					style="background-image:url({room.wash});background-size:100% 100%;{room.washVars}"
+					class="pointer-events-none absolute inset-0 opacity-[min(0.5,var(--wash-light))] dark:opacity-[min(0.6,var(--wash-dark))]"
 				></div>
 			{/key}
 		{/if}
@@ -345,9 +408,10 @@
 
 	<!-- === Top strip: where the queue came from, and the way out. === -->
 	<header
-		class="relative z-10 flex h-20 shrink-0 items-center justify-between gap-6 px-8 transition-opacity duration-500 xl:px-14 {calm
+		class="relative z-10 flex shrink-0 items-center justify-between gap-6 px-8 transition-opacity duration-500 xl:px-14 {calm
 			? 'opacity-0'
 			: ''}"
+		style="height:{headerH}"
 	>
 		<div class="min-w-0">
 			<!-- The queue column says this itself. -->
@@ -383,6 +447,7 @@
 		     (cqw/cqh) instead of guessing at the window. -->
 		<div
 			class="flex min-w-0 flex-1 items-center justify-center [container-type:size]"
+			style="padding-bottom:{dockH}px"
 			data-theater-pic
 		>
 			<div style="--side:{side};width:var(--side)">
@@ -481,7 +546,10 @@
 						class={columns ? 'mt-6' : 'mt-8 text-center'}
 					>
 						<h1
-							class="truncate font-heading leading-[1.15] font-bold tracking-tight"
+							bind:this={titleEl}
+							class="font-heading leading-[1.15] font-bold tracking-tight {twoLines
+								? 'line-clamp-2 [overflow-wrap:anywhere]'
+								: 'truncate'}"
 							style="font-size:clamp(1.5rem, var(--side) * {columns ? 0.065 : 0.07}, {columns
 								? '2.25rem'
 								: '3rem'})"
@@ -526,14 +594,18 @@
 		     Never give this a `mask-image` for the end fades, however tempting: it buffers the whole
 		     scroller offscreen on every scroll frame. Same for `backdrop-filter` (see the header).
 		     The scrollbar is hidden from out here, since the child owns the scroller.
-		     `in:` only, never `transition:`. An out transition keeps this in the DOM after the stage
-		     has already given its room back, and the picture recentres in two visible steps. === -->
+		     An entrance only, never an exit: one keeps this in the DOM after the stage has already
+		     given its room back, and the picture recentres in two visible steps. The entrance is
+		     `lyricsCol.animate` (script), since `noLyrics` hides this rather than unmounting it. === -->
 		{#if lyricsShown}
 			<div
-				in:fly={{ y: 24, duration: 400, easing: cubicOut }}
-				class="flex min-h-0 min-w-0 flex-[1.2] flex-col overflow-hidden 2xl:[&_[data-line]]:text-4xl [&_*]:[scrollbar-width:none] [&_*::-webkit-scrollbar]:hidden"
+				bind:this={lyricsCol}
+				class="min-h-0 min-w-0 flex-[1.2] flex-col overflow-hidden 2xl:[&_[data-line]]:text-4xl [&_*]:[scrollbar-width:none] [&_*::-webkit-scrollbar]:hidden {noLyrics
+					? 'hidden'
+					: 'flex'}"
+				style="padding-bottom:{roomFree ? headerH : `${dockH}px`}"
 			>
-				<LyricsView expanded />
+				<LyricsView expanded bind:missing={noLyrics} />
 			</div>
 		{/if}
 		<!-- === The queue, on the backdrop like the lyrics and for the same reason. It keeps its
@@ -549,6 +621,7 @@
 				class="relative z-0 flex min-h-0 shrink-0 flex-col overflow-hidden {both
 					? 'w-[22rem]'
 					: 'w-[28rem] xl:w-[34rem]'}"
+				style="padding-bottom:{roomFree ? headerH : `${dockH}px`}"
 			>
 				<QueueList />
 			</div>
@@ -561,7 +634,8 @@
 				type="button"
 				transition:fly={{ x: 24, duration: 350, easing: cubicOut }}
 				onclick={() => api.nextTrack()}
-				class="absolute right-8 bottom-4 z-20 flex w-80 cursor-pointer items-center gap-3 rounded-2xl border border-foreground/10 bg-background/80 p-2.5 pr-4 text-left transition-colors hover:bg-background xl:right-14"
+				style="bottom:{dockH + 16}px"
+				class="absolute right-8 z-20 flex w-80 cursor-pointer items-center gap-3 rounded-2xl border border-foreground/10 bg-background/80 p-2.5 pr-4 text-left transition-colors hover:bg-background xl:right-14"
 				aria-label="{t('player.up_next')}: {upNext.title}"
 			>
 				{#if upNext.thumbnail}
@@ -584,15 +658,16 @@
 
 	<!-- === The dock: every control on one strip along the bottom. The scrubber runs the full width,
 	     the widest thing on screen to aim at; transport in the middle, what is playing on the left,
-	     what the stage shows on the right. Fades with calm, but keeps its room, so nothing on the
-	     stage moves when it comes and goes. === -->
+	     what the stage shows on the right. Fades with calm and floats over the stage, which lends its
+	     room to the lyrics and the queue while it is gone (see `roomFree`). === -->
 	<div
 		role="group"
+		bind:clientHeight={dockH}
 		onpointerenter={() => (overDock = true)}
 		onpointerleave={() => (overDock = false)}
-		class="relative z-10 mx-auto w-full max-w-[110rem] shrink-0 px-8 pt-3 pb-7 transition-opacity duration-500 xl:px-14 {calm
-			? 'opacity-0'
-			: ''}"
+		class="absolute inset-x-0 bottom-0 z-10 mx-auto w-full max-w-[110rem] px-8 transition-opacity duration-500 xl:px-14 {short.current
+			? 'pt-2 pb-4'
+			: 'pt-3 pb-7'} {calm ? 'opacity-0' : ''}"
 	>
 		<!-- Fixed-width slots for the times: the font may have no tabular figures, and the bar would
 		     shift a few px per tick (#463). -->
@@ -617,7 +692,9 @@
 			<span class="min-w-[5ch]">{fmt(playback.duration)}</span>
 		</div>
 
-		<div class="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-6">
+		<div
+			class="grid grid-cols-[1fr_auto_1fr] items-center gap-6 {short.current ? 'mt-1.5' : 'mt-3'}"
+		>
 			<!-- What's playing: like, the player bar's own ⋮ menu, and Song/Video. -->
 			<div class="flex min-w-0 items-center gap-1">
 				{#if playback.now && !local}
@@ -675,27 +752,38 @@
 				<button
 					type="button"
 					onclick={() => api.prevTrack()}
-					class="flex size-12 cursor-pointer items-center justify-center rounded-full text-foreground/90 transition-colors hover:bg-foreground/10 hover:text-foreground"
+					class="flex cursor-pointer items-center justify-center rounded-full text-foreground/90 transition-colors hover:bg-foreground/10 hover:text-foreground {short.current
+						? 'size-10'
+						: 'size-12'}"
 					aria-label={t('player.previous')}
 				>
-					<HugeiconsIcon icon={PreviousIcon} class="h-6 w-6" />
+					<HugeiconsIcon icon={PreviousIcon} class={short.current ? 'h-5 w-5' : 'h-6 w-6'} />
 				</button>
 				<button
 					type="button"
 					onclick={() => api.togglePause()}
-					class="mx-1 flex size-16 cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform duration-150 hover:scale-[1.06] active:scale-95"
+					class="mx-1 flex cursor-pointer items-center justify-center rounded-full bg-primary text-primary-foreground transition-transform duration-150 hover:scale-[1.06] active:scale-95 {short.current
+						? 'size-12'
+						: 'size-16'}"
 					aria-label={playback.paused ? t('player.play') : t('player.pause')}
 				>
 					<!-- icon swap via altIcon/showAlt: `icon` is frozen at mount -->
-					<HugeiconsIcon icon={PauseIcon} altIcon={PlayIcon} showAlt={playback.paused} class="h-7 w-7" />
+					<HugeiconsIcon
+						icon={PauseIcon}
+						altIcon={PlayIcon}
+						showAlt={playback.paused}
+						class={short.current ? 'h-6 w-6' : 'h-7 w-7'}
+					/>
 				</button>
 				<button
 					type="button"
 					onclick={() => api.nextTrack()}
-					class="flex size-12 cursor-pointer items-center justify-center rounded-full text-foreground/90 transition-colors hover:bg-foreground/10 hover:text-foreground"
+					class="flex cursor-pointer items-center justify-center rounded-full text-foreground/90 transition-colors hover:bg-foreground/10 hover:text-foreground {short.current
+						? 'size-10'
+						: 'size-12'}"
 					aria-label={t('player.next')}
 				>
-					<HugeiconsIcon icon={NextIcon} class="h-6 w-6" />
+					<HugeiconsIcon icon={NextIcon} class={short.current ? 'h-5 w-5' : 'h-6 w-6'} />
 				</button>
 				<button
 					type="button"

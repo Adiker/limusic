@@ -29,7 +29,7 @@
 	import { HELP_COMBO } from '$lib/shortcuts';
 	import { copyText } from '$lib/clipboard';
 	import * as api from '$lib/api';
-	import { blocked, pickDownloadFolder, prefs, refreshView, setAutoplay, ui, toast, unblockArtist } from '$lib/player.svelte';
+	import { blocked, pickDownloadFolder, prefs, refreshLanguage, setAutoplay, ui, toast, unblockArtist } from '$lib/player.svelte';
 	import { win } from '$lib/win.svelte';
 	import { lt } from '$lib/lt.svelte';
 	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte';
@@ -911,7 +911,7 @@
 		onclose={() => (langOpen = false)}
 		onpick={(id) => {
 			langOpen = false;
-			setLocale(id).then(refreshView);
+			setLocale(id).then(refreshLanguage);
 		}}
 	/>
 {/snippet}
