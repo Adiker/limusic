@@ -138,6 +138,7 @@
 		"remove_account_desc": "{name} is only removed from this list. The Google account itself is not affected, and you can sign in with it again whenever you like.",
 		"saved_accounts_hint": "Pick a saved account to switch to it.",
 		"history": "History",
+		"stats": "Stats",
 		"no_channels": "YouTube did not return any selectable channels."
 	},
 	"player": {
@@ -240,9 +241,20 @@
 		"sections_hint": "Drag a section to move it, or focus its handle and use the arrow keys. Hidden sections keep their place.",
 		"move_section": "Move {title}",
 		"moved_section": "{title} moved to position {position} of {total}",
-		"new_section": "New",
-		"show_new": "Show new sections",
-		"show_new_desc": "YouTube adds and renames shelves over time. Turned off, they arrive hidden and wait here until you switch them on.",
+		"kinds": {
+			"listen_again": "Listen again",
+			"quick_picks": "Quick picks",
+			"from_library": "From your library",
+			"community": "From the community",
+			"fresh_finds": "Fresh finds, old favourites",
+			"albums_for_you": "Albums for you",
+			"trending": "Trending songs for you",
+			"featured_playlists": "Featured playlists for you",
+			"new_releases": "New releases",
+			"mixed_for_you": "Mixed for you",
+			"daily_discover": "Your daily discover",
+			"music_videos": "Music videos for you"
+		},
 		"all_hidden": "Everything on home is switched off."
 	},
 	"history": {
@@ -253,6 +265,66 @@
 		"songs_count": "{count} songs",
 		"empty": "Nothing here yet. Anything you play while signed in shows up on this page.",
 		"signed_out": "Sign in to see your YouTube Music listening history."
+	},
+	"stats": {
+		"title": "Listening stats",
+		"ranges": {
+			"week": "7 days",
+			"month": "30 days",
+			"year": "12 months",
+			"all": "All time"
+		},
+		"listened": {
+			"week": "listened in the last 7 days",
+			"month": "listened in the last 30 days",
+			"year": "listened in the last 12 months",
+			"all": "listened since {date}"
+		},
+		"compared": {
+			"week": "vs. the 7 days before",
+			"month": "vs. the 30 days before",
+			"year": "vs. the 12 months before"
+		},
+		"plays": "Plays",
+		"new_songs": "{count} new",
+		"streak": "Day streak",
+		"best_streak": "Best: {count}",
+		"activity": "Listening activity",
+		"daily_average": "Daily average",
+		"monthly_average": "Monthly average",
+		"busiest_day": "Busiest day",
+		"busiest_month": "Busiest month",
+		"busiest_weekday": "Busiest day of the week",
+		"busiest_hour": "Busiest hour",
+		"top_songs": "Top songs",
+		"top_artists": "Top artists",
+		"top_albums": "Top albums",
+		"share": "{percent} of your listening",
+		"when": "When you listen",
+		"dayparts": {
+			"morning": "Morning",
+			"afternoon": "Afternoon",
+			"evening": "Evening",
+			"night": "Night"
+		},
+		"persona": {
+			"morning": "Early bird",
+			"afternoon": "Afternoon listener",
+			"evening": "Evening listener",
+			"night": "Night owl"
+		},
+		"persona_hint": "You listen most between {from} and {to}.",
+		"less": "Less",
+		"more": "More",
+		"nothing_in_range": "Nothing played in this period.",
+		"empty_title": "Your stats start here",
+		"empty": "Play a few songs and this page fills in with what you listen to, when, and for how long.",
+		"on_device": "Counted on this device from what you play in Limusic. Nothing is sent anywhere.",
+		"clear": "Clear listening history",
+		"clear_title": "Clear listening history?",
+		"clear_desc": "This forgets every play counted on this device, so your stats start over and On Repeat empties. Your YouTube Music history isn't touched.",
+		"clear_confirm": "Clear history",
+		"cleared": "Listening history cleared"
 	},
 	"artist": {
 		"subscribe": "Subscribe",
@@ -457,14 +529,16 @@
 			"open_player_hint": "On, playing a song, album or playlist brings up the full player view. Off, it starts playing and leaves you on the page you were browsing.",
 			"tabbed_player": "Queue and lyrics in the player view",
 			"tabbed_player_hint": "On, the player view carries them as tabs and the bar's two buttons switch between them. Off, those buttons only ever open the side panels, which stay open over the player view so you can see both at once.",
-			"stage_player": "New player layout",
-			"stage_player_hint": "The song's title, artist and album under the artwork, queue and lyrics in a full-height column, and the view lit by the cover's colors. Off keeps the original layout.",
+			"classic_player": "Classic player layout",
+			"classic_player_hint": "The original player view: the artwork alone over a blurred copy of the cover, with the song's details left to the player bar. Off uses the new layout, with the title, artist and album under the artwork and the view lit by the cover's colors.",
 			"artwork_background": "Artwork background",
 			"artwork_background_hint": "Tint the player view with the playing track's cover, blurred. Off leaves it plain.",
 			"blur_playlist_header": "Blur playlist headers",
 			"blur_playlist_header_hint": "Show a playlist's cover blurred behind its header. Smooths out covers that look pixelated stretched to the full width.",
 			"artwork_accent": "Adapt colors to artwork",
 			"artwork_accent_hint": "Recolor the app from the playing track's cover: accent, surfaces and borders, fading between tracks. Off keeps the selected theme's own colors.",
+			"matugen": "Matugen",
+			"matugen_hint": "Take every color, accent included, from the palette Matugen makes from your wallpaper. Set up the Limusic template in Matugen first.",
 			"reset_theme_hint": "Drop the color, roundness and font overrides. Keeps the preset.",
 			"interface_font_label": "Interface font",
 			"interface_font_short_hint": "Everything except headings.",

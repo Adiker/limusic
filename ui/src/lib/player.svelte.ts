@@ -19,7 +19,8 @@ import * as pl from './personal';
 import type { Personal } from './personal';
 import { appearance } from './theme.svelte';
 import { currentLocale, pushLocaleToRust, t } from './i18n.svelte';
-import { friendlyNetError } from './neterr';
+import { friendlyNetError, isUnreachable } from './neterr';
+import { whenBackOnline } from './reconnect';
 import { parseScrobbleConfig } from './scrobble';
 
 export const playback = $state({
@@ -179,9 +180,9 @@ const videoUrls = new Map<string, Promise<string | null>>();
  *  (80), and the title block under the picture (9.5rem, `VIDEO_SIDE`). If any of those changes
  *  height, this does. */
 export function wantedVideoHeight() {
-	const px = appearance.stagePlayer
-		? window.innerHeight - 344
-		: (window.innerHeight - 176) * 0.85;
+	const px = appearance.classicPlayer
+		? (window.innerHeight - 176) * 0.85
+		: window.innerHeight - 344;
 	return [360, 480, 720].find((h) => h >= px) ?? 720;
 }
 
@@ -284,6 +285,10 @@ export async function loadLibrary(force = false) {
 		library.loaded = true;
 	} catch (e) {
 		if (generation === libraryGeneration) library.error = String(e);
+		// Run at startup, often before the network is up: without this the sidebar keeps only the
+		// local playlists until something else asks again (#483).
+		if (isUnreachable(String(e)))
+			whenBackOnline(() => generation === libraryGeneration && loadLibrary());
 		// The account's half failed (offline, most likely), and the playlists on this machine need
 		// no network: show them anyway rather than an empty sidebar.
 		refreshLocalPlaylists();
@@ -311,6 +316,8 @@ export async function loadLibraryExtras(force = false) {
 		library.extrasLoaded = true;
 	} catch (e) {
 		if (generation === libraryGeneration) library.extrasError = String(e);
+		if (isUnreachable(String(e)))
+			whenBackOnline(() => generation === libraryGeneration && loadLibraryExtras());
 	} finally {
 		if (generation === libraryGeneration) library.extrasLoading = false;
 	}
@@ -658,8 +665,6 @@ export async function seedOnRepeatPick() {
  * that keeps its slot comes back where it was.
  */
 export function saveHome(patch: Partial<pl.HomeLayout>) {
-	// Spread, not a fresh object: `seen` is written by the feed, not by the panel, and rebuilding
-	// `home` from the lists the panel owns used to drop it.
 	personal.home = { ...personal.home, ...patch };
 	savePersonal();
 }
@@ -669,9 +674,9 @@ export function resetHome() {
 	savePersonal();
 }
 
-/** Remember the shelves this page of the feed carried, for Edit home. See `pl.noteSections`. */
-export function noteHomeSections(titles: string[]) {
-	if (pl.noteSections(personal, titles)) savePersonal();
+/** Carry a pre-#476 arrangement over from shelf titles to kinds. See `pl.adoptKinds`. */
+export function adoptHomeKinds(sections: { title: string; kind?: string }[]) {
+	if (pl.adoptKinds(personal, sections)) savePersonal();
 }
 
 /** Called from every card click app-wide, so only persist when the id was actually on the grid. */
@@ -1286,6 +1291,17 @@ export function refreshView() {
 	ui.epoch++;
 }
 
+/**
+ * After a language change. The page remount alone leaves the sidebar and Library on YouTube's text
+ * in the old language ("43 itens", "Playlist automática"), since the library store outlives routes.
+ */
+export function refreshLanguage() {
+	refreshView();
+	loadLibrary(true);
+	if (library.extrasLoaded) loadLibraryExtras(true);
+	if (library.uploadAlbumsLoaded) loadUploadAlbums(true);
+}
+
 export function openChannelPicker(required = false) {
 	ui.channelPickerRequired = required;
 	ui.channelIdentities = [];
@@ -1700,7 +1716,7 @@ export function initApp(mini = false): () => void {
 			// system, and on the first launch after this shipped. Put it right and refetch: the pages
 			// already on screen were painted in the stale language.
 			if (s.locale !== currentLocale.id) {
-				pushLocaleToRust(currentLocale.id).then(refreshView);
+				pushLocaleToRust(currentLocale.id).then(refreshLanguage);
 			}
 		})
 		.catch(() => {});

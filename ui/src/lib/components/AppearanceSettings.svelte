@@ -46,6 +46,7 @@
 		effective,
 		applyTheme,
 		setCustom,
+		syncMatugen,
 		resetCustom,
 		isDefaultCustom,
 		readBack,
@@ -371,6 +372,11 @@
 					desc: t('settings.themes.artwork_accent_hint'),
 					control: artworkAccentSwitch
 				})}
+				{@render row({
+					title: t('settings.themes.matugen'),
+					desc: t('settings.themes.matugen_hint'),
+					control: matugenSwitch
+				})}
 			</div>
 		</section>
 
@@ -428,9 +434,9 @@
 			<h3 class={LABEL}>{t('settings.sections.player_view')}</h3>
 			<div class={CARD}>
 				{@render row({
-					title: t('settings.themes.stage_player'),
-					desc: t('settings.themes.stage_player_hint'),
-					control: stagePlayerSwitch
+					title: t('settings.themes.classic_player'),
+					desc: t('settings.themes.classic_player_hint'),
+					control: classicPlayerSwitch
 				})}
 				{@render row({
 					title: t('settings.themes.open_player'),
@@ -500,6 +506,7 @@
 		     there, so it shows the preset's colour even while a custom one is applied. -->
 		<button
 			type="button"
+			disabled={appearance.matugen}
 			onclick={() => commit({ accent: null })}
 			aria-pressed={!accentNow}
 			aria-label={t('settings.themes.accent_theme')}
@@ -518,6 +525,7 @@
 		{#each ACCENTS as hex (hex)}
 			<button
 				type="button"
+				disabled={appearance.matugen}
 				onclick={() => commit({ accent: hex })}
 				aria-pressed={accentNow === hex}
 				aria-label="{t('a11y.choose_accent')}: {hex}"
@@ -542,6 +550,7 @@
 		>
 			<!-- A hue wheel until a colour of your own is picked, then that colour. -->
 			<Popover.Trigger
+				disabled={appearance.matugen}
 				aria-label={t('a11y.choose_accent')}
 				title={t('a11y.choose_accent')}
 				class="flex size-7 cursor-pointer items-center justify-center rounded-full ring-offset-2 ring-offset-card {customAccent ||
@@ -567,7 +576,7 @@
 			</Popover.Content>
 		</Popover.Root>
 	</div>
-	{#if appearance.artworkAccent && playback.now}
+	{#if appearance.artworkAccent && !appearance.matugen && playback.now}
 		<p class="mt-3 max-w-prose text-xs leading-relaxed text-muted-foreground">
 			{t('settings.themes.accent_artwork_note')}
 		</p>
@@ -647,15 +656,24 @@
 
 {#snippet artworkAccentSwitch()}<Switch
 		checked={appearance.artworkAccent}
+		disabled={appearance.matugen}
 		onCheckedChange={(on) => setAppearance({ artworkAccent: on })}
+	/>{/snippet}
+{#snippet matugenSwitch()}<Switch
+		checked={appearance.matugen}
+		onCheckedChange={async (on) => {
+			pickerOpen = false;
+			setAppearance({ matugen: on });
+			await syncMatugen();
+		}}
 	/>{/snippet}
 {#snippet blurHeaderSwitch()}<Switch
 		checked={appearance.blurPlaylistHeader}
 		onCheckedChange={(on) => setAppearance({ blurPlaylistHeader: on })}
 	/>{/snippet}
-{#snippet stagePlayerSwitch()}<Switch
-		checked={appearance.stagePlayer}
-		onCheckedChange={(on) => setAppearance({ stagePlayer: on })}
+{#snippet classicPlayerSwitch()}<Switch
+		checked={appearance.classicPlayer}
+		onCheckedChange={(on) => setAppearance({ classicPlayer: on })}
 	/>{/snippet}
 {#snippet openPlayerSwitch()}<Switch
 		checked={appearance.openPlayerOnPlay}

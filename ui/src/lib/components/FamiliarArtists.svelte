@@ -17,7 +17,8 @@
 	import * as api from '$lib/api';
 	import type { ArtistPage, BrowseItem } from '$lib/api';
 	import { thumb } from '$lib/thumb';
-	import { getCached, putCached } from '$lib/pagecache';
+	import { putCached } from '$lib/pagecache';
+	import { artistPage } from '$lib/browse';
 	import { topArtistIds } from '$lib/personal';
 	import { personal, toast } from '$lib/player.svelte';
 	import { t } from '$lib/i18n.svelte';
@@ -52,25 +53,15 @@
 
 	const ids = topArtistIds(personal, COUNT + SLACK);
 
-	const src = (a: ArtistPage) => ((attempt[a.channelId] ?? 0) === 0 ? thumb(a.thumbnail, 400) : a.thumbnail);
-	const hasArt = (a: ArtistPage) => !!a.thumbnail && (attempt[a.channelId] ?? 0) < 2;
+	// A channel YouTube Music doesn't treat as an artist has a wide banner as `thumbnail` and its
+	// round avatar apart; the avatar is the one that crops to a poster.
+	const art = (a: ArtistPage) => a.avatar ?? a.thumbnail;
+	const src = (a: ArtistPage) => ((attempt[a.channelId] ?? 0) === 0 ? thumb(art(a), 400) : art(a));
+	const hasArt = (a: ArtistPage) => !!art(a) && (attempt[a.channelId] ?? 0) < 2;
 	const imgFailed = (a: ArtistPage) => {
 		const n = attempt[a.channelId] ?? 0;
-		attempt = { ...attempt, [a.channelId]: n === 0 && thumb(a.thumbnail, 400) !== a.thumbnail ? 1 : 2 };
+		attempt = { ...attempt, [a.channelId]: n === 0 && thumb(art(a), 400) !== art(a) ? 1 : 2 };
 	};
-
-	async function fetchArtist(id: string): Promise<ArtistPage | null> {
-		const key = `artist:${id}`;
-		const hit = getCached<ArtistPage>(key);
-		if (hit) return hit;
-		try {
-			const page = await api.getArtist(id);
-			putCached(key, page);
-			return page;
-		} catch {
-			return null; // one dead channel doesn't cost the section
-		}
-	}
 
 	onMount(async () => {
 		if (ids.length < MIN) {
@@ -83,7 +74,7 @@
 		const pages = (
 			await Promise.all(
 				ids.map(async (id) => {
-					const page = await fetchArtist(id);
+					const page = await artistPage(id); // null: one dead channel doesn't cost the section
 					return page?.name
 						? { ...page, browseId: id, plays: personal.artists[id]?.count ?? 0 }
 						: null;
@@ -104,7 +95,7 @@
 		id: a.browseId,
 		title: a.name ?? t('common.artist_singular'),
 		subtitle: a.subscribers,
-		thumbnail: a.thumbnail
+		thumbnail: art(a)
 	});
 
 	const open = (a: Familiar) => goto(`/artist/${encodeURIComponent(a.browseId)}`);

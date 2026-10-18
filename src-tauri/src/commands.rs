@@ -378,6 +378,12 @@ fn native_chrome(db: &crate::db::Db) -> &'static str {
     }
 }
 
+/// GTK's `gtk-decoration-layout` (`menu:close`, `:minimize,maximize,close`), read once on the main
+/// thread in `setup`. Linux only: the titlebar draws minimize and maximize only when it names
+/// them, as GTK's own headerbars do (#481). Tiling compositors (Hyprland, sway, niri) ignore
+/// minimize and often drop maximize, and their unconfigured layout is `menu:close`.
+pub static BUTTON_LAYOUT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 #[tauri::command]
 pub async fn get_settings(state: St<'_>) -> Result<serde_json::Value, String> {
     let mut map: serde_json::Map<String, serde_json::Value> = state
@@ -392,6 +398,9 @@ pub async fn get_settings(state: St<'_>) -> Result<serde_json::Value, String> {
         serde_json::Value::String(crate::downloads::download_quality(&state.db))
     });
     map.insert("native_video".into(), crate::state::native_video().to_string().into());
+    if let Some(layout) = BUTTON_LAYOUT.get() {
+        map.insert("button_layout".into(), layout.clone().into());
+    }
     Ok(serde_json::Value::Object(map))
 }
 
@@ -915,6 +924,19 @@ pub async fn get_home_more(state: St<'_>, token: String) -> Result<HomePage, Str
     state.it.home_continuation(client, &token).await.map_err(|e| e.to_string())
 }
 
+/// Whether YouTube Music answers at all, for the UI's offline retries (#483): it asks this until
+/// the answer is yes and only then reloads the page, so a dead connection doesn't flash skeletons
+/// on every try. Any status counts, only getting no reply means the network is still down.
+#[tauri::command]
+pub async fn network_reachable() -> bool {
+    crate::http::client()
+        .head("https://music.youtube.com/")
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+        .is_ok()
+}
+
 /// Why a comments command failed, as a stable word the UI words itself. Details go to the debug log.
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -1362,12 +1384,34 @@ pub async fn set_playlist_sort(
     state.it.playlist_set_sort(client, &playlist_id, sort).await.map_err(|e| e.to_string())
 }
 
-/// videoId → how many times it was played, over the same trailing window On Repeat is built from
-/// (the history table is pruned to it, so there is no older data to offer). Feeds the playlist
-/// page's "Most played" sort; a track the map doesn't mention has not been played this month.
+/// videoId → how many times it was played, over the same trailing window On Repeat is built from.
+/// Feeds the playlist page's "Most played" sort; a track the map doesn't mention has not been
+/// played this month.
 #[tauri::command]
 pub fn play_counts(state: St<'_>) -> std::collections::HashMap<String, i64> {
     state.db.play_counts(now_secs() - ON_REPEAT_WINDOW_SECS).into_iter().collect()
+}
+
+/// The stats page (#396): everything heard since `since` (unix secs, 0 for all time). The page
+/// picks the window, because the calendar it is drawn against is the webview's.
+#[tauri::command]
+pub fn listening_stats(state: St<'_>, since: i64) -> crate::stats::Stats {
+    let now = now_secs();
+    let since = since.clamp(0, now);
+    let raw = state.db.listening(since, now);
+    let all_time = !matches!(raw.first_at, Some(first) if since > first);
+    let mut stats = crate::stats::shape(raw, all_time);
+    for t in &mut stats.top_songs {
+        t.song = shed_queue_context(std::mem::take(&mut t.song));
+    }
+    stats
+}
+
+/// "Clear listening history" on the stats page. On Repeat empties too: it is built from the same
+/// plays.
+#[tauri::command]
+pub fn clear_listening_history(state: St<'_>) {
+    state.db.clear_listens();
 }
 
 /// The On Repeat track list: most-played first, over the trailing window. Rows whose stored JSON
@@ -2766,15 +2810,31 @@ pub async fn listenbrainz_profile(
 /// So: restore from the real placement, go fullscreen, then put the window on the monitor rect
 /// with SWP_FRAMECHANGED to force one recalculation with the fullscreen flag set. On the main
 /// thread, where the window messages run inline and the order is guaranteed.
+///
+/// A window that was fullscreen already when theater opened (macOS's green button, a window
+/// manager's shortcut) is left alone both ways, so closing theater doesn't drop the user out of a
+/// fullscreen they chose (#485).
 #[tauri::command]
 pub fn theater_fullscreen(window: tauri::WebviewWindow, on: bool) -> Result<(), String> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static WAS_FULLSCREEN: AtomicBool = AtomicBool::new(false);
+    if on {
+        let already = window.is_fullscreen().unwrap_or(false);
+        WAS_FULLSCREEN.store(already, Ordering::Relaxed);
+        if already {
+            return Ok(());
+        }
+    } else if WAS_FULLSCREEN.swap(false, Ordering::Relaxed) {
+        return Ok(());
+    }
+
     #[cfg(not(target_os = "windows"))]
     {
         window.set_fullscreen(on).map_err(|e| e.to_string())
     }
     #[cfg(target_os = "windows")]
     {
-        use std::sync::atomic::{AtomicBool, Ordering};
         use windows::Win32::UI::WindowsAndMessaging::{
             IsZoomed, SetWindowPos, ShowWindow, SWP_FRAMECHANGED, SWP_NOMOVE, SWP_NOSIZE,
             SWP_NOZORDER, SW_MAXIMIZE, SW_RESTORE,
@@ -2833,6 +2893,21 @@ pub fn theater_fullscreen(window: tauri::WebviewWindow, on: bool) -> Result<(), 
             })
             .map_err(|e| e.to_string())
     }
+}
+
+#[tauri::command]
+pub fn get_matugen_theme(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    crate::matugen::read(&app)
+}
+
+#[tauri::command]
+pub fn start_matugen_watcher(app: tauri::AppHandle) -> Result<(), String> {
+    crate::matugen::start(app)
+}
+
+#[tauri::command]
+pub fn stop_matugen_watcher() {
+    crate::matugen::stop();
 }
 
 #[cfg(test)]
