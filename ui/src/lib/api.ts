@@ -36,6 +36,9 @@ export interface SongItem {
 	 * Taste Match row more than one member shares). */
 	added_by?: string;
 	added_by_avatars?: string[];
+	/** When the track went into the playlist (unix seconds). Playlists on this machine only:
+	 *  YouTube sends no such date for its own. */
+	added_at?: number;
 	/** The signed-in user's rating (absent when the response didn't say — same as 'indifferent'). */
 	rating?: Rating;
 	/** "Add to library" off the row's own menu, with a token for each direction. Absent on rows
@@ -855,6 +858,8 @@ export interface ListeningStats {
 /** `since`: unix secs where the window starts, 0 for all time. It always ends now. */
 export const listeningStats = (since: number) =>
 	invoke<ListeningStats>('listening_stats', { since });
+/** The `limit` most played artists of all time, on the stats page's counts. Home's Familiar Artists. */
+export const topArtists = (limit: number) => invoke<TopArtist[]>('top_artists', { limit });
 /** Forget every counted play. On Repeat empties with it. */
 export const clearListeningHistory = () => invoke<void>('clear_listening_history');
 /**

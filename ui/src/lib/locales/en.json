@@ -1048,6 +1048,10 @@
 		"search_go": "Search",
 		"search_reset": "Back to this song",
 		"search_results": "Results for {query}",
+		"text_size": "Text size",
+		"text_size_hint": "Make the lyrics larger or smaller",
+		"text_size_larger": "Larger text",
+		"text_size_smaller": "Smaller text",
 		"translation": "Translation",
 		"translation_hint": "Show the translation some sources add under each line",
 		"about": {
@@ -1123,6 +1127,17 @@
 		"ascending": "ascending",
 		"descending": "descending",
 		"top": "Top voted"
+	},
+	"columns": {
+		"label": "Columns",
+		"choose": "Choose columns",
+		"title": "Title",
+		"album": "Album",
+		"added": "Date added",
+		"by": "Added by",
+		"plays": "Plays",
+		"mine": "Your plays",
+		"duration": "Duration"
 	},
 	"changelog": {
 		"version": "Version {version}",
