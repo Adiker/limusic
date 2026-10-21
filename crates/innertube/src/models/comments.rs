@@ -881,6 +881,29 @@ pub(crate) mod tests {
         })
     }
 
+    #[test]
+    fn an_empty_comment_keeps_its_identity_and_does_not_hide_other_threads() {
+        // YouTube's live response for dQw4w9WgXcQ included content: { content: "" } among
+        // otherwise readable comments. An empty string is still a comment, not a missing entity.
+        let mut empty = case("empty", false, None, None, vec![]);
+        empty.mutations[0]["payload"]["commentEntityPayload"]["properties"]["content"]["content"] =
+            json!("");
+        let root = page(
+            None,
+            vec![empty, case("readable", false, None, None, vec![])],
+            Some(continuation_item("fixture-next")),
+        );
+
+        let parsed = parse_comments_page(&root, false);
+        assert_eq!(parsed.state, CommentsState::Ok);
+        assert_eq!(parsed.threads.len(), 2);
+        assert_eq!(parsed.threads[0].comment.id, "empty");
+        assert_eq!(parsed.threads[0].comment.text, "");
+        assert_eq!(parsed.threads[1].comment.id, "readable");
+        assert_eq!(parsed.threads[1].comment.text, "Comment readable");
+        assert_eq!(parsed.continuation.as_deref(), Some("fixture-next"));
+    }
+
     /// Threads come out in the order of `continuationItems`: not the order of the entity
     /// mutations, not alphabetical, and not whatever a hash map happens to iterate in.
     #[test]
