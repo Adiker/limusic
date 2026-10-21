@@ -784,10 +784,16 @@ async fn comments_load_for_an_audio_track_and_a_video() {
         let header = page.header.as_ref().expect("first page carries a header");
         let sorts: Vec<_> = header.sorts.iter().map(|s| s.key).collect();
         assert_eq!(sorts, [CommentSortKey::Top, CommentSortKey::Newest]);
-        assert!(page
-            .threads
-            .iter()
-            .all(|t| !t.comment.text.is_empty() && !t.comment.id.is_empty()));
+        assert!(
+            page.threads.iter().all(|t| !t.comment.id.is_empty()),
+            "{label} {id}: a comment has no identifier"
+        );
+        // YouTube can return an empty content string for an individual comment. Still require
+        // readable text somewhere on the page so a broken text parser cannot pass unnoticed.
+        assert!(
+            page.threads.iter().any(|t| !t.comment.text.trim().is_empty()),
+            "{label} {id}: no comment on the page has readable text"
+        );
 
         let token = page.continuation.clone().expect("a second page token");
         let more =
