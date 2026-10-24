@@ -786,13 +786,25 @@ async fn comments_load_for_an_audio_track_and_a_video() {
         assert_eq!(sorts, [CommentSortKey::Top, CommentSortKey::Newest]);
         assert!(
             page.threads.iter().all(|t| !t.comment.id.is_empty()),
-            "{label} {id}: a comment has no identifier"
+            "{label} {id}: a thread has no id"
         );
-        // YouTube can return an empty content string for an individual comment. Still require
-        // readable text somewhere on the page so a broken text parser cannot pass unnoticed.
+        // One top comment with an empty body is one commenter's doing, not a shape change: it
+        // turned the nightly red twice, on the runner's region only. A moved content path empties
+        // every thread at once. The ids say which comment it was (`watch?v=<id>&lc=<comment id>`).
+        let blank: Vec<_> = page
+            .threads
+            .iter()
+            .filter(|t| t.comment.text.trim().is_empty())
+            .map(|t| t.comment.id.as_str())
+            .collect();
+        if !blank.is_empty() {
+            eprintln!("  no text on {blank:?}");
+        }
         assert!(
-            page.threads.iter().any(|t| !t.comment.text.trim().is_empty()),
-            "{label} {id}: no comment on the page has readable text"
+            blank.len() * 2 < page.threads.len(),
+            "{label} {id}: {} of {} threads have no text, the comment content path moved",
+            blank.len(),
+            page.threads.len()
         );
 
         let token = page.continuation.clone().expect("a second page token");
