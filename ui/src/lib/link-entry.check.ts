@@ -49,7 +49,7 @@ assert.equal(navigated.length, 4);
 
 // Capture the actual app listener, with just its browser and player dependencies replaced.
 for (const platform of ['Linux', 'MacIntel']) {
-	let listener: ((event: KeyboardEvent) => void) | undefined;
+	const listeners = new Map<string, Function[]>();
 	let focused = 0;
 	let selected = 0;
 	let quits = 0;
@@ -68,10 +68,13 @@ for (const platform of ['Linux', 'MacIntel']) {
 				querySelector: (selector: string) => selector === '[data-link-input]' ? pageInput : dialog
 			},
 			window: {
-				addEventListener: (_name: string, fn: typeof listener) => (listener = fn),
-				removeEventListener: (_name: string, fn: typeof listener) => {
-					assert.equal(fn, listener);
-					listener = undefined;
+				addEventListener: (name: string, fn: Function) => {
+					listeners.set(name, [...(listeners.get(name) ?? []), fn]);
+				},
+				removeEventListener: (name: string, fn: Function) => {
+					const entries = listeners.get(name) ?? [];
+					assert.ok(entries.includes(fn));
+					listeners.set(name, entries.filter((entry) => entry !== fn));
 				}
 			}
 		}
@@ -80,6 +83,7 @@ for (const platform of ['Linux', 'MacIntel']) {
 	let stop = initShortcuts();
 	function press(overrides: Partial<KeyboardEvent> = {}) {
 		let prevented = false;
+		const listener = listeners.get('keydown')?.[0];
 		assert.ok(listener);
 		listener({
 			key: 'l', ctrlKey: platform !== 'MacIntel', metaKey: platform === 'MacIntel',
@@ -121,7 +125,7 @@ for (const platform of ['Linux', 'MacIntel']) {
 	assert.equal(press({ key: 'q', defaultPrevented: true }), false);
 	assert.equal(quits, 2);
 	stop();
-	assert.equal(listener, undefined);
+	assert.ok([...listeners.values()].every((entries) => entries.length === 0));
 	stop = initShortcuts(true);
 	assert.equal(press(), false); // no URL UI in the mini player
 	assert.equal(press({ key: 'д', code: 'KeyL' }), false);

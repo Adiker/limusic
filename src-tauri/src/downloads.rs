@@ -390,6 +390,7 @@ pub fn playback_data(db: &Db, video_id: &str) -> Option<PlaybackData> {
         duration: item.duration,
         thumbnail: item.thumbnail,
         is_video: Some(false),
+        is_episode: None,
         stream_client: "download".to_owned(),
     })
 }

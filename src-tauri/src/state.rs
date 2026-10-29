@@ -62,6 +62,8 @@ pub struct AppState {
     pub orchestrator: Arc<Orchestrator>,
     /// Listen Together session (context/19). Drives host broadcasts + guest gating.
     pub lt: Arc<LtSession>,
+    // Serialize effect commands with the room's tempo reset, including requests already pending.
+    playback_effects: Mutex<()>,
     /// mpv's on-disk audio cache dir (context/14) — wiped by the settings "Clear caches" action.
     cache_dir: std::path::PathBuf,
     /// OS media integration (MPRIS/SMTC/NowPlaying). `None` if it failed to init. context/16.
@@ -496,6 +498,7 @@ impl AppState {
             lastfm,
             downloads,
             queue: Mutex::new(QueueState::default()),
+            playback_effects: Mutex::new(()),
             auth: tokio::sync::Mutex::default(),
             history_pinged: AtomicBool::new(false),
             listen: std::sync::Mutex::default(),
@@ -1261,6 +1264,7 @@ impl AppState {
                 // the cache window (hours, and every track you just listened to) would fall back
                 // to the queue row's flag, which is exactly the thing that can't be trusted.
                 is_video: c.is_video,
+                is_episode: c.is_episode,
                 stream_client: c.client.unwrap_or_else(|| "cache".to_owned()),
             });
         }
@@ -1282,6 +1286,7 @@ impl AppState {
                     expires_at: now + data.expires_in_seconds.max(0),
                     loudness_db: data.loudness_db,
                     is_video: data.is_video,
+                    is_episode: data.is_episode,
                     ping_url: data.playback_ping.as_ref().map(|p| p.url.clone()),
                     ping_client: data.playback_ping.as_ref().map(|p| p.client.clone()),
                     client: Some(data.stream_client.clone()),
@@ -1834,7 +1839,7 @@ impl AppState {
             let resume = q.duration > 0.0 && pos > 1.0 && pos < q.duration;
             let Some(item) = q.items.get_mut(cur) else { return };
             let old = item.video_id.clone();
-            let pos = twin_position(pos, item.counterpart_offset_ms);
+            let pos = twin_position(pos, &item.counterpart_segments);
             if !swap_version(item) {
                 return;
             }
@@ -2250,6 +2255,7 @@ impl AppState {
             data.duration.as_deref(),
             data.artists.as_deref(),
             data.is_video,
+            data.is_episode,
         );
         self.attach_video(&item.video_id, item.is_video, &stream_url);
         {
@@ -2272,6 +2278,7 @@ impl AppState {
                         data.duration.as_deref(),
                         data.artists.as_deref(),
                         data.is_video,
+                        data.is_episode,
                     );
                 }
             }
@@ -2411,7 +2418,13 @@ impl AppState {
         // Same backfill as start_current: a gapless advance emits this item straight from the
         // queue, so the repair has to land before it becomes the current track.
         if let Some(qi) = q.items.get_mut(next_idx) {
-            backfill_metadata(qi, data.duration.as_deref(), data.artists.as_deref(), data.is_video);
+            backfill_metadata(
+                qi,
+                data.duration.as_deref(),
+                data.artists.as_deref(),
+                data.is_video,
+                data.is_episode,
+            );
             // Resolved now, minutes early, so the picture is there the moment the track starts.
             self.attach_video(&qi.video_id, qi.is_video, &url);
         }
@@ -2464,6 +2477,8 @@ impl AppState {
             // YouTube's own `musicVideoType` says this track is a video upload, not the generated
             // audio track, which is what the player view's music-video mode gates on (plan 031).
             "isVideo": item.is_video,
+            // Podcast controls in the transport (#500).
+            "isEpisode": item.is_episode,
         })
     }
 
@@ -2471,6 +2486,7 @@ impl AppState {
     /// player (a second webview, created long after the track started) and the main window on a
     /// cold start both have to ask once instead of guessing.
     pub async fn playback_snapshot(&self) -> serde_json::Value {
+        let (speed, semitones, reverb) = self.player.playback_params();
         let (duration, item) = {
             let q = self.queue.lock().await;
             (q.duration, q.items.get(q.current).cloned())
@@ -2482,6 +2498,9 @@ impl AppState {
             // 0 until mpv loads the file, which a restored track waits for until play (#502).
             "duration": if duration > 0.0 { duration } else { item.as_ref().map_or(0.0, row_secs) },
             "volume": saved_volume(&self.db),
+            "speed": speed,
+            "semitones": semitones,
+            "reverb": reverb,
         })
     }
 
@@ -2612,6 +2631,63 @@ impl AppState {
         }
     }
 
+    pub async fn set_playback_params(
+        &self,
+        speed: f64,
+        semitones: i32,
+        reverb: player::Reverb,
+    ) -> Result<(), String> {
+        let _effects = self.playback_effects.lock().await;
+        if self.lt.in_room().await && speed != 1.0 {
+            return Err("Tempo cannot be changed during shared listening".into());
+        }
+        self.apply_playback_params(speed, semitones, reverb).await
+    }
+
+    // Caller holds playback_effects through the update and notification so two windows cannot
+    // emit confirmations out of order. The room reset uses this same path before shared playback.
+    async fn apply_playback_params(
+        &self,
+        speed: f64,
+        semitones: i32,
+        reverb: player::Reverb,
+    ) -> Result<(), String> {
+        self.player.set_playback_params(speed, semitones, reverb).map_err(|e| e.to_string())?;
+        self.media_refresh_timing().await;
+        let _ = self.app.emit(
+            "playback-params",
+            serde_json::json!({ "speed": speed, "semitones": semitones, "reverb": reverb }),
+        );
+        Ok(())
+    }
+
+    async fn reset_room_tempo(&self) -> Result<(), String> {
+        let _effects = self.playback_effects.lock().await;
+        let (speed, semitones, reverb) = self.player.playback_params();
+        if self.lt.in_room().await && speed != 1.0 {
+            self.apply_playback_params(1.0, semitones, reverb).await?;
+        }
+        Ok(())
+    }
+
+    /// Tempo changes do not emit a new mpv duration; refresh OS and Discord timelines immediately.
+    pub async fn media_refresh_timing(&self) {
+        let secs = self.queue.lock().await.duration;
+        let speed = self.player.speed();
+        if let Some(m) = &self.media {
+            if secs > 0.0 {
+                m.set_duration(secs, speed);
+            }
+            self.media_set_playing(self.is_playing.load(Ordering::Relaxed));
+        }
+        if let Some(d) = &self.discord {
+            if secs > 0.0 {
+                d.set_duration(secs, speed);
+            }
+            d.set_position(self.current_position(), speed);
+        }
+    }
+
     /// Push play/pause state + the current position to the OS media controls (context/16) and
     /// Discord. The single choke point for play/pause, so both stay in step with mpv. Discord gets
     /// the flag only — its position flows exclusively through the ticks, so a stale
@@ -2623,7 +2699,7 @@ impl AppState {
             let pos = self.current_position();
             // Record what the controls now hold, or the next tick would repeat this very push.
             *self.last_media_state.lock().unwrap() = Some((playing, pos));
-            m.set_playback(playing, pos);
+            m.set_playback(playing, pos, self.player.speed());
         }
         #[cfg(target_os = "windows")]
         crate::taskbar::set_playing(&self.app, playing);
@@ -2915,11 +2991,12 @@ impl AppState {
     pub async fn on_duration(&self, secs: f64) {
         if secs.is_finite() && secs > 0.0 {
             self.queue.lock().await.duration = secs;
+            let speed = self.player.speed();
             if let Some(m) = &self.media {
-                m.set_duration(secs);
+                m.set_duration(secs, speed);
             }
             if let Some(d) = &self.discord {
-                d.set_duration(secs);
+                d.set_duration(secs, speed);
             }
             self.lastfm.set_duration(secs);
         }
@@ -3282,6 +3359,7 @@ impl AppState {
             // synchronous on mpv's core lock. `is_playing` is kept current by `PlayerEvent::Playing`,
             // which mpv now pushes (it derives from `idle-active`, not just `pause`).
             let playing = self.is_playing.load(Ordering::Relaxed);
+            let speed = self.player.speed();
             if let Some(m) = &self.media {
                 // Push when the play state flipped, or when the position moved further than one
                 // tick of ordinary playback explains (a seek, a track change). Not every second:
@@ -3295,11 +3373,11 @@ impl AppState {
                 if send {
                     *last = Some((playing, pos));
                     drop(last);
-                    m.set_playback(playing, pos);
+                    m.set_playback(playing, pos, speed);
                 }
             }
             if let Some(d) = &self.discord {
-                d.set_position(pos);
+                d.set_position(pos, speed);
             }
             self.lastfm.set_position(pos);
         }
@@ -3383,6 +3461,13 @@ impl AppState {
     /// Apply one sync command from the connection (the bridge task drives this). Guest playback +
     /// host seeding. See `crate::listentogether`.
     pub async fn apply_sync(self: &std::sync::Arc<Self>, cmd: SyncCommand) {
+        // Membership has already changed. Finish any earlier effect request, restore the shared
+        // clock, then seed/apply playback. Later non-1x commands recheck membership under the lock.
+        if let Err(error) = self.reset_room_tempo().await {
+            let _ = self.player.pause();
+            self.emit_error("", &format!("Could not restore shared playback tempo: {error}"));
+            return;
+        }
         match cmd {
             SyncCommand::HostSeed => {
                 self.apply_crossfade().await;
@@ -3535,6 +3620,18 @@ impl AppState {
             self.history_pinged.store(false, Ordering::Relaxed);
             self.end_listen();
             q.duration = 0.0;
+            // The wire row carries neither flag, so this guest's own `/player` reply sets them, as
+            // `start_current` does: the music video and the podcast controls (#500).
+            let cur = q.current;
+            if let Some(qi) = q.items.get_mut(cur).filter(|qi| qi.video_id == track.id) {
+                backfill_metadata(
+                    qi,
+                    data.duration.as_deref(),
+                    data.artists.as_deref(),
+                    data.is_video,
+                    data.is_episode,
+                );
+            }
         }
         if let Some(item) = self.current_item().await {
             self.emit_now_playing(&item, "listen-together");
@@ -4193,10 +4290,12 @@ fn track_to_song(t: &Track) -> SongItem {
         queued_from: None,
         autoplay: false,
         is_video: false,
+        // Not on the wire either; `lt_apply_change_track` backfills it from the guest's `/player`.
+        is_episode: false,
         // Only the host switches versions (`switch_version`), so a guest's row needs no twin.
         counterpart: None,
         counterpart_thumbnail: None,
-        counterpart_offset_ms: 0,
+        counterpart_segments: Vec::new(),
         // The Listen Together wire shape carries no upload flag either; a guest could not stream
         // the host's upload anyway, so false is the right answer, not a lossy one.
         is_upload: false,
@@ -4623,25 +4722,55 @@ pub(crate) fn swap_version(item: &mut SongItem) -> bool {
     if let (Some(a), Some(b)) = (item.thumbnail.as_mut(), item.counterpart_thumbnail.as_mut()) {
         std::mem::swap(a, b);
     }
-    item.counterpart_offset_ms = -item.counterpart_offset_ms;
-    true
-}
-
-/// Take `from`'s twin, with its art and offset, when `into` has none. True when it did.
-fn adopt_twin(into: &mut SongItem, from: &SongItem) -> bool {
-    if into.counterpart.is_some() || from.counterpart.is_none() {
-        return false;
+    for seg in &mut item.counterpart_segments {
+        std::mem::swap(&mut seg.start_ms, &mut seg.twin_start_ms);
     }
-    into.counterpart = from.counterpart.clone();
-    into.counterpart_thumbnail = from.counterpart_thumbnail.clone();
-    into.counterpart_offset_ms = from.counterpart_offset_ms;
+    // `twin_position` walks them in this version's order.
+    item.counterpart_segments.sort_by_key(|s| s.start_ms);
     true
 }
 
-/// Where `pos` (seconds into this version) falls in its counterpart, which starts `offset_ms` into
-/// this one: a video's intro is skipped going to the song and added back coming from it (#520).
-fn twin_position(pos: f64, offset_ms: i64) -> f64 {
-    (pos - offset_ms as f64 / 1000.0).max(0.0)
+/// Take `from`'s twin, with its art and segments, when `into` has none, or fill in what `into`
+/// lacks for the same twin. True when anything changed.
+fn adopt_twin(into: &mut SongItem, from: &SongItem) -> bool {
+    let Some(twin) = &from.counterpart else { return false };
+    match &into.counterpart {
+        None => {
+            into.counterpart = Some(twin.clone());
+            into.counterpart_thumbnail = from.counterpart_thumbnail.clone();
+            into.counterpart_segments = from.counterpart_segments.clone();
+            true
+        }
+        // An album page names the video but carries neither its art nor the segments (#535).
+        Some(have) if have == twin => {
+            let mut learned = false;
+            if into.counterpart_thumbnail.is_none() && from.counterpart_thumbnail.is_some() {
+                into.counterpart_thumbnail = from.counterpart_thumbnail.clone();
+                learned = true;
+            }
+            if into.counterpart_segments.is_empty() && !from.counterpart_segments.is_empty() {
+                into.counterpart_segments = from.counterpart_segments.clone();
+                learned = true;
+            }
+            learned
+        }
+        Some(_) => false,
+    }
+}
+
+/// Where `pos` (seconds into this version) falls in its counterpart, through the segment playing
+/// (#520, #535). An intro or a break in the video has no moment in the song, so it lands where the
+/// song picks up again; past the last segment, at its end. No segments: the same timestamp.
+fn twin_position(pos: f64, segments: &[innertube::Segment]) -> f64 {
+    let ms = (pos * 1000.0).round() as i64;
+    let twin_ms = match segments.iter().find(|s| ms < s.start_ms + s.duration_ms) {
+        Some(s) => s.twin_start_ms + (ms - s.start_ms).max(0),
+        None => match segments.last() {
+            Some(s) => s.twin_start_ms + s.duration_ms,
+            None => return pos,
+        },
+    };
+    twin_ms as f64 / 1000.0
 }
 
 /// Whether a row YouTube pairs with its other version should play the music video (#464).
@@ -4673,6 +4802,7 @@ fn backfill_metadata(
     length_seconds: Option<&str>,
     author: Option<&str>,
     is_video: Option<bool>,
+    is_episode: Option<bool>,
 ) {
     if item.duration.is_none() {
         if let Some(secs) = length_seconds.and_then(|s| s.trim().parse::<i64>().ok()) {
@@ -4685,6 +4815,9 @@ fn backfill_metadata(
     // on an audio track would put the still album-art "video" on screen (plan 031).
     if let Some(is_video) = is_video {
         item.is_video = is_video;
+    }
+    if let Some(is_episode) = is_episode {
+        item.is_episode = is_episode;
     }
     if let Some(author) = author.map(str::trim).filter(|a| !a.is_empty()) {
         if item.artists.trim().is_empty() || item.artists.contains('•') {
@@ -4849,17 +4982,19 @@ mod tests {
             counterpart: Some("video".into()),
             thumbnail: Some("cover".into()),
             counterpart_thumbnail: Some("frame".into()),
-            counterpart_offset_ms: -5477,
+            counterpart_segments: vec![seg(0, 5477, 484451)],
             ..Default::default()
         };
         assert!(swap_version(&mut it));
         assert_eq!((it.video_id.as_str(), it.counterpart.as_deref()), ("video", Some("audio")));
         assert!(it.is_video);
-        assert_eq!((it.thumbnail.as_deref(), it.counterpart_offset_ms), (Some("frame"), 5477));
+        assert_eq!(it.thumbnail.as_deref(), Some("frame"));
+        assert_eq!(it.counterpart_segments, [seg(5477, 0, 484451)]);
         assert!(swap_version(&mut it));
         assert_eq!((it.video_id.as_str(), it.counterpart.as_deref()), ("audio", Some("video")));
         assert!(!it.is_video);
-        assert_eq!((it.thumbnail.as_deref(), it.counterpart_offset_ms), (Some("cover"), -5477));
+        assert_eq!(it.thumbnail.as_deref(), Some("cover"));
+        assert_eq!(it.counterpart_segments, [seg(0, 5477, 484451)]);
         // An album row knows no art for its twin: it keeps its own rather than losing it.
         let mut album = innertube::SongItem {
             video_id: "audio".into(),
@@ -4875,13 +5010,33 @@ mod tests {
         assert_eq!(lone.video_id, "a");
     }
 
+    fn seg(start_ms: i64, twin_start_ms: i64, duration_ms: i64) -> innertube::Segment {
+        innertube::Segment { start_ms, twin_start_ms, duration_ms }
+    }
+
     // The Mirrors pair from #520: the song starts 5.477 s into the video.
     #[test]
     fn a_switch_lands_on_the_same_moment_of_the_other_version() {
-        assert!((twin_position(100.0, 5477) - 94.523).abs() < 1e-9); // video -> song
-        assert!((twin_position(94.523, -5477) - 100.0).abs() < 1e-9); // and back
-        assert_eq!(twin_position(3.0, 5477), 0.0); // still in the intro: the song's start
-        assert_eq!(twin_position(42.0, 0), 42.0); // no segmentMap, as before
+        let video = [seg(5477, 0, 484451)];
+        let song = [seg(0, 5477, 484451)];
+        assert_eq!(twin_position(100.0, &video), 94.523);
+        assert_eq!(twin_position(94.523, &song), 100.0); // and back
+        assert_eq!(twin_position(3.0, &video), 0.0); // still in the intro: the song's start
+        assert_eq!(twin_position(42.0, &[]), 42.0); // no segmentMap: the same timestamp
+    }
+
+    // "Locked Away" from #535: the video breaks between 1:49.1 and 2:03.6, so a switch after the
+    // break is 14.5 s further along than the intro alone says.
+    #[test]
+    fn a_switch_maps_through_every_segment() {
+        let song = [seg(0, 22698, 86438), seg(86439, 123644, 141061)];
+        let video = [seg(22698, 0, 86438), seg(123644, 86439, 141061)];
+        assert_eq!(twin_position(60.0, &song), 82.698);
+        assert_eq!(twin_position(150.0, &song), 187.205); // the first segment alone: 172.698
+        assert_eq!(twin_position(187.205, &video), 150.0);
+        assert_eq!(twin_position(10.0, &video), 0.0); // the intro: the song's start
+        assert_eq!(twin_position(115.0, &video), 86.439); // the break: where the song picks up
+        assert_eq!(twin_position(265.5, &video), 227.5); // the outro: the song's end
     }
 
     #[test]
@@ -4890,18 +5045,42 @@ mod tests {
             video_id: "v".into(),
             counterpart: Some("s".into()),
             counterpart_thumbnail: Some("cover".into()),
-            counterpart_offset_ms: 5477,
+            counterpart_segments: vec![seg(5477, 0, 484451)],
             ..Default::default()
         };
         let mut row = innertube::SongItem { video_id: "v".into(), ..Default::default() };
         assert!(adopt_twin(&mut row, &twin));
         assert_eq!(row.counterpart_thumbnail.as_deref(), Some("cover"));
-        assert_eq!(row.counterpart_offset_ms, 5477);
+        assert_eq!(row.counterpart_segments, [seg(5477, 0, 484451)]);
         // A row that already knows its twin (an album swap, an earlier answer) keeps it.
         assert!(!adopt_twin(&mut row, &innertube::SongItem::default()));
         let other = innertube::SongItem { counterpart: Some("x".into()), ..Default::default() };
         assert!(!adopt_twin(&mut row, &other));
         assert_eq!(row.counterpart.as_deref(), Some("s"));
+        // An album row knows its twin from the album page, without art or segments: the same
+        // twin fills them in, once.
+        let mut album = innertube::SongItem {
+            video_id: "v".into(),
+            counterpart: Some("s".into()),
+            ..Default::default()
+        };
+        assert!(adopt_twin(&mut album, &twin));
+        assert_eq!(album.counterpart_thumbnail.as_deref(), Some("cover"));
+        assert_eq!(album.counterpart_segments, [seg(5477, 0, 484451)]);
+        assert!(!adopt_twin(&mut album, &twin));
+    }
+
+    // A video that reorders the song's parts would swap into segments out of order.
+    #[test]
+    fn swapped_segments_stay_in_order() {
+        let mut it = innertube::SongItem {
+            video_id: "v".into(),
+            counterpart: Some("s".into()),
+            counterpart_segments: vec![seg(0, 50000, 10000), seg(20000, 0, 10000)],
+            ..Default::default()
+        };
+        assert!(swap_version(&mut it));
+        assert_eq!(it.counterpart_segments, [seg(0, 20000, 10000), seg(50000, 0, 10000)]);
     }
 
     #[test]
@@ -5066,7 +5245,7 @@ mod tests {
 
         // No artist (an album track) → YouTube's own author.
         let mut it = with("", vec![]);
-        backfill_metadata(&mut it, None, Some("Delara"), None);
+        backfill_metadata(&mut it, None, Some("Delara"), None, None);
         assert_eq!(it.artists, "Delara");
 
         // A display subtitle that was parsed as the artist → replaced, and the links that pointed
@@ -5077,21 +5256,21 @@ mod tests {
             "Song • Dua Lipa",
         ] {
             let mut it = with(bogus, vec![bogus]);
-            backfill_metadata(&mut it, None, Some("Dua Lipa"), None);
+            backfill_metadata(&mut it, None, Some("Dua Lipa"), None, None);
             assert_eq!(it.artists, "Dua Lipa", "{bogus} should have been replaced");
             assert!(it.artist_runs.is_empty(), "{bogus}: stale links must not survive the swap");
         }
 
         // A real artist line is never second-guessed, links included. Collabs use "&" and ",".
         let mut it = with("Nicki Minaj, Ice Spice & Aqua", vec!["Nicki Minaj", " & ", "Aqua"]);
-        backfill_metadata(&mut it, None, Some("Nicki Minaj"), None);
+        backfill_metadata(&mut it, None, Some("Nicki Minaj"), None, None);
         assert_eq!(it.artists, "Nicki Minaj, Ice Spice & Aqua");
         assert_eq!(it.artist_runs.len(), 3);
 
         // Nothing to repair with (rustypipe served the stream, or /player had no author) → as-is.
         for author in [None, Some(""), Some("   ")] {
             let mut it = with("", vec![]);
-            backfill_metadata(&mut it, None, author, None);
+            backfill_metadata(&mut it, None, author, None, None);
             assert_eq!(it.artists, "");
         }
     }
@@ -5099,15 +5278,15 @@ mod tests {
     #[test]
     fn player_response_fills_only_a_missing_duration() {
         let mut it = song("v", None);
-        backfill_metadata(&mut it, Some("191"), None, None);
+        backfill_metadata(&mut it, Some("191"), None, None, None);
         assert_eq!(it.duration.as_deref(), Some("3:11"));
         // A duration the row already carried wins: it's the length of the cut YouTube listed.
         let mut it = innertube::SongItem { duration: Some("3:02".into()), ..song("v", None) };
-        backfill_metadata(&mut it, Some("191"), None, None);
+        backfill_metadata(&mut it, Some("191"), None, None, None);
         assert_eq!(it.duration.as_deref(), Some("3:02"));
         // Junk from the player response can't blank an existing one.
         let mut it = song("v", None);
-        backfill_metadata(&mut it, Some("not-a-number"), None, None);
+        backfill_metadata(&mut it, Some("not-a-number"), None, None, None);
         assert_eq!(it.duration, None);
     }
 
@@ -5117,16 +5296,22 @@ mod tests {
     #[test]
     fn player_response_settles_whether_the_track_is_a_video() {
         let mut it = song("v", None);
-        backfill_metadata(&mut it, None, None, Some(true));
+        backfill_metadata(&mut it, None, None, Some(true), None);
         assert!(it.is_video);
         // A stale `true` on what YouTube calls an audio track is cleared, not kept: video mode on
         // an art track shows a still image, which is worse than the artwork it replaced.
-        backfill_metadata(&mut it, None, None, Some(false));
+        backfill_metadata(&mut it, None, None, Some(false), None);
         assert!(!it.is_video);
         // Nothing said (rustypipe, or a cached URL) → whatever the row already claimed stands.
         it.is_video = true;
-        backfill_metadata(&mut it, None, None, None);
+        backfill_metadata(&mut it, None, None, None, None);
         assert!(it.is_video);
+        // The podcast flag (#500) on the same terms: an episode row stays one when nothing was said.
+        it.is_episode = true;
+        backfill_metadata(&mut it, None, None, None, None);
+        assert!(it.is_episode);
+        backfill_metadata(&mut it, None, None, None, Some(false));
+        assert!(!it.is_episode);
     }
 
     /// The trim is what keeps an endless radio session from growing the queue (and every emit and
