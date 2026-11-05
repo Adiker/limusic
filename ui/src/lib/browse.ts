@@ -49,7 +49,7 @@ export const hrefFor = (i: BrowseItem): string =>
 /** Pasted links share one action across Home, Search, the dialog and launch arguments. */
 export function openLinkTarget(target: LinkTarget): void {
 	// A pasted song only carries an id; radio resolves its metadata before playing it.
-	if (target.kind === 'song') startRadio('song', target.id);
+	if (target.kind === 'song') startRadio('song', target.id, undefined, target.start);
 	else goto(hrefFor({ ...target, title: '' }));
 }
 
