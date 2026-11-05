@@ -14,23 +14,23 @@ function source(file: string): string {
 }
 
 // Real parsing followed by the shared action: songs resolve via radio, pages navigate once.
-const played: string[][] = [];
+const played: (string | number | undefined)[][] = [];
 const navigated: string[] = [];
 const open = runInNewContext(`${source('./browse.ts')}\nopenLinkTarget`, {
 	api: { LOCAL_ARTIST_PREFIX: 'local-artist:' },
-	startRadio: (...args: string[]) => played.push(args),
+	startRadio: (...args: (string | number | undefined)[]) => played.push(args),
 	goto: (href: string) => navigated.push(href)
 }) as (target: NonNullable<ReturnType<typeof parseYtLink>>) => void;
 
 for (const url of [
 	' https://youtu.be/track123?si=shared ',
-	'https://music.youtube.com/watch?v=track456&list=PLexample'
+	'https://music.youtube.com/watch?v=track456&list=PLexample&t=1m23s'
 ]) {
 	const target = parseYtLink(url);
 	assert.ok(target);
 	open(target);
 }
-assert.deepEqual(played, [['song', 'track123'], ['song', 'track456']]);
+assert.deepEqual(played, [['song', 'track123', undefined, undefined], ['song', 'track456', undefined, 83]]);
 assert.deepEqual(navigated, []);
 
 for (const [url, href] of [

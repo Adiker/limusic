@@ -386,6 +386,21 @@ struct PrevContext {
 }
 
 impl QueueState {
+    /// Take one row out of the queue, and its copy out of the pre-shuffle snapshot, or turning
+    /// shuffle off rebuilds the queue with it back in. Matched whole, so of two copies of a song
+    /// (two playlist rows, different `set_video_id`) the right one goes. Never by video id alone:
+    /// adds carried into a shuffled `play_tracks` are not in the snapshot, and one that is also in
+    /// the playlist would take the playlist's row with it. `current` is the caller's to fix.
+    fn remove_row(&mut self, index: usize) -> SongItem {
+        let item = self.items.remove(index);
+        if let Some(orig) = self.shuffle_orig.as_mut() {
+            if let Some(at) = orig.iter().position(|s| *s == item) {
+                orig.remove(at);
+            }
+        }
+        item
+    }
+
     /// Move the play pointer within the same queue.
     fn seek_to(&mut self, index: usize) {
         self.current = index;
@@ -1534,6 +1549,7 @@ impl AppState {
         kind: &str,
         id: &str,
         name: Option<String>,
+        start: Option<f64>,
     ) -> Result<(), String> {
         if self.lt.is_guest().await {
             self.emit_guest_hint();
@@ -1591,9 +1607,21 @@ impl AppState {
             let q = self.queue.lock().await;
             video_id.is_some() && q.items.get(q.current).map(|i| &i.video_id) == video_id.as_ref()
         };
+        // A shared link's `t=`: only a song radio has a seed track to start partway into.
+        let start = start.filter(|s| kind == "song" && s.is_finite() && *s > 0.0);
         if playing_seed && !self.player.is_idle() {
             self.splice_radio(items, seed, title).await;
+            if let Some(pos) = start {
+                self.user_seek(pos).await?;
+            }
             return Ok(());
+        }
+        // Handed to `loadfile` as `start=` (see `start_current`); mpv drops a seek sent before the
+        // file is loaded. Keyed on the seed's id, so it can't land on a different track.
+        // `latest_position` is left alone on purpose: `play_tracks` below reads it as the position
+        // the replaced queue is resumed at (`keep_context`), and that is not the link's offset.
+        if let (Some(pos), Some(vid), Some(_)) = (start, video_id.as_ref(), seed_at) {
+            *self.pending_seek.lock().unwrap() = Some((vid.clone(), pos));
         }
         self.play_tracks(items, Some(seed_at.unwrap_or(0)), Some(seed), title, false, None).await;
         self.queue.lock().await.radio = true;
@@ -1792,6 +1820,13 @@ impl AppState {
 
     /// Jump to a specific queue index.
     pub async fn play_index(self: &std::sync::Arc<Self>, index: usize) {
+        self.play_index_at(index, None).await;
+    }
+
+    /// [`Self::play_index`], opening the track `start` seconds in (a comment's timecode). Goes
+    /// through `pending_seek` like every other start offset: mpv drops a seek sent before the file
+    /// is loaded, so it can't be issued after this returns.
+    pub async fn play_index_at(self: &std::sync::Arc<Self>, index: usize, start: Option<f64>) {
         if self.lt.is_guest().await {
             self.emit_guest_hint(); // guest playback is host-driven
             return;
@@ -1806,6 +1841,9 @@ impl AppState {
             q.lookahead_loaded = None;
             q.items[index].video_id.clone()
         };
+        if let Some(pos) = start.filter(|s| s.is_finite() && *s > 0.0) {
+            *self.pending_seek.lock().unwrap() = Some((video_id.clone(), pos));
+        }
         // The next mpv tick is seconds away because the track must be resolved first. Until then
         // `latest_position` is still the value that pause/exit persistence will write, so seed it
         // from `pending_seek` when that saved position belongs to this exact video. A different
@@ -2173,7 +2211,7 @@ impl AppState {
                         let mut q = self.queue.lock().await;
                         let cur = q.current;
                         if cur < q.items.len() {
-                            q.items.remove(cur);
+                            q.remove_row(cur);
                         }
                         q.lookahead_loaded = None;
                         // `current` now points at what followed it. When it was the tail, step
@@ -4063,7 +4101,7 @@ impl AppState {
             if index >= q.items.len() || index == q.current {
                 return;
             }
-            q.items.remove(index);
+            q.remove_row(index);
             if index < q.current {
                 q.current -= 1;
             }
@@ -5678,6 +5716,36 @@ mod tests {
         assert!(!is_mix(Some("VLPL123")));
         assert!(!is_mix(Some("VLOLAK5uy_abc")));
         assert!(!is_mix(None));
+    }
+
+    /// A row removed while shuffled stays gone when shuffle goes off, and of two copies of a song
+    /// only the one removed leaves the snapshot.
+    #[test]
+    fn removed_row_stays_out_after_unshuffle() {
+        let row = |id: &str, set: &str| innertube::SongItem {
+            set_video_id: Some(set.into()),
+            ..song(id, None)
+        };
+        let orig = vec![row("a", "1"), row("b", "2"), row("c", "3"), row("b", "4")];
+        let mut q = QueueState {
+            items: vec![row("a", "1"), row("b", "4"), row("c", "3"), row("b", "2")],
+            shuffle_orig: Some(orig),
+            ..Default::default()
+        };
+        assert_eq!(q.remove_row(3).set_video_id.as_deref(), Some("2"));
+        let orig = q.shuffle_orig.take().unwrap();
+        let sets = orig.iter().map(|s| s.set_video_id.clone().unwrap()).collect::<Vec<_>>();
+        assert_eq!(sets, ["1", "3", "4"]);
+        let (items, _) = unshuffled(orig, &HashSet::from(["a".to_owned()]), "a", 0);
+        assert_eq!(items.iter().filter(|s| s.video_id == "b").count(), 1);
+        // A carried "Play next" of a song the playlist also holds has no snapshot row of its own.
+        let mut q = QueueState {
+            items: vec![row("a", "1"), song("c", Some("me")), row("c", "3")],
+            shuffle_orig: Some(vec![row("a", "1"), row("c", "3")]),
+            ..Default::default()
+        };
+        q.remove_row(1);
+        assert_eq!(q.shuffle_orig.unwrap().len(), 2, "the playlist's own copy stays");
     }
 
     #[test]
