@@ -98,7 +98,7 @@ jobs:
         env:
           LIMUSIC_SOURCE_REPO: ${{ github.repository }}
           LIMUSIC_SOURCE_REF: ${{ steps.app.outputs.source_sha }}
-          LIMUSIC_SOURCE_DIR: limusic-${{ steps.app.outputs.source_sha }}
+          LIMUSIC_SOURCE_DIR: ${{ github.event.repository.name }}-${{ steps.app.outputs.source_sha }}
         run: |
           set -euo pipefail
           cp arch-recipe/pkg/arch/PKGBUILD pkg/arch/PKGBUILD
