@@ -1,0 +1,8 @@
+name: Actions probe
+on: workflow_dispatch
+permissions: {}
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "GitHub Actions works"
