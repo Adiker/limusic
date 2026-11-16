@@ -2,10 +2,12 @@
 
 mod appicon;
 mod audioproxy;
+mod autopause;
 mod blocked;
 mod cipher;
 mod commands;
 mod db;
+mod devicelink;
 mod diagnostics;
 mod discord;
 mod downloads;
@@ -14,7 +16,11 @@ mod http;
 mod import;
 #[cfg(target_os = "linux")]
 mod inhibit;
+mod karaoke;
+mod karaoke_model;
+mod karaoke_runtime;
 mod lastfm;
+mod limusic;
 mod listenbrainz;
 mod listentogether;
 mod local;
@@ -40,6 +46,7 @@ mod taskbar;
 mod tray;
 mod videoproxy;
 mod webview;
+mod windowtitle;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -147,6 +154,15 @@ fn tune_webview(win: &tauri::WebviewWindow, media: bool) {
             // WKWebView's allowsBackForwardNavigationGestures, which wry does not expose.
             settings.set_enable_back_forward_navigation_gestures(true);
 
+            // Speculative loading (2.52+): after every batch of DOM writes WebKit walks all the
+            // document's links to see whether a speculation rule now matches one. The app has no
+            // such rules and nothing to prefetch, and a page that writes the DOM every frame (the
+            // lyric sweep, the seek bar) pays the walk every frame. `ui/perf/framecost.py`, player
+            // view open with a song playing, 2.52.1: `Document::considerSpeculationRules` in 31%
+            // of the web main thread's samples, and 19% of a core with it on against 16% off. Read
+            // live, so unlike the compositor switches below it needs no restart.
+            features_off(&settings, &[b"SpeculationRulesPrefetch"]);
+
             if compositor_features_off(&settings) {
                 restart_web_process(&webview);
             }
@@ -173,13 +189,30 @@ fn tune_webview(win: &tauri::WebviewWindow, media: bool) {
 /// `ui/perf/flashprobe.py` on 2.54.1: 7-8 one-frame flashes per 6.5 s of fades, 0 with these off,
 /// 0 on 2.52.1.
 ///
-/// WebKit's feature list (2.42+) has no binding in webkit2gtk 2.0, so its six functions come from
-/// the already-loaded library by name. A WebKit without one of them, or without a feature, is left
-/// alone.
-///
 /// ponytail: drop this once a WebKitGTK release fixes both; run flashprobe.py on it first.
 #[cfg(target_os = "linux")]
 fn compositor_features_off(settings: &webkit2gtk::Settings) -> bool {
+    // SAFETY: takes nothing.
+    if unsafe { webkit2gtk::ffi::webkit_get_minor_version() } < 54 {
+        return false;
+    }
+    features_off(
+        settings,
+        &[
+            b"UseSkiaForComposition",
+            b"UseDamagingInformationForCompositing",
+            b"PropagateDamagingInformation",
+        ],
+    )
+}
+
+/// Turns WebKit runtime features off by identifier. Returns whether any was on.
+///
+/// WebKit's feature list (2.42+) has no binding in webkit2gtk 2.0, so its seven functions come from
+/// the already-loaded library by name. A WebKit without one of them, or without a feature, is left
+/// alone.
+#[cfg(target_os = "linux")]
+fn features_off(settings: &webkit2gtk::Settings, off: &[&[u8]]) -> bool {
     use gtk::glib::translate::ToGlibPtr;
     use std::ffi::{c_char, c_int, c_void, CStr};
     type AllFeatures = unsafe extern "C" fn() -> *mut c_void;
@@ -189,19 +222,11 @@ fn compositor_features_off(settings: &webkit2gtk::Settings) -> bool {
     type Enabled = unsafe extern "C" fn(*mut c_void, *mut c_void) -> c_int;
     type SetEnabled = unsafe extern "C" fn(*mut c_void, *mut c_void, c_int);
     type Unref = unsafe extern "C" fn(*mut c_void);
-    const OFF: [&[u8]; 3] = [
-        b"UseSkiaForComposition",
-        b"UseDamagingInformationForCompositing",
-        b"PropagateDamagingInformation",
-    ];
 
-    // SAFETY: the version calls take nothing. The rest are dlsym'd from the WebKitGTK this process
-    // already links, each cast to its signature in webkit/WebKitSettings.h and WebKitFeature.h.
-    // The list is ours to unref; the features in it are borrowed from the list.
+    // SAFETY: all dlsym'd from the WebKitGTK this process already links, each cast to its signature
+    // in webkit/WebKitSettings.h and WebKitFeature.h. The list is ours to unref; the features in
+    // it are borrowed from the list.
     unsafe {
-        if webkit2gtk::ffi::webkit_get_minor_version() < 54 {
-            return false;
-        }
         let sym = |name: &CStr| libc::dlsym(libc::RTLD_DEFAULT, name.as_ptr());
         let syms = [
             sym(c"webkit_settings_get_all_features"),
@@ -233,7 +258,7 @@ fn compositor_features_off(settings: &webkit2gtk::Settings) -> bool {
             let feature = get(list, i);
             let id = identifier(feature);
             if !id.is_null()
-                && OFF.contains(&CStr::from_ptr(id).to_bytes())
+                && off.contains(&CStr::from_ptr(id).to_bytes())
                 && enabled(raw.cast(), feature) != 0
             {
                 set_enabled(raw.cast(), feature, 0);
@@ -327,6 +352,38 @@ pub(crate) fn set_webgl(app: &tauri::AppHandle, on: bool) {
             }
         });
     }
+}
+
+/// The main webview's background: see-through, which is how wry builds it for a transparent
+/// window, or opaque.
+///
+/// The page only needs see-through pixels where it leaves some empty: the corners it rounds on a
+/// window that is not maximized, and the box mpv draws a music video under. Everywhere else the
+/// transparency buys nothing and costs a frame of work per frame: WebKit hands GTK a texture with
+/// an alpha channel, and GTK3 then uploads its own drawing of the whole window as a second texture
+/// to blend the first one over (`gdk_cairo_draw_from_gl` -> `gdk_gl_texture_from_surface`), on the
+/// main thread, for every frame the page presents. `ui/perf/framecost.py`, WebKitGTK 2.52.1 on
+/// Wayland, a 60px animation that costs the web process 0.4 ms a frame: the UI process spends
+/// 3.2 ms a frame at 1300x720 and 5.4 ms at 1900x1000 with the alpha, 1.1 and 1.4 ms without. On
+/// the real page, scrolling Home, 20% of a core against 8%.
+///
+/// Wayland only. On X11 GTK paints the buffer with cairo either way and it measured the same
+/// (1.7 ms a frame both ways), so that path is left exactly as it was.
+#[cfg(target_os = "linux")]
+pub(crate) fn set_webview_opaque(win: &tauri::WebviewWindow, opaque: bool) {
+    use gtk::prelude::*;
+    use webkit2gtk::WebViewExt;
+
+    let _ = win.with_webview(move |wv| {
+        let view = wv.inner();
+        if view.display().type_().name() != "GdkWaylandDisplay" {
+            return;
+        }
+        // Black, not a theme colour: the page paints over all of it, and the one place it shows is
+        // the video box for the frame or two before the page's hole and this call line up.
+        let alpha = if opaque { 1.0 } else { 0.0 };
+        view.set_background_color(&gtk::gdk::RGBA::new(0.0, 0.0, 0.0, alpha));
+    });
 }
 
 /// [`tune_webview`] for a window looked up by label. No-op if it isn't up.
@@ -426,7 +483,7 @@ fn init_logging(dir: &std::path::Path) {
 
     let filter = || {
         tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| "info,app_lib=debug".into())
+            .unwrap_or_else(|_| "info,app_lib=debug,ort=warn,flacenc=warn".into())
     };
     let path = dir.join("limusic.log");
     let _ = std::fs::rename(&path, dir.join("limusic.log.1"));
@@ -471,6 +528,32 @@ fn raise_fd_limit() {
             tracing::info!(from = old, to = want, "raised open-file limit");
         }
     }
+}
+
+/// Whether GDK's Wayland backend will get a display, asked the way `wl_display_connect` does:
+/// WAYLAND_SOCKET is an already-open fd, WAYLAND_DISPLAY a socket name under XDG_RUNTIME_DIR or an
+/// absolute path. A set but stale WAYLAND_DISPLAY (left over from a Wayland login, forwarded over
+/// ssh) makes GDK fall back to X11 without a word, so its mere presence is not an answer: with it,
+/// the NVIDIA gates below took the window for Wayland and it never painted (two GBM failures,
+/// reproduced with `WAYLAND_DISPLAY=wayland-stale` on an X server).
+#[cfg(target_os = "linux")]
+fn wayland_reachable() -> bool {
+    if std::env::var_os("WAYLAND_SOCKET").is_some() {
+        return true;
+    }
+    let Some(name) = std::env::var_os("WAYLAND_DISPLAY") else {
+        return false;
+    };
+    let name = std::path::PathBuf::from(name);
+    let path = if name.is_absolute() {
+        name
+    } else {
+        match std::env::var_os("XDG_RUNTIME_DIR") {
+            Some(dir) => std::path::PathBuf::from(dir).join(name),
+            None => return false,
+        }
+    };
+    std::os::unix::net::UnixStream::connect(path).is_ok()
 }
 
 /// The vendor of the EGL that serves the X11 display: "NVIDIA" when the proprietary driver draws
@@ -598,6 +681,19 @@ pub fn run() {
     // the other, which is the mistake ee48c55 made.
     #[cfg(target_os = "linux")]
     {
+        // The AppImage's AppRun hook (linuxdeploy-plugin-gtk, shipped by Tauri's bundler) exports
+        // GDK_BACKEND=x11 over whatever the user set. `scripts/fix-appdir-tls.sh` deletes that line,
+        // so the AppImage picks its backend the way GTK does: Wayland on a Wayland session. Through
+        // XWayland a frame costs more to present: `ui/perf/framecost.py`, one small animation at
+        // 1300x720, CPU per frame across the UI process, the web compositor and Xwayland, 6.5 ms on
+        // X11 with SHM against 3.6 ms on Wayland. `LIMUSIC_GDK_BACKEND` wins over the user's
+        // GDK_BACKEND and any hook, because it is read here, last: `LIMUSIC_GDK_BACKEND=x11` is the
+        // way back for a desktop where the Wayland backend misbehaves.
+        //
+        // ponytail: an escape hatch, not a setting.
+        if let Some(backend) = std::env::var_os("LIMUSIC_GDK_BACKEND") {
+            std::env::set_var("GDK_BACKEND", backend);
+        }
         // Without this the window dies at startup with "Gdk-Message: Error 71 (Protocol error)
         // dispatching to Wayland display". Harmless no-op on non-NVIDIA drivers.
         if std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none() {
@@ -605,9 +701,10 @@ pub fn run() {
         }
         // On XWayland the proprietary driver cannot back the DMABUF renderer at all: "Failed to
         // create GBM buffer of size WxH: Invalid argument", zero frames, the window never paints.
-        // The AppImage always lands there, because linuxdeploy-plugin-gtk's AppRun hook exports
-        // GDK_BACKEND=x11 and Tauri's bundler ships that hook; GDK_BACKEND is set nowhere in this
-        // repo. `WEBKIT_DMABUF_RENDERER_FORCE_SHM=1` keeps the renderer, and the GPU, while
+        // Any build lands there on an X11 session or with `LIMUSIC_GDK_BACKEND=x11`, except where
+        // WebKit has switched acceleration off by itself (the AppImage's does on X11, see
+        // WEBKIT_FORCE_DMABUF_RENDERER below), which makes this a no-op.
+        // `WEBKIT_DMABUF_RENDERER_FORCE_SHM=1` keeps the renderer, and the GPU, while
         // bypassing GBM. It costs about half the CPU of software rendering: 10% vs 18% on one
         // composited animation in `ui/perf/renderprobe.py`. A/B under `GDK_BACKEND=x11` on
         // 2026-08-31 (GTX 1060, driver 580.173.02, WebKitGTK 2.52.5): without it, a black window
@@ -631,22 +728,71 @@ pub fn run() {
         // The variable is only defaulted, and skipped if either WEBKIT_ knob is already set by
         // hand, so retesting stays possible.
         //
-        // ponytail: delete this the day the AppImage stops forcing X11, which would put those
-        // users on native Wayland and the full path, or the day the driver learns GBM on XWayland.
+        // ponytail: delete this the day the driver learns GBM on XWayland.
         //
-        // GDK picks its backend from GDK_BACKEND when set, else Wayland when WAYLAND_DISPLAY is,
-        // else X11.
+        // GDK picks its backend from GDK_BACKEND when set, else Wayland when it can connect to
+        // one, else X11.
+        // A list ("wayland,x11") is tried in order, so with no Wayland display to connect to it
+        // lands on x11 as well.
+        let no_wayland = !wayland_reachable();
         let on_x11 = match std::env::var("GDK_BACKEND") {
-            Ok(b) => b.split(',').next() == Some("x11"),
-            Err(_) => std::env::var_os("WAYLAND_DISPLAY").is_none(),
+            Ok(b) => {
+                b.split(',').next() == Some("x11")
+                    || (no_wayland && b.split(',').any(|x| x == "x11"))
+            }
+            Err(_) => no_wayland,
         };
+        let nvidia_draws = std::path::Path::new("/dev/nvidiactl").exists()
+            && (!on_x11 || x11_egl_vendor().map_or(true, |v| v.contains("NVIDIA")));
         if on_x11
-            && std::path::Path::new("/dev/nvidiactl").exists()
+            && nvidia_draws
             && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none()
             && std::env::var_os("WEBKIT_DMABUF_RENDERER_FORCE_SHM").is_none()
-            && x11_egl_vendor().map_or(true, |v| v.contains("NVIDIA"))
         {
             std::env::set_var("WEBKIT_DMABUF_RENDERER_FORCE_SHM", "1");
+        }
+
+        // Debian, Ubuntu, openSUSE and Gentoo build WebKitGTK with a patch that turns hardware
+        // acceleration off whenever the GL vendor is NVIDIA (disable-nvidia-dmabuf.patch, WebKit
+        // bug 262607), and the AppImage bundles Ubuntu's. So the AppImage on NVIDIA, and the .deb
+        // on those distros, painted every frame on the web process's main thread: `webkit://gpu`
+        // said `Policy: never`. WEBKIT_FORCE_DMABUF_RENDERER is the patch's own override, and an
+        // unpatched build (Fedora, Arch) never reads it. `framecost.py`, the AppImage's own
+        // WebKitGTK 2.52.6, GTX 1060, 580.178.04: navigating Home and Library presents 18 frames a
+        // second instead of 13 (p95 40 -> 36 ms), opening the player 14% -> 6% of frames over
+        // 20 ms, the lyrics sweep 6% -> 2%, all within 2 points and 3 ms of `cargo tauri dev`
+        // (docs/UI-PERF-COMPLAINTS.md, 2026-11-15).
+        //
+        // Not on X11, where forcing it lands on the SHM path above: that fixes the transitions
+        // too, but every steady animation then costs 25 points of a core more than the software
+        // path it replaces (hovering a shelf 31% -> 57%). On Wayland it is the DMABUF path that
+        // Fedora and Arch users on NVIDIA already run. With Intel drawing on a hybrid laptop the
+        // patch sees Mesa and stands down by itself, so this changes nothing there.
+        if !on_x11 && nvidia_draws && std::env::var_os("WEBKIT_FORCE_DMABUF_RENDERER").is_none() {
+            std::env::set_var("WEBKIT_FORCE_DMABUF_RENDERER", "1");
+        }
+
+        // The web process deadlocks inside the NVIDIA driver when two of its threads free GL
+        // textures at the same moment: the main thread, whose texture pool exists only for GPU
+        // painting, and the compositor. Each pool sweeps out what it no longer uses on a timer;
+        // when the two sweeps meet, one thread spins in libnvidia-eglcore and the other waits on
+        // a libnvidia-glsi mutex, forever. The window keeps its last frame, takes no input, and
+        // only the tray can quit. Six coredumps on 580.178.04 with WebKitGTK 2.52.1, all that
+        // stack, most of them in the lyrics editor. CPU painting takes the main thread off GL
+        // entirely: `ui/perf/texhang.py` churn under gdb, 45 s, main thread frees 7108 textures
+        // with GPU painting and 0 with this, the compositor 46k and 55k. Price, `framecost.py`
+        // on native Wayland: idle, hover, scroll and playing lyrics unchanged, navigation 33 ->
+        // 36% web CPU (p95 frame 23 -> 32-37 ms), opening the player 45 -> 50%. Twice the
+        // painting threads (WEBKIT_SKIA_CPU_PAINTING_THREADS=6 on six cores, default three) bought
+        // nothing back. The lock that hangs is NVIDIA's, so Mesa keeps GPU painting (untested
+        // there).
+        //
+        // ponytail: a hybrid laptop on Wayland with the driver loaded but Intel drawing gets CPU
+        // painting too (the X11 vendor check would start Xwayland on GNOME just to ask). Drop
+        // this once a driver or WebKitGTK release survives texhang.py under gdb with both threads
+        // freeing.
+        if nvidia_draws && std::env::var_os("WEBKIT_SKIA_ENABLE_CPU_RENDERING").is_none() {
+            std::env::set_var("WEBKIT_SKIA_ENABLE_CPU_RENDERING", "1");
         }
     }
 
@@ -742,6 +888,12 @@ pub fn run() {
             let data_dir = app.path().app_data_dir().unwrap_or_else(|_| std::env::temp_dir());
             std::fs::create_dir_all(&data_dir).ok();
             init_logging(&data_dir);
+            // Which display GDK actually opened: a Wayland connection that fails falls back to X11
+            // without a word, and a report's log tail should say which one it was.
+            #[cfg(target_os = "linux")]
+            if let Some(d) = gtk::gdk::Display::default() {
+                tracing::info!(display = %gtk::glib::prelude::ObjectExt::type_(&d).name(), "gdk");
+            }
             let cache_dir = data_dir.join("audio-cache");
             std::fs::create_dir_all(&cache_dir).ok();
 
@@ -903,6 +1055,8 @@ pub fn run() {
             let lt_url = db.get_setting("lt_server_url").unwrap_or_default();
             let (lt, lt_sync_rx) = listentogether::LtSession::new(handle.clone(), lt_url);
             let downloads = DownloadManager::new(db.clone(), handle.clone(), orchestrator.clone());
+            // Device link: opens a socket only once the user has linked a device.
+            let (link, link_rx) = devicelink::LinkSession::new(handle.clone(), db.clone());
 
             let app_state = Arc::new(AppState::new(
                 it,
@@ -912,6 +1066,7 @@ pub fn run() {
                 handle.clone(),
                 orchestrator,
                 lt,
+                link,
                 cache_dir.clone(),
                 media,
                 discord,
@@ -919,6 +1074,11 @@ pub fn run() {
                 downloads,
             ));
             app.manage(app_state.clone());
+
+            app_state.set_auto_pause_enabled(
+                app_state.db.get_setting("auto_pause_other_audio").as_deref() == Some("true"),
+            );
+            autopause::spawn(app_state.clone());
 
             // The player view's <video> pulls its bytes from Rust over loopback, so the webview
             // never sees a googlevideo URL (context/11). videoproxy.rs explains why a socket and
@@ -967,6 +1127,15 @@ pub fn run() {
                 tracing::warn!(errors = ?reg_res.errors, "some global hotkeys could not be registered on startup");
             }
 
+            // Karaoke model manager
+            let karaoke_model_mgr = Arc::new(karaoke_model::ModelManager::new(&data_dir));
+            app.manage(karaoke_model_mgr.clone());
+
+            // Karaoke engine
+            let karaoke_engine = karaoke::KaraokeEngine::new(handle.clone(), &data_dir, karaoke_model_mgr.clone());
+            app.manage(karaoke_engine);
+            app_state.spawn_karaoke_listener();
+
             // A custom app icon (#173) has to be pushed at each surface every launch, since only
             // the .exe/.desktop icon is baked in and that one we can't touch. Guarded, rather than
             // unconditional: with no custom icon there is nothing to restore, and on Windows
@@ -982,6 +1151,18 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     while let Some(cmd) = rx.recv().await {
                         st.apply_sync(cmd).await;
+                    }
+                });
+            }
+
+            // Bridge: apply what the device link asks of the player (remote controls, pause on a
+            // takeover by another device).
+            {
+                let st = app_state.clone();
+                let mut rx = link_rx;
+                tauri::async_runtime::spawn(async move {
+                    while let Some(cmd) = rx.recv().await {
+                        st.apply_link(cmd).await;
                     }
                 });
             }
@@ -1161,10 +1342,12 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(only_ui(tauri::generate_handler![
+            commands::set_webview_opaque,
             commands::search,
             commands::search_all,
             commands::search_suggestions,
             commands::search_cards,
+            commands::get_live_now,
             commands::search_videos,
             commands::song,
             commands::play,
@@ -1182,8 +1365,10 @@ pub fn run() {
             commands::set_repeat,
             commands::toggle_pause,
             commands::seek,
+            commands::playback_clock,
             commands::set_volume,
             commands::set_playback_params,
+            commands::set_karaoke,
             commands::get_queue,
             commands::get_playback,
             commands::video_stream,
@@ -1229,6 +1414,19 @@ pub fn run() {
             commands::close_mini,
             commands::set_mini_compact,
             commands::show_main,
+            commands::karaoke_model_status,
+            commands::karaoke_model_download,
+            commands::karaoke_model_cancel,
+            commands::karaoke_model_delete,
+            commands::karaoke_model_get,
+            commands::karaoke_model_set,
+            commands::karaoke_device_get,
+            commands::karaoke_device_set,
+            commands::karaoke_engine_status,
+            commands::karaoke_clear_cache,
+            commands::karaoke_retry_failed,
+            commands::karaoke_cache_limit_mb,
+            commands::karaoke_set_cache_limit_mb,
             commands::take_launch_args,
             commands::get_home,
             commands::network_reachable,
@@ -1275,6 +1473,7 @@ pub fn run() {
             commands::set_song_saved,
             commands::set_album_saved,
             commands::add_to_playlist,
+            commands::readonly_playlists,
             commands::add_to_local_playlist,
             commands::local_playlists,
             commands::remove_from_playlist,
@@ -1310,10 +1509,42 @@ pub fn run() {
             commands::lt_approve_suggestion,
             commands::lt_reject_suggestion,
             commands::lt_request_sync,
+            commands::link_state,
+            commands::link_start_pairing,
+            commands::link_cancel_pairing,
+            commands::link_unlink,
+            commands::link_forget,
+            commands::link_continue_here,
+            commands::link_play_on,
             commands::get_lyrics,
             commands::choose_lyrics_source,
             commands::set_lyrics_offset,
             commands::lyrics_providers,
+            commands::lyrics_editor_start,
+            commands::lyrics_editor_source,
+            commands::lyrics_word_readings,
+            commands::lyrics_romanize,
+            commands::limusic_providers,
+            commands::limusic_status,
+            commands::limusic_sign_in,
+            commands::limusic_cancel,
+            commands::limusic_sign_out,
+            commands::limusic_me,
+            commands::limusic_rename,
+            commands::limusic_submit,
+            commands::limusic_live_revision,
+            commands::limusic_lyric_state,
+            commands::limusic_vote,
+            commands::limusic_report,
+            commands::limusic_review_queue,
+            commands::limusic_review_revision,
+            commands::limusic_live_lyrics,
+            commands::limusic_review,
+            commands::limusic_my_rejection,
+            commands::limusic_admin_accounts,
+            commands::limusic_admin_update,
+            commands::limusic_revert,
+            commands::lyrics_parse,
             commands::lastfm_connect,
             commands::lastfm_disconnect,
             commands::lastfm_status,
@@ -1367,6 +1598,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|handle, event| {
+            // macOS: Clicking the Dock icon when close-to-tray hid the window brings it back.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = &event {
+                tray::show_main(handle);
+            }
+
             // The hidden cipher/PoToken webviews are windows too, so closing the main window no
             // longer auto-exits the app. Quit when the main window is destroyed.
             if let tauri::RunEvent::WindowEvent {
@@ -1456,25 +1693,37 @@ fn spawn_event_pump(
         while let Some(ev) = events.recv().await {
             match ev {
                 PlayerEvent::Position(p) => {
-                    if throttle.should_emit(p, std::time::Instant::now()) {
+                    // Quiet while the windows show another linked device's playback.
+                    if throttle.should_emit(p, std::time::Instant::now()) && !state.showing_remote()
+                    {
                         let _ = app.emit("position", serde_json::json!({ "position": p }));
                     }
                     state.on_position(p).await;
                 }
                 PlayerEvent::Duration(d) => {
-                    let _ = app.emit("duration", serde_json::json!({ "duration": d }));
+                    if !state.showing_remote() {
+                        let _ = app.emit("duration", serde_json::json!({ "duration": d }));
+                    }
                     state.on_duration(d).await;
                 }
                 PlayerEvent::Playing(playing) => {
-                    let _ = app.emit("playback-state", if playing { "playing" } else { "paused" });
+                    let remote = state.showing_remote();
+                    if !remote {
+                        let _ =
+                            app.emit("playback-state", if playing { "playing" } else { "paused" });
+                    }
                     if !playing {
                         state.flush_position(); // persist exact resume position on pause
-                        let _ = app.emit(
-                            "position",
-                            serde_json::json!({ "position": state.current_position() }),
-                        );
+                        if !remote {
+                            let _ = app.emit(
+                                "position",
+                                serde_json::json!({ "position": state.current_position() }),
+                            );
+                        }
                     }
                     state.media_set_playing(playing);
+                    // Playing here ends showing another linked device; pausing may start it.
+                    state.link_remote_refresh().await;
                     // Keep the tray's toggle label honest — this arm is the same chokepoint
                     // MPRIS uses, so tray state can't drift from media-key state.
                     tray::set_playing(&app, playing);

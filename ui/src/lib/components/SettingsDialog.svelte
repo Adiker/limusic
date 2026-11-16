@@ -1,11 +1,15 @@
 <script lang="ts">
-	import { tick, untrack, type Snippet } from 'svelte';
+	import { tick, untrack, onDestroy, type Snippet } from 'svelte';
 	import { save } from '@tauri-apps/plugin-dialog';
 	import { HugeiconsIcon } from '@hugeicons/svelte';
 	import {
 		Settings02Icon,
 		PaintBoardIcon,
 		PlayCircleIcon,
+		MusicNote01Icon,
+		PencilEdit02Icon,
+		SentIcon,
+		Tap01Icon,
 		Database02Icon,
 		InformationCircleIcon,
 		KeyboardIcon,
@@ -17,8 +21,10 @@
 		Globe02Icon,
 		ArrowDown01Icon,
 		Alert02Icon,
-		LinkSquare02Icon
+		LinkSquare02Icon,
+		ComputerPhoneSyncIcon
 	} from '@hugeicons/core-free-icons';
+	import { goto } from '$app/navigation';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Switch } from '$lib/components/ui/switch';
@@ -26,16 +32,20 @@
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Popover from '$lib/components/ui/popover';
-	import { HELP_COMBO } from '$lib/shortcuts';
+	import * as Select from '$lib/components/ui/select';
+	import { HELP_COMBO, IS_MAC } from '$lib/shortcuts';
 	import { copyText } from '$lib/clipboard';
 	import * as api from '$lib/api';
-	import { blocked, pickDownloadFolder, prefs, refreshLanguage, setAutoplay, ui, toast, unblockArtist } from '$lib/player.svelte';
+	import { blocked, pickDownloadFolder, karaokeAvailability, karaokeConsent, karaokeModels, karaokeSelection, cancelKaraokeModelDownload, deleteKaraokeModel, playback, prefs, refreshLanguage, setAutoplay, ui, toast, unblockArtist, setKaraokeDevice, applyKaraokeStatus, chooseKaraokeModel, refreshKaraokeModels } from '$lib/player.svelte';
 	import { win } from '$lib/win.svelte';
 	import { lt } from '$lib/lt.svelte';
 	import AppearanceSettings from '$lib/components/AppearanceSettings.svelte';
 	import Changelog from '$lib/components/Changelog.svelte';
 	import DiscordSettings from '$lib/components/DiscordSettings.svelte';
+	import ExperimentalBadge from '$lib/components/ExperimentalBadge.svelte';
+	import { KARAOKE_TIERS, tierMB } from '$lib/karaoke-tiers';
 	import ScrobbleSettings from '$lib/components/ScrobbleSettings.svelte';
+	import DevicesSettings from '$lib/components/DevicesSettings.svelte';
 	import {
 		updateState,
 		availableMessage,
@@ -47,6 +57,8 @@
 	import { getVersion } from '@tauri-apps/api/app';
 	import { t, setLocale, currentLocale, LOCALES } from '$lib/i18n.svelte';
 	import GlobalHotkeysSettings from '$lib/components/GlobalHotkeysSettings.svelte';
+	import LimusicAccountSettings from './LimusicAccountSettings.svelte';
+	import { limusic } from '$lib/limusic.svelte';
 	import LyricsSourcesSettings from '$lib/components/LyricsSourcesSettings.svelte';
 	import EnhancedLyricsSettings from '$lib/components/EnhancedLyricsSettings.svelte';
 	import LanguagePicker from '$lib/components/LanguagePicker.svelte';
@@ -55,18 +67,25 @@
 		| 'general'
 		| 'themes'
 		| 'playback'
+		| 'contributing'
 		| 'hotkeys'
 		| 'discord'
 		| 'scrobbling'
+		| 'devices'
 		| 'data'
 		| 'about';
 	const TABS = $derived<{ id: TabId; label: string; hint: string; icon: typeof Settings02Icon }[]>([
 		{ id: 'general', label: t('settings.tabs.general'), hint: t('settings.tabs.general_hint'), icon: Settings02Icon },
 		{ id: 'themes', label: t('settings.tabs.themes'), hint: t('settings.tabs.themes_hint'), icon: PaintBoardIcon },
 		{ id: 'playback', label: t('settings.tabs.playback'), hint: t('settings.tabs.playback_hint'), icon: PlayCircleIcon },
+		// Only once the service has said it takes contributions (`limusic.available`).
+		...(limusic.available
+			? [{ id: 'contributing' as const, label: t('settings.tabs.contributing'), hint: t('settings.tabs.contributing_hint'), icon: PencilEdit02Icon }]
+			: []),
 		{ id: 'hotkeys', label: t('settings.tabs.hotkeys'), hint: t('settings.tabs.hotkeys_hint'), icon: KeyboardIcon },
 		{ id: 'discord', label: t('settings.tabs.discord'), hint: t('settings.tabs.discord_hint'), icon: DiscordIcon },
 		{ id: 'scrobbling', label: t('settings.tabs.scrobbling'), hint: t('settings.tabs.scrobbling_hint'), icon: LastFmIcon },
+		{ id: 'devices', label: t('settings.tabs.devices'), hint: t('settings.tabs.devices_hint'), icon: ComputerPhoneSyncIcon },
 		{ id: 'data', label: t('settings.tabs.data'), hint: t('settings.tabs.data_hint'), icon: Database02Icon },
 		{ id: 'about', label: t('settings.tabs.about'), hint: t('settings.tabs.about_hint'), icon: InformationCircleIcon }
 	]);
@@ -122,10 +141,16 @@
 		untrack(() => {
 			// Opened on a section from elsewhere (the lyrics source picker): its tab, scrolled to it
 			// once the tab has rendered. The Last.fm menu and "Edit scrobble" open a whole tab.
-			if (ui.settingsFocus === 'scrobbling') {
-				tab = 'scrobbling';
+			if (ui.settingsFocus === 'scrobbling' || ui.settingsFocus === 'devices') {
+				tab = ui.settingsFocus;
 				ui.settingsFocus = null;
 				load();
+				loadKaraoke();
+			} else if (ui.settingsFocus === 'limusic') {
+				tab = 'contributing';
+				ui.settingsFocus = null;
+				load();
+				loadKaraoke();
 			} else if (ui.settingsFocus) {
 				tab = 'playback';
 				const id = `settings-${ui.settingsFocus}`;
@@ -133,8 +158,10 @@
 				load().then(tick).then(() => {
 					document.getElementById(id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 				});
+				loadKaraoke();
 			} else {
 				load();
+				loadKaraoke();
 			}
 			updateResult = null;
 		});
@@ -199,6 +226,138 @@
 		}
 	}
 
+	// Microsoft's permalink for the latest x64 VC++ runtime (karaoke's ONNX Runtime needs >= 14.44).
+	// Credit for the vocal-removal model, as the UVR README asks.
+	const UVR_URL = 'https://github.com/Anjok07/ultimatevocalremovergui';
+
+	let karaokeCacheLimit = $state(2048);
+	let karaokeCacheBytes = $state(0);
+	let clearCacheConfirm = $state(false);
+	let clearCacheTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	function formatCacheSize(bytes: number): string {
+		if (bytes < 1024) return '0 KB';
+		const kb = bytes / 1024;
+		if (kb < 1024) return `${kb.toFixed(1)} KB`;
+		const mb = kb / 1024;
+		if (mb < 1024) return `${mb.toFixed(1)} MB`;
+		const gb = mb / 1024;
+		return `${gb.toFixed(1)} GB`;
+	}
+
+	async function clearKaraokeCache() {
+		if (!clearCacheConfirm) {
+			clearCacheConfirm = true;
+			if (clearCacheTimeout) clearTimeout(clearCacheTimeout);
+			clearCacheTimeout = setTimeout(() => {
+				clearCacheConfirm = false;
+			}, 3000);
+			return;
+		}
+		if (clearCacheTimeout) clearTimeout(clearCacheTimeout);
+		clearCacheConfirm = false;
+		try {
+			await api.karaokeClearCache();
+			const status = await api.karaokeEngineStatus();
+			karaokeCacheBytes = status.cacheBytes;
+			toast.success(t('karaoke.settings.cleared'));
+		} catch (e) {
+			toast.error(String(e));
+		}
+	}
+
+	const karaokeCacheOptions = $derived.by(() => {
+		const base = [
+			{ value: '1024', label: '1 GB' },
+			{ value: '2048', label: '2 GB' },
+			{ value: '5120', label: '5 GB' },
+			{ value: '10240', label: '10 GB' }
+		];
+		const curStr = String(karaokeCacheLimit);
+		if (!base.some((o) => o.value === curStr)) {
+			return [
+				...base,
+				{ value: curStr, label: t('karaoke.settings.cache_custom', { n: karaokeCacheLimit }) }
+			];
+		}
+		return base;
+	});
+
+	onDestroy(() => {
+		if (clearCacheTimeout) clearTimeout(clearCacheTimeout);
+	});
+
+	async function setKaraokeCacheLimit(valStr: string) {
+		const val = Number(valStr);
+		const prev = karaokeCacheLimit;
+		karaokeCacheLimit = val;
+		try {
+			const res = await api.karaokeSetCacheLimitMb(val);
+			karaokeCacheLimit = res;
+			try {
+				const status = await api.karaokeEngineStatus();
+				karaokeCacheBytes = status.cacheBytes;
+			} catch (e) {
+				console.warn(e);
+			}
+		} catch (e) {
+			karaokeCacheLimit = prev;
+			toast.error(String(e));
+		}
+	}
+
+	let deleteConfirmModel = $state<api.KaraokeModelId | null>(null);
+
+	const karaokeModelOptions = $derived(
+		KARAOKE_TIERS.map((tier) => {
+			const name = t(`karaoke.settings.model_${tier.key}`);
+			const size = tierMB(tier.id);
+			return {
+				value: tier.id,
+				label: size ? `${name} (${size})` : name,
+				desc: t(`karaoke.settings.model_${tier.key}_desc`)
+			};
+		})
+	);
+
+	const karaokeDeviceOptions = $derived([
+		...(karaokeAvailability.autoSupported
+			? [{ value: 'auto' as api.KaraokeDevice, label: t('karaoke.settings.device_auto') }]
+			: []),
+		{ value: 'cpu' as api.KaraokeDevice, label: t('karaoke.settings.device_cpu') },
+		...(karaokeAvailability.gpuSupported
+			? [{ value: 'gpu' as api.KaraokeDevice, label: t('karaoke.settings.device_gpu') }]
+			: [])
+	]);
+
+	function setKaraokeModel(val: string) {
+		deleteConfirmModel = null;
+		void chooseKaraokeModel(val as api.KaraokeModelId);
+	}
+
+	async function loadKaraoke() {
+		try {
+			const sel = await api.karaokeModelGet();
+			if (sel) karaokeSelection.model = sel;
+			const [, limitRes, statusRes] = await Promise.allSettled([
+				refreshKaraokeModels(),
+				api.karaokeCacheLimitMb(),
+				api.karaokeEngineStatus()
+			]);
+			if (limitRes.status === 'fulfilled') {
+				karaokeCacheLimit = limitRes.value;
+			}
+			if (statusRes.status === 'fulfilled') {
+				const s = statusRes.value;
+				karaokeCacheBytes = s.cacheBytes;
+				applyKaraokeStatus(s);
+				if (s.model) karaokeSelection.model = s.model;
+			}
+		} catch (e) {
+			console.warn(e);
+		}
+	}
+
 	async function load() {
 		try {
 			const [s, c, d] = await Promise.all([api.getSettings(), api.getStreamClients(), api.getDownloads()]);
@@ -241,6 +400,8 @@
 	// Off by default, and only offered with music videos on: it costs real GPU time on every frame.
 	const ambientOn = $derived(settings.ambient_light === 'true');
 	const preventDuplicatesOn = $derived(settings.prevent_duplicates === 'true');
+	// Off by default: pause when other apps play media.
+	const autoPauseOn = $derived(settings.auto_pause_other_audio === 'true');
 	// Off by default: shuffle applies to the queue it was turned on for (issue #117).
 	const stickyShuffleOn = $derived(settings.sticky_shuffle === 'true');
 	// Off by default: shuffle keeps what was added with Add to queue behind the playlist (#369).
@@ -362,6 +523,11 @@
 	async function setPreventDuplicates(on: boolean) {
 		settings.prevent_duplicates = on ? 'true' : 'false';
 		await api.setSetting('prevent_duplicates', settings.prevent_duplicates);
+	}
+
+	async function setAutoPause(on: boolean) {
+		settings.auto_pause_other_audio = on ? 'true' : 'false';
+		await api.setSetting('auto_pause_other_audio', settings.auto_pause_other_audio);
 	}
 
 	async function setStickyShuffle(on: boolean) {
@@ -562,6 +728,8 @@
 					<DiscordSettings {settings} />
 				{:else if loaded && tab === 'scrobbling'}
 					<ScrobbleSettings {settings} />
+				{:else if tab === 'devices'}
+					<DevicesSettings />
 				{:else if tab === 'themes'}
 					<AppearanceSettings />
 				{:else}
@@ -698,6 +866,15 @@
 									control: dupSwitch,
 									tall: true
 								})}
+								<!-- there is no media watcher on macOS, so the setting isn't offered there -->
+								{#if !IS_MAC}
+									{@render row({
+										title: t('settings.playback.auto_pause_other_audio'),
+										desc: t('settings.playback.auto_pause_other_audio_hint'),
+										control: autoPauseSwitch,
+										tall: true
+									})}
+								{/if}
 								{@render row({
 									title: t('settings.playback.sticky_shuffle'),
 									desc: t('settings.playback.sticky_shuffle_hint'),
@@ -771,10 +948,91 @@
 								})}
 							</div>
 						</section>
+						<section class={GROUP} id="settings-karaoke">
+							<h3 class="{LABEL} flex items-center gap-2">
+								{t('karaoke.settings.title')}
+								<ExperimentalBadge tooltip={t('karaoke.experimental_tooltip')} />
+							</h3>
+							<div class={CARD}>
+								{@render row({
+									title: t('karaoke.settings.model'),
+									desc: t('karaoke.settings.model_desc'),
+									control: karaokeModelControl,
+									below: karaokeModelBelow,
+									tall: true
+								})}
+								{@render row({
+									title: t('karaoke.settings.cache_limit'),
+									desc: t('karaoke.settings.cache_limit_desc'),
+									control: karaokeCacheLimitControl
+								})}
+								{@render row({
+									title: t('karaoke.settings.cache_used'),
+									desc: t('karaoke.settings.cache_used_desc'),
+									control: karaokeCacheUsedControl
+								})}
+								<!-- Only where there is a graphics card path. Auto only where it can judge the card
+								     (Windows); elsewhere the card is opt-in and the text says so. -->
+								{#if karaokeAvailability.gpuSupported}
+									{@render row({
+										title: t('karaoke.settings.device'),
+										desc: karaokeAvailability.autoSupported
+											? t('karaoke.settings.device_desc')
+											: t('karaoke.settings.device_desc_opt_in'),
+										control: karaokeDeviceControl
+									})}
+								{/if}
+								{@render row({
+									title: t('karaoke.settings.status'),
+									desc: t('karaoke.settings.status_desc'),
+									control: karaokeStatusControl
+								})}
+								{@render row({
+									title: t('karaoke.settings.credit'),
+									desc: t('karaoke.consent.credit'),
+									control: karaokeCreditControl
+								})}
+							</div>
+						</section>
 						<section class={GROUP}>
 							<h3 class={LABEL}>{t('settings.sections.advanced')}</h3>
 							<div data-settings-card class={CARD}>
 								{@render row({ title: t('settings.general.stream_clients'), below: clientList })}
+							</div>
+						</section>
+					{:else if tab === 'contributing'}
+						<!-- Limusic Lyrics: who you are there, and how lyrics get added. Its own tab: as a
+						     section at the bottom of Playback nobody found it. -->
+						<section class={GROUP}>
+							<h3 class={LABEL}>{t('limusic.account')}</h3>
+							<LimusicAccountSettings />
+						</section>
+						<section class={GROUP}>
+							<h3 class={LABEL}>{t('limusic.how_title')}</h3>
+							<div data-settings-card class={CARD}>
+								{#each [{ title: t('limusic.how_open'), hint: t('limusic.how_open_hint'), icon: MusicNote01Icon }, { title: t('lyrics_editor.how_tap'), hint: t('lyrics_editor.how_tap_hint'), icon: Tap01Icon }, { title: t('lyrics_editor.how_send'), hint: t('lyrics_editor.how_send_hint'), icon: SentIcon }] as h (h.title)}
+									<div class="flex items-center gap-3.5 px-4 py-3">
+										<span class="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-muted">
+											<HugeiconsIcon icon={h.icon} class="size-[18px]" />
+										</span>
+										<div class="min-w-0">
+											<p class="text-sm font-medium">{h.title}</p>
+											<p class="text-xs text-muted-foreground">{h.hint}</p>
+										</div>
+									</div>
+								{/each}
+								<div class="flex flex-wrap items-center gap-3 px-4 py-3">
+									<p class="min-w-40 flex-1 text-xs text-muted-foreground">{t('limusic.open_editor_hint')}</p>
+									<Button
+										size="sm"
+										onclick={() => {
+											ui.settingsOpen = false;
+											goto('/lyrics-editor');
+										}}
+									>
+										{t('limusic.open_editor')}
+									</Button>
+								</div>
 							</div>
 						</section>
 					{:else if tab === 'hotkeys'}
@@ -988,6 +1246,10 @@
 {#snippet dupSwitch()}<Switch
 		checked={preventDuplicatesOn}
 		onCheckedChange={setPreventDuplicates}
+	/>{/snippet}
+{#snippet autoPauseSwitch()}<Switch
+		checked={autoPauseOn}
+		onCheckedChange={setAutoPause}
 	/>{/snippet}
 {#snippet stickyShuffleSwitch()}<Switch
 		checked={stickyShuffleOn}
@@ -1211,4 +1473,150 @@
 
 {#snippet changelog()}
 	<Changelog current={version} />
+{/snippet}
+
+{#snippet karaokeDeviceControl()}
+	<Select.Root
+		type="single"
+		value={karaokeAvailability.device}
+		onValueChange={(v) => void setKaraokeDevice(v as api.KaraokeDevice)}
+	>
+		<Select.Trigger class="w-48 shrink-0" aria-label={t('karaoke.settings.device')}>
+			<span class="flex-1 truncate text-left">
+				{karaokeDeviceOptions.find((o) => o.value === karaokeAvailability.device)?.label ?? karaokeDeviceOptions[0].label}
+			</span>
+		</Select.Trigger>
+		<Select.Content>
+			{#each karaokeDeviceOptions as opt (opt.value)}
+				<Select.Item value={opt.value} label={opt.label}>{opt.label}</Select.Item>
+			{/each}
+		</Select.Content>
+	</Select.Root>
+{/snippet}
+
+{#snippet karaokeModelControl()}
+	<Select.Root
+		type="single"
+		value={karaokeSelection.model}
+		onValueChange={setKaraokeModel}
+	>
+		<Select.Trigger class="w-48 shrink-0" aria-label={t('karaoke.settings.model')}>
+			<span class="flex-1 truncate text-left">
+				{karaokeModelOptions.find((o) => o.value === karaokeSelection.model)?.label ?? karaokeSelection.model}
+			</span>
+		</Select.Trigger>
+		<Select.Content>
+			{#each karaokeModelOptions as opt (opt.value)}
+				<Select.Item value={opt.value} label={opt.label}>{opt.label}</Select.Item>
+			{/each}
+		</Select.Content>
+	</Select.Root>
+{/snippet}
+
+{#snippet karaokeModelBelow()}
+	{@const currentModelSt = karaokeModels[karaokeSelection.model] ?? karaokeModels.light}
+	{@const sizeStr = tierMB(karaokeSelection.model)}
+	{@const downloadedStr = (currentModelSt.downloaded / 1048576).toFixed(1)}
+	{@const totalStr = (currentModelSt.total / 1048576).toFixed(1)}
+	{@const anyDownloading = Object.values(karaokeModels).some((m) => m.downloading)}
+	{@const isDisabled = playback.karaoke || anyDownloading}
+	{@const disableReason = playback.karaoke ? t('karaoke.settings.delete_in_use') : anyDownloading ? t('karaoke.settings.delete_in_use') : ''}
+	<div class="flex items-center justify-between pt-1">
+		<span class="text-xs text-muted-foreground flex items-center gap-2">
+			{#if currentModelSt.installed}
+				<span>{t('karaoke.settings.model_installed', { size: sizeStr })}</span>
+				<Button
+					variant="outline"
+					size="sm"
+					class="h-6 px-2 text-xs"
+					disabled={isDisabled}
+					title={isDisabled ? disableReason : undefined}
+					onclick={() => {
+						if (deleteConfirmModel === karaokeSelection.model) {
+							deleteConfirmModel = null;
+							deleteKaraokeModel(karaokeSelection.model);
+						} else {
+							deleteConfirmModel = karaokeSelection.model;
+						}
+					}}
+				>
+					{deleteConfirmModel === karaokeSelection.model ? t('karaoke.settings.delete_confirm') : t('karaoke.settings.delete')}
+				</Button>
+			{:else if currentModelSt.downloading}
+				{downloadedStr} / {totalStr} MB
+			{:else}
+				{t('karaoke.settings.model_missing')}
+			{/if}
+		</span>
+		{#if !currentModelSt.installed && !currentModelSt.downloading}
+			<Button size="sm" onclick={() => { karaokeConsent.model = karaokeSelection.model; karaokeConsent.enableAfter = false; karaokeConsent.open = true; }}>
+				{t('karaoke.download')}
+			</Button>
+		{:else if currentModelSt.downloading}
+			<Button variant="outline" size="sm" onclick={cancelKaraokeModelDownload}>
+				{t('karaoke.cancel')}
+			</Button>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet karaokeStatusControl()}
+	<div class="flex items-center gap-3">
+		<span class="text-xs text-muted-foreground">
+			{#if karaokeAvailability.reason}
+				{t(`karaoke.unavailable.${karaokeAvailability.reason}`)}
+			{:else if karaokeAvailability.processor === 'gpu'}
+				{t('karaoke.settings.processor_gpu')}
+			{:else if karaokeAvailability.processor === 'cpu'}
+				{t('karaoke.settings.processor_cpu')}
+			{:else}
+				{t('karaoke.settings.not_started')}
+			{/if}
+		</span>
+		{#if karaokeAvailability.reason === 'vc_runtime'}
+			<Button variant="outline" size="sm" onclick={() => api.openExternal(api.VC_REDIST_URL)}>
+				{t('karaoke.settings.get_vc_redist')}
+			</Button>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet karaokeCreditControl()}
+	<Button variant="outline" size="sm" onclick={() => api.openExternal(UVR_URL)}>
+		{t('karaoke.consent.credit_link')}
+	</Button>
+{/snippet}
+
+{#snippet karaokeCacheLimitControl()}
+	<Select.Root
+		type="single"
+		value={String(karaokeCacheLimit)}
+		onValueChange={setKaraokeCacheLimit}
+	>
+		<Select.Trigger class="w-40 shrink-0" aria-label={t('karaoke.settings.cache_limit')}>
+			<span class="flex-1 truncate text-left">
+				{karaokeCacheOptions.find((o) => o.value === String(karaokeCacheLimit))?.label ?? `${karaokeCacheLimit} MB`}
+			</span>
+		</Select.Trigger>
+		<Select.Content>
+			{#each karaokeCacheOptions as opt (opt.value)}
+				<Select.Item value={opt.value} label={opt.label}>{opt.label}</Select.Item>
+			{/each}
+		</Select.Content>
+	</Select.Root>
+{/snippet}
+
+{#snippet karaokeCacheUsedControl()}
+	<div class="flex items-center gap-3">
+		<span class="text-xs text-muted-foreground">
+			{formatCacheSize(karaokeCacheBytes)}
+		</span>
+		<Button
+			variant={clearCacheConfirm ? 'destructive' : 'outline'}
+			size="sm"
+			onclick={clearKaraokeCache}
+		>
+			{clearCacheConfirm ? t('karaoke.settings.clear_confirm') : t('karaoke.settings.clear')}
+		</Button>
+	</div>
 {/snippet}

@@ -31,6 +31,9 @@ pub const FILTER_SONG: &str = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D";
 pub const FILTER_VIDEO: &str = "EgWKAQIQAWoKEAkQChAFEAMQBA%3D%3D";
 pub const FILTER_ALBUM: &str = "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D";
 pub const FILTER_ARTIST: &str = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D";
+/// YouTube's (not YouTube Music's) search filter for broadcasts on air. Only the WEB client's
+/// search understands it.
+pub const FILTER_LIVE_NOW: &str = "EgJAAQ%3D%3D";
 pub const FILTER_COMMUNITY_PLAYLIST: &str = "EgeKAQQoAEABagoQAxAEEAoQCRAF";
 
 /// A comment's like/unlike/dislike/undislike and delete: `{context, actions: [<token>]}`.
@@ -226,6 +229,21 @@ impl InnerTube {
         // No history: "Show more" repeats the query the search page already recorded.
         let value = self.search_raw(client, query, Some(filter), false).await?;
         Ok(browse::parse_search_cards(&value))
+    }
+
+    /// Broadcasts on air for `query`, from YouTube's search with its Live filter (#424). `client`
+    /// is the WEB client: YouTube Music's own search returns no live marker at all. Anonymous,
+    /// like every search that records no history.
+    pub async fn live_now(
+        &self,
+        client: &YouTubeClient,
+        query: &str,
+    ) -> Result<Vec<browse::LiveVideo>, Error> {
+        let value = self.search_raw(client, query, Some(FILTER_LIVE_NOW), false).await?;
+        let mut live = browse::parse_live_search(&value);
+        let blocked = self.blocked();
+        live.retain(|l| !blocked.blocks_card(&l.item));
+        Ok(live)
     }
 
     /// Up-next queue / radio for a video. context/08. Uses the metadata client.
@@ -1103,6 +1121,13 @@ impl InnerTube {
     ///
     /// Returns `false` when the track is already in the playlist: YouTube refuses the add (see
     /// `edit_rejection`) rather than storing a second copy, unless `allow_duplicates` asks for one.
+    ///
+    /// Adding is the one edit the app offers on any playlist, saved ones from other people
+    /// included, so a 401/403 here is YouTube saying the list isn't this account's to edit
+    /// (`Error::PlaylistNotEditable`), not a dead session. It never wakes the healer: a heal signs
+    /// in again, and the UI took that for an account switch mid-add (#651). ponytail: a session
+    /// that really went stale reads as a refusal here too, but every add follows a library or
+    /// playlist read that heals it.
     pub async fn playlist_add(
         &self,
         client: &YouTubeClient,
@@ -1110,12 +1135,13 @@ impl InnerTube {
         video_id: &str,
         allow_duplicates: bool,
     ) -> Result<bool, Error> {
-        match self
-            .edit_playlist(client, playlist_id, add_video_action(video_id, allow_duplicates))
-            .await
-        {
-            Ok(()) => Ok(true),
+        let action = vec![add_video_action(video_id, allow_duplicates)];
+        match self.edit_playlist_value(client, playlist_id, action, false).await {
+            Ok(_) => Ok(true),
             Err(Error::AlreadyInPlaylist) => Ok(false),
+            Err(Error::Http(e)) if e.status().is_some_and(|s| s == 401 || s == 403) => {
+                Err(Error::PlaylistNotEditable)
+            }
             Err(e) => Err(e),
         }
     }
@@ -1326,6 +1352,7 @@ impl InnerTube {
                     "action": "ACTION_REMOVE_CUSTOM_THUMBNAIL",
                     "deletedCustomThumbnail": custom_thumbnail_key(),
                 })],
+                true,
             )
             .await
             .map_err(cover_refusal)?;
@@ -1347,14 +1374,16 @@ impl InnerTube {
         playlist_id: &str,
         actions: Vec<serde_json::Value>,
     ) -> Result<(), Error> {
-        self.edit_playlist_value(client, playlist_id, actions).await.map(|_| ())
+        self.edit_playlist_value(client, playlist_id, actions, true).await.map(|_| ())
     }
 
+    /// `heal`: whether a 401/403 may wake the session healer (see [`InnerTube::post_no_heal`]).
     async fn edit_playlist_value(
         &self,
         client: &YouTubeClient,
         playlist_id: &str,
         actions: Vec<serde_json::Value>,
+        heal: bool,
     ) -> Result<serde_json::Value, Error> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
@@ -1368,7 +1397,11 @@ impl InnerTube {
             playlist_id: strip_vl(playlist_id).to_owned(),
             actions,
         };
-        let value = self.post("browse/edit_playlist", client, &body, true).await?;
+        let value = if heal {
+            self.post("browse/edit_playlist", client, &body, true).await?
+        } else {
+            self.post_no_heal("browse/edit_playlist", client, &body, true).await?
+        };
         match edit_rejection(&value) {
             Some(e) => Err(e),
             None => Ok(value),
@@ -1929,6 +1962,23 @@ mod tests {
         assert!(matches!(it.comments(&web(), "vid").await, Err(Error::Http(_))));
         assert_eq!(server.requests().len(), 1);
         no_heal(&it).await;
+    }
+
+    /// #651: someone else's playlist refuses the add. That is the answer, not a dead session to heal
+    /// (a heal would sit out its 90 s timeout here, hence the short one).
+    #[tokio::test]
+    async fn an_add_to_someone_elses_playlist_is_refused_without_healing() {
+        for status in [401, 403] {
+            let server = MockServer::start(move |_| (status, "{}".into()));
+            let it = it_against(&server, true);
+            let client = web();
+            let add = it.playlist_add(&client, "VLPLtheirs", "vid", false);
+            let got =
+                tokio::time::timeout(Duration::from_secs(5), add).await.expect("no heal wait");
+            assert!(matches!(got, Err(Error::PlaylistNotEditable)), "{status}: {got:?}");
+            assert_eq!(server.requests().len(), 1);
+            no_heal(&it).await;
+        }
     }
 
     #[tokio::test]

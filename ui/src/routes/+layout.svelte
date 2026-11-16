@@ -24,10 +24,11 @@
 		initTheme
 	} from '$lib/theme.svelte';
 	import { loadAppIcon } from '$lib/appicon.svelte';
+	import { watchLimusic } from '$lib/limusic.svelte';
 	import { thumb } from '$lib/thumb';
 	import { t } from '$lib/i18n.svelte';
 	import { blockForeignDrag, dragScroll } from '$lib/dnd';
-	import { suppressNative } from '$lib/menu';
+	import { notePress, skipSelectClick, suppressNative } from '$lib/menu';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import Titlebar from '$lib/components/Titlebar.svelte';
 	import ResizeBorders from '$lib/components/ResizeBorders.svelte';
@@ -44,6 +45,7 @@
 	import ListenTogether from '$lib/components/ListenTogether.svelte';
 	import LinkDialog from '$lib/components/LinkDialog.svelte';
 	import ImportDialog from '$lib/components/ImportDialog.svelte';
+	import KaraokeSetupDialog from '$lib/components/KaraokeSetupDialog.svelte';
 	import { handleImportDrop, initImport } from '$lib/import.svelte';
 	import MiniPlayer from '$lib/components/MiniPlayer.svelte';
 	import NowPlaying from '$lib/components/NowPlaying.svelte';
@@ -53,7 +55,7 @@
 	import KeyboardShortcuts from '$lib/components/KeyboardShortcuts.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { auth, initApp, np, playback, prefs, ui } from '$lib/player.svelte';
-	import { isLocalId } from '$lib/api';
+	import { isLocalId, setWebviewOpaque } from '$lib/api';
 	import { video } from '$lib/video.svelte';
 	import { initWin, windowCorners } from '$lib/win.svelte';
 	import { initZoom } from '$lib/zoom.svelte';
@@ -153,6 +155,17 @@
 	// routes below it are ever rendered. Constant for the window's lifetime.
 	const isMini = browser && getCurrentWindow().label === 'mini';
 
+	// Linux: the webview keeps an alpha channel so the desktop shows where the page paints nothing,
+	// and GTK pays for that channel on every frame (lib.rs `set_webview_opaque`, 3.2 ms a frame
+	// against 1.1). The page only leaves pixels empty at the corners it rounds and in the box mpv
+	// draws a music video under, so the channel goes while neither is up: maximized, theater mode,
+	// a system frame. Going back is not awaited: when the window un-maximizes, its corners are
+	// black for the frame or two the call takes to land.
+	$effect(() => {
+		if (isMini) return;
+		setWebviewOpaque(windowCorners() === '' && !video.hole).catch(() => {});
+	});
+
 	// Apply the saved accent color before the first paint (ssr=false → nothing renders until now).
 	if (browser) initTheme();
 	// The custom app icon (#173) is a file on disk, so the titlebar has to ask Rust for it.
@@ -179,12 +192,14 @@
 		// mounted for days and a mount-only check would never see a release published in between.
 		const updateTimer = setInterval(checkForUpdatesQuiet, QUIET_INTERVAL_MS);
 		const teardownApp = initApp();
+		const teardownLimusic = watchLimusic();
 		const teardownZoom = initZoom();
 		const teardownShortcuts = initShortcuts();
 		initImport();
 		return () => {
 			clearInterval(updateTimer);
 			teardownApp();
+			teardownLimusic();
 			teardownWin();
 			teardownZoom();
 			teardownShortcuts();
@@ -194,13 +209,16 @@
 
 <!-- oncontextmenu: the app's own menus handle their right-click and stop the event, so anything
      that reaches the window is a place where WebKit would have offered back / reload / inspect.
-     Text fields and selections keep the native menu (see `suppressNative`). -->
+     Text fields and selections keep the native menu (see `suppressNative`). A click that ends a
+     drag-select reaches nothing (`skipSelectClick`, #262). -->
 <!-- A Spotify export, CSV or link dropped anywhere opens the import (#375); anything else foreign is
      refused as before. -->
 <svelte:window
 	ondragover={blockForeignDrag}
 	ondrop={(e) => handleImportDrop(e) || blockForeignDrag(e)}
 	oncontextmenu={suppressNative}
+	onpointerdowncapture={notePress}
+	onclickcapture={skipSelectClick}
 />
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
@@ -264,6 +282,7 @@
 			{#if np.open && playback.now}<NowPlaying
 					queueOpen={showQueue}
 					lyricsOpen={showLyrics || showComments}
+					onLyrics={() => ((lyricsOpen = true), (commentsOpen = false))}
 				/>{/if}
 			<!-- Lyrics before queue: side by side over the page, lyrics on the left, queue on the right. -->
 			{#if showLyrics}<LyricsPanel onClose={() => (lyricsOpen = false)} queueOpen={showQueue} />{/if}
@@ -319,6 +338,7 @@
 	<ListenTogether />
 	<LinkDialog />
 	<ImportDialog />
+	<KaraokeSetupDialog />
 
 	<!-- The two notification banners below run at z-[100]. Dialogs and menus sit at z-50 and portal to
 	     <body>, so a z-50 banner loses the tie on DOM order and hides behind an open modal. The update
