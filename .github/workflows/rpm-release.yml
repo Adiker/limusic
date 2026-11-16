@@ -4,6 +4,24 @@ name: Fedora RPM release package
 # Windows and macOS artifacts. GitHub has no hosted Fedora runner, so reproduce that build in the
 # official Fedora container while checking out the same fork tag.
 on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      dry_run:
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      LASTFM_API_KEY:
+        required: false
+      LASTFM_API_SECRET:
+        required: false
   workflow_dispatch:
     inputs:
       tag:
@@ -33,7 +51,7 @@ jobs:
         shell: bash
         run: |
           TAG="${{ inputs.tag }}"
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || {
             echo "::error::invalid release tag: $TAG"
             exit 1
           }
