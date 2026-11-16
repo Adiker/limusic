@@ -1,0 +1,103 @@
+name: Build and promote fork release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Upstream release tag already included by a merged sync PR
+        required: true
+        type: string
+      merge_sha:
+        description: Exact merge commit of that PR
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: fork-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       (startsWith(github.event.pull_request.head.ref, 'codex/sync-upstream-') ||
+        github.event.pull_request.head.ref == 'automation/upstream-release'))
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.prepare.outputs.tag }}
+      sha: ${{ steps.prepare.outputs.sha }}
+      build: ${{ steps.prepare.outputs.build }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+      - id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_SHA: ${{ inputs.merge_sha }}
+          EVENT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python3 scripts/fork-release/prepare.py
+
+  linux:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/linux-release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+    secrets: inherit
+  windows:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/windows-release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+    secrets: inherit
+  macos:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/macos-release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+    secrets: inherit
+  rpm:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/rpm-release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+    secrets: inherit
+  arch:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    uses: ./.github/workflows/arch-release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+    secrets: inherit
+
+  promote:
+    needs: [prepare, linux, windows, macos, rpm, arch]
+    if: >-
+      always() && needs.prepare.result == 'success' &&
+      (needs.prepare.outputs.build == 'false' ||
+       (needs.linux.result == 'success' && needs.windows.result == 'success' &&
+        needs.macos.result == 'success' && needs.rpm.result == 'success' && needs.arch.result == 'success'))
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: python3 scripts/fork-release/promote.py

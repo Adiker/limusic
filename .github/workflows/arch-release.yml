@@ -3,6 +3,24 @@ name: Arch Linux release package
 # The upstream release does not publish an Arch package. This workflow uses the same fork tag as
 # the Linux/Windows/macOS release workflows and adds the native Arch package to that release.
 on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      dry_run:
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      LASTFM_API_KEY:
+        required: false
+      LASTFM_API_SECRET:
+        required: false
   workflow_dispatch:
     inputs:
       tag:
@@ -39,7 +57,7 @@ jobs:
             echo "tag=$TAG" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || {
             echo "::error::expected a stable release tag, or a full commit SHA with dry_run=true: $TAG"
             exit 1
           }
@@ -70,7 +88,7 @@ jobs:
               echo "::error::tauri.conf.json says $version but the tag says $RELEASE_VERSION"
               exit 1
             }
-            package_version="$version"
+            package_version="${version//-/}"
           fi
           [[ "$package_version" =~ ^[0-9A-Za-z.+_]+$ ]] || {
             echo "::error::invalid Arch package version: $package_version"
@@ -135,7 +153,7 @@ jobs:
         run: |
           set -euo pipefail
           package="$(find pkg/arch -maxdepth 1 -type f \
-            -name "limusic-${{ steps.rel.outputs.version }}-[0-9]*-x86_64.pkg.tar.zst" \
+            -name "limusic-${{ steps.app.outputs.version }}-[0-9]*-x86_64.pkg.tar.zst" \
             -print -quit)"
           [ -n "$package" ] || { echo "::error::makepkg produced no package"; exit 1; }
           echo "Uploading Arch package: $package"
