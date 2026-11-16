@@ -391,6 +391,7 @@ pub fn playback_data(db: &Db, video_id: &str) -> Option<PlaybackData> {
         thumbnail: item.thumbnail,
         is_video: Some(false),
         is_episode: None,
+        live: false,
         stream_client: "download".to_owned(),
     })
 }
@@ -608,6 +609,9 @@ impl DownloadManager {
             )
             .await
             .map_err(|e| e.to_string())?;
+        if data.live {
+            return Err("Live broadcasts cannot be downloaded for offline playback".into());
+        }
         let ext = ext_for_mime(data.mime_type.as_deref());
         let name = stable_name(id);
         let relative = format!("{AUDIO_DIR}/{name}.{ext}");

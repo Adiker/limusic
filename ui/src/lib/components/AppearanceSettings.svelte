@@ -31,7 +31,6 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import ColorPicker from '$lib/components/ColorPicker.svelte';
 	import ThemeMock from '$lib/components/ThemeMock.svelte';
-	import EnhancedLyricsSettings from '$lib/components/EnhancedLyricsSettings.svelte';
 	import { LEVELS as ZOOM_LEVELS, setZoom, zoom } from '$lib/zoom.svelte';
 	import { playback, toast } from '$lib/player.svelte';
 	import { thumb } from '$lib/thumb';
@@ -445,6 +444,11 @@
 					control: classicPlayerSwitch
 				})}
 				{@render row({
+					title: t('settings.themes.cover_lyric_romanized'),
+					desc: t('settings.themes.cover_lyric_romanized_hint'),
+					control: coverLyricRomanizedSwitch
+				})}
+				{@render row({
 					title: t('settings.themes.open_player'),
 					desc: t('settings.themes.open_player_hint'),
 					control: openPlayerSwitch
@@ -464,8 +468,22 @@
 					desc: t('settings.themes.artwork_background_hint'),
 					control: artworkBgSwitch
 				})}
+				{@render row({
+					title: t('settings.themes.theater_clock'),
+					desc: t('settings.themes.theater_clock_hint'),
+					control: theaterClockSwitch
+				})}
+				{#if appearance.theaterClock}
+					{@render row({
+						title: t('settings.themes.theater_clock_side'),
+						control: theaterClockSideSelect
+					})}
+					{@render row({
+						title: t('settings.themes.theater_clock_format'),
+						control: theaterClockFormatSelect
+					})}
+				{/if}
 			</div>
-			<div class="mt-3"><EnhancedLyricsSettings /></div>
 		</section>
 	</div>
 
@@ -688,9 +706,64 @@
 		checked={appearance.nowPlayingPill}
 		onCheckedChange={(on) => setAppearance({ nowPlayingPill: on })}
 	/>{/snippet}
+{#snippet theaterClockSwitch()}<Switch
+		checked={appearance.theaterClock}
+		onCheckedChange={(on) => setAppearance({ theaterClock: on })}
+	/>{/snippet}
+
+{#snippet theaterClockSideSelect()}
+	<Select.Root
+		type="single"
+		value={appearance.theaterClockSide}
+		onValueChange={(v) => setAppearance({ theaterClockSide: v as 'left' | 'right' })}
+	>
+		<Select.Trigger class="w-44 shrink-0" aria-label={t('settings.themes.theater_clock_side')}>
+			<span class="min-w-0 flex-1 truncate text-left">
+				{appearance.theaterClockSide === 'left'
+					? t('settings.themes.theater_clock_left')
+					: t('settings.themes.theater_clock_right')}
+			</span>
+		</Select.Trigger>
+		<Select.Content>
+			<Select.Item value="left" label={t('settings.themes.theater_clock_left')}>
+				{t('settings.themes.theater_clock_left')}
+			</Select.Item>
+			<Select.Item value="right" label={t('settings.themes.theater_clock_right')}>
+				{t('settings.themes.theater_clock_right')}
+			</Select.Item>
+		</Select.Content>
+	</Select.Root>
+{/snippet}
+
+{#snippet theaterClockFormatSelect()}
+	<Select.Root
+		type="single"
+		value={appearance.theaterClockFormat}
+		onValueChange={(v) => setAppearance({ theaterClockFormat: v as 'auto' | '12' | '24' })}
+	>
+		<Select.Trigger class="w-44 shrink-0" aria-label={t('settings.themes.theater_clock_format')}>
+			<span class="min-w-0 flex-1 truncate text-left">
+				{t(`settings.themes.theater_clock_format_${appearance.theaterClockFormat}`)}
+			</span>
+		</Select.Trigger>
+		<Select.Content>
+			{#each ['auto', '12', '24'] as const as f (f)}
+				<Select.Item value={f} label={t(`settings.themes.theater_clock_format_${f}`)}>
+					{t(`settings.themes.theater_clock_format_${f}`)}
+				</Select.Item>
+			{/each}
+		</Select.Content>
+	</Select.Root>
+{/snippet}
+
 {#snippet classicPlayerSwitch()}<Switch
 		checked={appearance.classicPlayer}
 		onCheckedChange={(on) => setAppearance({ classicPlayer: on })}
+	/>{/snippet}
+{#snippet coverLyricRomanizedSwitch()}<Switch
+		checked={appearance.coverLyricRomanized}
+		disabled={appearance.classicPlayer}
+		onCheckedChange={(on) => setAppearance({ coverLyricRomanized: on })}
 	/>{/snippet}
 {#snippet openPlayerSwitch()}<Switch
 		checked={appearance.openPlayerOnPlay}

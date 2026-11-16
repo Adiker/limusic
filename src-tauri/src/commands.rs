@@ -222,6 +222,13 @@ pub async fn set_volume(state: St<'_>, volume: i64) -> Result<(), String> {
     Ok(())
 }
 
+/// A fresh position and when it was read (`AppState::playback_clock`). Async, so the read of mpv
+/// happens off the main thread.
+#[tauri::command]
+pub async fn playback_clock(state: St<'_>) -> Result<Option<serde_json::Value>, String> {
+    Ok(state.playback_clock())
+}
+
 /// Session-only tempo (0.5–2.0), pitch (−12..=12 semitones), and reverb controls.
 #[tauri::command]
 pub async fn set_playback_params(
@@ -231,6 +238,36 @@ pub async fn set_playback_params(
     reverb: player::Reverb,
 ) -> Result<(), String> {
     state.set_playback_params(speed, semitones, reverb).await
+}
+
+/// Vocal reduction. Session-only on purpose, never persisted, resets on restart like tempo/pitch.
+#[tauri::command]
+pub async fn set_karaoke(
+    state: St<'_>,
+    models: State<'_, Arc<crate::karaoke_model::ModelManager>>,
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+    enabled: bool,
+) -> Result<(), String> {
+    // TODO(model-select)
+    let selected = engine.model();
+    if enabled && !models.is_installed(selected) {
+        let _ = state.app.emit(
+            "karaoke-status",
+            &serde_json::json!({
+                "videoId": "",
+                "state": "needs-model",
+                "model": selected.key()
+            }),
+        );
+        let _ = state.app.emit("karaoke", false);
+        return Ok(());
+    }
+    if let Err(e) = state.set_karaoke_active(enabled).await {
+        let _ = state.app.emit("karaoke", false);
+        return Err(e);
+    }
+    let _ = state.app.emit("karaoke", enabled);
+    Ok(())
 }
 
 #[tauri::command]
@@ -261,6 +298,7 @@ const UI_SETTINGS: &[&str] = &[
     "autoplay",
     "hide_videos",
     "prevent_duplicates",
+    "auto_pause_other_audio",
     "update_banner",
     "update_channel",
     "lyrics_providers",
@@ -331,26 +369,30 @@ pub async fn ambient_frame(after: u32) -> tauri::ipc::Response {
 /// or `None` when it has none. mpv draws the picture there, underneath the webview
 /// (nativevideo.rs, nativevideo_windows.rs). `false` means no picture is up, and for a rect that
 /// there never will be: the page falls back to the `<video>` element. `dpr` is the page's
-/// `devicePixelRatio`, which Windows needs for the page zoom; Linux reads the zoom off the webview.
+/// `devicePixelRatio`, which Windows needs for the page zoom; Linux gets it from `vw`, the page's
+/// `innerWidth`, against the webview's own width.
 #[tauri::command]
 pub async fn native_video_rect(
     app: tauri::AppHandle,
     state: St<'_>,
     rect: Option<[f64; 4]>,
     dpr: Option<f64>,
+    vw: Option<f64>,
 ) -> Result<bool, String> {
     #[cfg(target_os = "linux")]
     {
         let _ = dpr;
-        Ok(crate::nativevideo::set_rect(&app, state.inner().clone(), rect).await)
+        Ok(crate::nativevideo::set_rect(&app, state.inner().clone(), rect, vw).await)
     }
+    #[cfg(windows)]
+    let _ = vw;
     #[cfg(windows)]
     return Ok(
         crate::nativevideo::set_rect(&app, state.inner().clone(), rect, dpr.unwrap_or(1.0)).await
     );
     #[cfg(not(any(target_os = "linux", windows)))]
     {
-        let _ = (app, state, rect, dpr);
+        let _ = (app, state, rect, dpr, vw);
         Ok(false)
     }
 }
@@ -411,6 +453,19 @@ pub async fn get_settings(state: St<'_>) -> Result<serde_json::Value, String> {
     Ok(serde_json::Value::Object(map))
 }
 
+/// Whether the page fills the window's whole rectangle right now: no rounded corners, no video
+/// hole. Linux turns the main webview's alpha channel off while it does ([`crate::set_webview_opaque`]);
+/// nothing to do anywhere else. The mini player always rounds its corners, so it never asks.
+#[tauri::command]
+pub fn set_webview_opaque(window: tauri::WebviewWindow, opaque: bool) {
+    #[cfg(target_os = "linux")]
+    if window.label() == "main" {
+        crate::set_webview_opaque(&window, opaque);
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (window, opaque);
+}
+
 #[tauri::command]
 pub async fn set_setting(
     app: tauri::AppHandle,
@@ -420,6 +475,13 @@ pub async fn set_setting(
 ) -> Result<(), String> {
     if !UI_SETTINGS.contains(&key.as_str()) {
         return Err(format!("unknown setting: {key}"));
+    }
+    // The queue panel's switch is the playing device's: while the player bar controls a linked
+    // phone, it flips the phone's Autoplay and leaves this desktop's as it is.
+    if key == "autoplay" && state.showing_remote() {
+        let on = value != "false";
+        state.link.remote(listen_protocol::RemoteAction::SetAutoplay { on }, None);
+        return Ok(());
     }
     // Registers/removes the login autostart entry on toggle; the OS persists it from there, and
     // startup repoints an existing entry at the running binary (lib.rs). Before the write, so a
@@ -464,6 +526,10 @@ pub async fn set_setting(
     // to follow without waiting for the next track.
     if key == "discord_rpc_config" {
         state.set_discord_config(&value);
+    }
+    // Takes effect at once: if other media is already playing, the music pauses without waiting.
+    if key == "auto_pause_other_audio" {
+        state.inner().set_auto_pause_enabled(value == "true");
     }
     // The Scrobbling tab's settings, read whole each time: the two switches from #231 keep rows of
     // their own, and the scrobbler wants all of it in one message.
@@ -924,6 +990,62 @@ fn metadata_client(state: &Arc<AppState>) -> Result<&innertube::YouTubeClient, S
 pub async fn get_home(state: St<'_>, params: Option<String>) -> Result<HomePage, String> {
     let client = metadata_client(&state)?;
     state.it.home(client, params.as_deref()).await.map_err(|e| e.to_string())
+}
+
+/// Home's Live section (#424): broadcasts on air from official artist channels, most watched
+/// first. YouTube curates no such list (its Live hub is gaming, news and sports, the Music hub
+/// only recordings, and YouTube Music's search marks nothing as live), so this is a few music
+/// searches with YouTube's Live filter. Only rows with the official-artist badge survive: the rest
+/// were mostly re-uploads of the same few streams by unrelated channels. Cached for an hour, so
+/// home costs at most three searches an hour however often it is opened.
+#[tauri::command]
+pub async fn get_live_now(state: St<'_>) -> Result<Vec<BrowseItem>, String> {
+    use std::time::{Duration, Instant};
+    static CACHE: std::sync::Mutex<Option<(Instant, Vec<BrowseItem>)>> =
+        std::sync::Mutex::new(None);
+    const TTL: Duration = Duration::from_secs(60 * 60);
+    if let Some((at, items)) = CACHE.lock().unwrap().as_ref() {
+        if at.elapsed() < TTL {
+            return Ok(items.clone());
+        }
+    }
+    let client = state.clients.get("WEB").ok_or("WEB client missing")?;
+    let searches = LIVE_QUERIES.iter().map(|q| state.it.live_now(client, q));
+    let results = futures_util::future::join_all(searches).await;
+    if results.iter().all(Result::is_err) {
+        let first = results.into_iter().find_map(Result::err);
+        return Err(first.map(|e| e.to_string()).unwrap_or_default());
+    }
+    let items = pick_live(results.into_iter().flatten().flatten().collect());
+    *CACHE.lock().unwrap() = Some((Instant::now(), items.clone()));
+    Ok(items)
+}
+
+/// What `get_live_now` asks for. Broad on purpose: each brings a different handful of official
+/// channels (labels' radio streams, Lofi Girl and its kin, the jazz café channels).
+const LIVE_QUERIES: [&str; 3] = ["music radio", "lofi", "jazz"];
+const LIVE_MAX: usize = 12;
+
+/// Official channels only, one card per stream (the same broadcast turns up under two queries, and
+/// a label runs one title on several of its channels), at most three per channel (Lofi Girl alone
+/// has eight on air at once), most watched first.
+fn pick_live(mut all: Vec<innertube::LiveVideo>) -> Vec<BrowseItem> {
+    const PER_CHANNEL: usize = 3;
+    all.retain(|l| l.official);
+    all.sort_by_key(|l| std::cmp::Reverse(l.watching));
+    let (mut ids, mut titles) =
+        (std::collections::HashSet::new(), std::collections::HashSet::new());
+    let mut per_channel = std::collections::HashMap::<Option<String>, usize>::new();
+    all.into_iter()
+        .filter(|l| ids.insert(l.item.id.clone()) && titles.insert(l.item.title.to_lowercase()))
+        .filter(|l| {
+            let n = per_channel.entry(l.item.subtitle.clone()).or_default();
+            *n += 1;
+            *n <= PER_CHANNEL
+        })
+        .map(|l| l.item)
+        .take(LIVE_MAX)
+        .collect()
 }
 
 #[tauri::command]
@@ -1694,6 +1816,16 @@ fn editable_playlist<'a>(
 /// membership of this list is the only way a result can draw its heart filled. Not shown in the
 /// "saved in" chip, though: the thumbs-up already says it (the UI filters it out there).
 const LIKED_MUSIC_ID: &str = "VLLM";
+/// When the index was last crawled, as unix seconds. `_v2`: the key changed when Liked Music joined
+/// the index, so an install with a fresh stamp re-crawled once instead of showing hearts empty for
+/// another six hours.
+pub(crate) const PLAYLIST_INDEX_STAMP: &str = "playlist_index_synced_at_v2";
+/// The library playlists the last crawl found this account can't edit (saved from someone else),
+/// as a JSON array of ids. The add-to-playlist picker leaves them out (#651).
+pub(crate) const PLAYLIST_INDEX_READONLY: &str = "playlist_index_readonly";
+/// What `add_to_playlist` rejects with when YouTube refuses the add because the playlist belongs
+/// to someone else. A code, not a sentence: the UI words it in the user's language.
+const NOT_EDITABLE: &str = "not_editable";
 /// How long the membership index is trusted before a re-crawl. Adds and removes made in this app
 /// patch it as they happen, so this window only ever covers edits made somewhere else.
 const PLAYLIST_INDEX_TTL_SECS: i64 = 6 * 3600;
@@ -1727,9 +1859,9 @@ pub async fn sync_playlist_index(
     }
     let fresh_until = state
         .db
-        // `_v2`: the key changed when Liked Music joined the index, so an install with a fresh
-        // stamp re-crawls once instead of showing hearts empty for another six hours.
-        .get_setting("playlist_index_synced_at_v2")
+        .get_setting(PLAYLIST_INDEX_STAMP)
+        // A stamp from before the read-only list existed doesn't cover it: crawl once more.
+        .filter(|_| state.db.get_setting(PLAYLIST_INDEX_READONLY).is_some())
         .and_then(|at| at.parse::<i64>().ok())
         .map(|at| at + PLAYLIST_INDEX_TTL_SECS);
     if fresh_until.is_some_and(|until| now_secs() < until) {
@@ -1744,6 +1876,7 @@ pub async fn sync_playlist_index(
         return Ok(state.db.playlist_memberships());
     }
     let mut indexed: Vec<String> = Vec::new();
+    let mut readonly: Vec<String> = Vec::new();
     for item in library {
         if item.id == ON_REPEAT_ID {
             continue;
@@ -1760,6 +1893,7 @@ pub async fn sync_playlist_index(
         // Liked Music is exempt: YouTube sends it without the editable header, so it reads
         // `owned: false` even though it is yours.
         if item.id != LIKED_MUSIC_ID && !page.owned && !page.collaborative {
+            readonly.push(item.id);
             continue;
         }
         let mut video_ids: Vec<String> = page.items.into_iter().map(|song| song.video_id).collect();
@@ -1774,8 +1908,23 @@ pub async fn sync_playlist_index(
         indexed.push(item.id);
     }
     state.db.retain_playlists(&indexed);
-    state.db.set_setting("playlist_index_synced_at_v2", &now_secs().to_string());
+    state.db.set_setting(
+        PLAYLIST_INDEX_READONLY,
+        &serde_json::to_string(&readonly).unwrap_or_default(),
+    );
+    state.db.set_setting(PLAYLIST_INDEX_STAMP, &now_secs().to_string());
     Ok(state.db.playlist_memberships())
+}
+
+/// The library playlists the last index crawl found this account can't edit. Empty until the first
+/// crawl, and for a playlist saved since: that one is refused at the add instead.
+#[tauri::command]
+pub fn readonly_playlists(state: St<'_>) -> Vec<String> {
+    state
+        .db
+        .get_setting(PLAYLIST_INDEX_READONLY)
+        .and_then(|ids| serde_json::from_str(&ids).ok())
+        .unwrap_or_default()
 }
 
 /// `false` means the playlist already had the track and YouTube added nothing — not an error, but
@@ -1793,7 +1942,10 @@ pub async fn add_to_playlist(
         .it
         .playlist_add(client, &playlist_id, &video_id, allow_duplicates.unwrap_or(false))
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| match e {
+            innertube::Error::PlaylistNotEditable => NOT_EDITABLE.to_owned(),
+            e => e.to_string(),
+        })?;
     // Also on `false`: YouTube refusing a duplicate means the playlist holds the track, which is
     // exactly what the index should say. A stale index is how it got asked in the first place.
     state.db.add_playlist_track(&playlist_id, &video_id);
@@ -2458,6 +2610,51 @@ async fn scan_local(state: &Arc<AppState>) -> Result<crate::local::LocalLibrary,
     Ok(lib)
 }
 
+// --- Device link (crate::devicelink) -------------------------------------------------------
+
+#[tauri::command]
+pub async fn link_state(state: St<'_>) -> Result<serde_json::Value, String> {
+    Ok(state.link.snapshot())
+}
+
+/// "Link a phone" / "New code": make the link if there is none and ask the server for a code.
+#[tauri::command]
+pub async fn link_start_pairing(state: St<'_>) -> Result<(), String> {
+    state.link.start_pairing();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn link_cancel_pairing(state: St<'_>) -> Result<(), String> {
+    state.link.cancel_pairing();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn link_unlink(state: St<'_>, device_id: String) -> Result<(), String> {
+    state.link.unlink(&device_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn link_forget(state: St<'_>) -> Result<(), String> {
+    state.link.forget();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn link_continue_here(state: St<'_>) -> Result<(), String> {
+    state.inner().clone().link_continue_here().await;
+    Ok(())
+}
+
+/// The device picker: play on a linked device, or on this desktop when `device_id` is empty.
+#[tauri::command]
+pub async fn link_play_on(state: St<'_>, device_id: String) -> Result<(), String> {
+    state.inner().clone().link_play_on(device_id).await;
+    Ok(())
+}
+
 // --- Listen Together (context/19) ----------------------------------------------------------
 
 /// Current client-side LT state (status, role, room, participants, pending joins, suggestions).
@@ -2600,6 +2797,232 @@ pub fn lyrics_providers(state: St<'_>) -> Vec<crate::lyrics::ProviderInfo> {
     crate::lyrics::providers(state.inner())
 }
 
+/// Where the lyric editor starts for a song: the lyrics the app has for it, as the provider sent
+/// them (no romanization filled in, since what the editor holds is what gets submitted).
+#[tauri::command]
+pub async fn lyrics_editor_start(
+    state: St<'_>,
+    video_id: String,
+    title: String,
+    artists: String,
+    album: Option<String>,
+    duration: Option<f64>,
+) -> Result<crate::lyrics::EditorStart, String> {
+    let req =
+        crate::lyrics::LyricsRequest { video_id, title, artists, album, duration, searched: false };
+    Ok(crate::lyrics::editor_start(state.inner(), req).await)
+}
+
+/// One provider's lyrics for the lyric editor to start from, as it sent them. Rejects when the
+/// provider couldn't be reached.
+#[tauri::command]
+pub async fn lyrics_editor_source(
+    state: St<'_>,
+    video_id: String,
+    title: String,
+    artists: String,
+    album: Option<String>,
+    duration: Option<f64>,
+    source: String,
+) -> Result<Option<crate::lyrics::Lyrics>, String> {
+    let req =
+        crate::lyrics::LyricsRequest { video_id, title, artists, album, duration, searched: false };
+    crate::lyrics::editor_source(state.inner(), req, &source).await
+}
+
+/// The lyric editor's romanization hint (#676): each word's reading, per line as the editor split
+/// it, `None` where a word needs none. Shown under the word, never submitted.
+#[tauri::command]
+pub async fn lyrics_word_readings(lines: Vec<Vec<String>>) -> Vec<Vec<Option<String>>> {
+    crate::romanize::word_readings(&lines)
+}
+
+/// The lyric editor's preview through `romanize::fill`, as the player shows every lyric.
+#[tauri::command]
+pub fn lyrics_romanize(mut lyrics: crate::lyrics::Lyrics) -> crate::lyrics::Lyrics {
+    crate::romanize::fill(&mut lyrics);
+    lyrics
+}
+
+/// What Limusic Lyrics offers: `anonymous` gates contributing, `providers` are the identities that
+/// can be linked.
+#[tauri::command]
+pub async fn limusic_providers() -> crate::limusic::Providers {
+    crate::limusic::providers().await
+}
+
+/// The stored session: `{signed_in, handle, anonymous}`. Doesn't ask the service.
+#[tauri::command]
+pub fn limusic_status(state: St<'_>) -> serde_json::Value {
+    crate::limusic::status(state.inner())
+}
+
+/// Opens the browser for `provider` and returns the code to compare with its confirm page. The
+/// outcome arrives as the `limusic-account` event.
+#[tauri::command]
+pub async fn limusic_sign_in(state: St<'_>, provider: String) -> Result<String, String> {
+    crate::limusic::sign_in(state.inner().clone(), provider).await
+}
+
+#[tauri::command]
+pub fn limusic_cancel() {
+    crate::limusic::cancel();
+}
+
+#[tauri::command]
+pub fn limusic_sign_out(state: St<'_>) {
+    crate::limusic::sign_out(state.inner());
+}
+
+/// The signed-in account, fresh from the service. `None` when signed out.
+#[tauri::command]
+pub async fn limusic_me(state: St<'_>) -> Result<Option<crate::limusic::Account>, String> {
+    crate::limusic::me(state.inner()).await
+}
+
+/// Rejects with the service's code: `taken`, `invalid`, `rate_limited`, `unauthorized`, ...
+#[tauri::command]
+pub async fn limusic_rename(
+    state: St<'_>,
+    handle: String,
+) -> Result<crate::limusic::Account, String> {
+    crate::limusic::rename(state.inner(), handle).await
+}
+
+/// The song's live revision on the service now (`None`: no live lyric), for keeping a draft on top
+/// of a newer version.
+#[tauri::command]
+pub async fn limusic_live_revision(video_id: String) -> Result<Option<i64>, String> {
+    crate::limusic::live_revision(&video_id).await
+}
+
+/// The votes on the lyric Limusic has live for the song, this account's own, and whether the lyric
+/// is its own work. `None` when there is no live lyric.
+#[tauri::command]
+pub async fn limusic_lyric_state(
+    state: St<'_>,
+    video_id: String,
+) -> Result<Option<crate::limusic::LyricState>, String> {
+    crate::limusic::lyric_state(state.inner(), &video_id).await
+}
+
+/// Vote on the live lyric: 1, -1, or 0 to take it back. The first one makes an anonymous account.
+#[tauri::command]
+pub async fn limusic_vote(
+    state: St<'_>,
+    video_id: String,
+    value: i64,
+) -> Result<crate::limusic::Votes, String> {
+    crate::limusic::vote(state.inner(), &video_id, value).await
+}
+
+/// Report the live lyric: `wrong_song`, `timing`, `text` or `abuse`, with an optional note.
+#[tauri::command]
+pub async fn limusic_report(
+    state: St<'_>,
+    video_id: String,
+    reason: String,
+    note: Option<String>,
+) -> Result<(), String> {
+    crate::limusic::report(state.inner(), &video_id, &reason, note).await
+}
+
+/// A page of the review queue (reviewers only), oldest first.
+#[tauri::command]
+pub async fn limusic_review_queue(
+    state: St<'_>,
+    after: Option<i64>,
+) -> Result<crate::limusic::Queue, String> {
+    crate::limusic::review_queue(state.inner(), after).await
+}
+
+/// One revision with its lines.
+#[tauri::command]
+pub async fn limusic_review_revision(
+    state: St<'_>,
+    revision: i64,
+) -> Result<crate::limusic::Revision, String> {
+    crate::limusic::review_revision(state.inner(), revision).await
+}
+
+/// The song's live community lyric, for comparing an edit with what it replaces. Asks the
+/// service only, never a lyrics provider.
+#[tauri::command]
+pub async fn limusic_live_lyrics(video_id: String) -> Option<crate::lyrics::Lyrics> {
+    crate::limusic::live_lyrics(&video_id).await
+}
+
+/// `verdict` is `approve` or `reject`. Resolves with the service's status for the revision.
+/// `lines` with an approval is the reviewer's fix (Fix before approving).
+#[tauri::command]
+pub async fn limusic_review(
+    state: St<'_>,
+    revision: i64,
+    video_id: String,
+    verdict: String,
+    reason: Option<String>,
+    lines: Option<Vec<crate::lyrics::LyricLine>>,
+) -> Result<String, String> {
+    crate::limusic::review_verdict(state.inner(), revision, &video_id, &verdict, reason, lines)
+        .await
+}
+
+/// Why a reviewer rejected my latest version of the song, for the editor. `None` when there is
+/// nothing to say.
+#[tauri::command]
+pub async fn limusic_my_rejection(
+    state: St<'_>,
+    video_id: String,
+) -> Result<Option<crate::limusic::Rejection>, String> {
+    Ok(crate::limusic::my_rejection(state.inner(), &video_id).await)
+}
+
+/// The lyrics team (admins only): staff and contributors, or the handles holding `q`.
+#[tauri::command]
+pub async fn limusic_admin_accounts(
+    state: St<'_>,
+    q: String,
+) -> Result<Vec<crate::limusic::Member>, String> {
+    crate::limusic::admin_accounts(state.inner(), &q).await
+}
+
+/// Set a role, ban or unban (admins only).
+#[tauri::command]
+pub async fn limusic_admin_update(
+    state: St<'_>,
+    handle: String,
+    role: Option<String>,
+    banned: Option<bool>,
+) -> Result<crate::limusic::Member, String> {
+    crate::limusic::admin_update(state.inner(), &handle, role, banned).await
+}
+
+/// Put an earlier revision back, or `null` for no lyric. Resolves with the live revision.
+#[tauri::command]
+pub async fn limusic_revert(
+    state: St<'_>,
+    video_id: String,
+    to_revision: Option<i64>,
+    reason: Option<String>,
+) -> Result<Option<i64>, String> {
+    crate::limusic::revert(state.inner(), &video_id, to_revision, reason).await
+}
+
+#[tauri::command]
+pub async fn limusic_submit(
+    state: St<'_>,
+    submission: crate::limusic::Submission,
+) -> Result<crate::limusic::Submitted, String> {
+    Ok(crate::limusic::submit(state.inner(), submission).await)
+}
+
+/// A pasted or imported lyric file (TTML, eLRC, LRC, the JSON shapes) as lines. Empty for plain
+/// text, which the editor splits into lines itself.
+#[tauri::command]
+pub async fn lyrics_parse(text: String) -> Result<Vec<crate::lyrics::LyricLine>, String> {
+    crate::lyrics::parse_file(&text)
+}
+
 // --- Changelog ------------------------------------------------------------------------------
 
 #[derive(Clone, serde::Serialize)]
@@ -2685,8 +3108,7 @@ pub fn can_self_update(app: tauri::AppHandle) -> bool {
 /// The beta channel's manifest. `beta` is a permanent prerelease holding nothing but this file, and
 /// the release workflows move it to the newest release candidate, or to the newest release once that
 /// is ahead, so the URL never changes.
-const BETA_MANIFEST: &str =
-    "https://github.com/SimoHypers/limusic/releases/download/beta/latest.json";
+const BETA_MANIFEST: &str = "https://github.com/Adiker/limusic/releases/download/beta/latest.json";
 
 /// What the updater plugin's own `check` command returns, so the UI can wrap it in the plugin's
 /// `Update` class and install it the usual way.
@@ -2712,7 +3134,15 @@ pub struct BetaUpdate {
 pub async fn check_beta_update(webview: tauri::Webview) -> Result<Option<BetaUpdate>, String> {
     use tauri::Manager;
     use tauri_plugin_updater::UpdaterExt;
-    let url = tauri::Url::parse(BETA_MANIFEST).map_err(|e| e.to_string())?;
+    // GitHub's edge caches the download redirect for up to an hour (it carries a one-hour signed
+    // link), so for that long after the pointer moves the bare URL can still name the old manifest
+    // and a beta install is told it is up to date. A query GitHub ignores makes each check its own
+    // cache entry: 1.4.0-rc.5's swap served rc.4 for ~35 minutes without it.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let url = tauri::Url::parse(&format!("{BETA_MANIFEST}?t={now}")).map_err(|e| e.to_string())?;
     let update = webview
         .updater_builder()
         .endpoints(vec![url])
@@ -2950,6 +3380,244 @@ pub fn theater_fullscreen(window: tauri::WebviewWindow, on: bool) -> Result<(), 
     }
 }
 
+// The karaoke commands below are async so they stay off the main thread, and anything that
+// touches the disk runs in `spawn_blocking`. The ones whose return type is not a `Result` take an
+// owned `AppHandle` instead of `State<'_>`, which an async command may only borrow when it returns
+// a `Result`: that keeps every return type, and so the UI, unchanged.
+
+/// Get the status of the karaoke separation model.
+#[tauri::command]
+pub async fn karaoke_model_status(
+    app: tauri::AppHandle,
+    model: Option<String>,
+) -> Result<crate::karaoke_model::ModelStatus, String> {
+    let manager = app.state::<Arc<crate::karaoke_model::ModelManager>>().inner().clone();
+    let id = match model {
+        Some(ref key) => {
+            karaoke::models::ModelId::from_key(key).ok_or_else(|| "unknown model".to_string())?
+        }
+        None => karaoke::models::ModelId::DEFAULT,
+    };
+    tauri::async_runtime::spawn_blocking(move || manager.status(id))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Download the karaoke separation model asynchronously.
+#[tauri::command]
+pub async fn karaoke_model_download(
+    state: State<'_, Arc<AppState>>,
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+    app: tauri::AppHandle,
+    manager: State<'_, Arc<crate::karaoke_model::ModelManager>>,
+    model: String,
+) -> Result<(), String> {
+    let id =
+        karaoke::models::ModelId::from_key(&model).ok_or_else(|| "unknown model".to_string())?;
+    let mgr = manager.inner().clone();
+    let engine = engine.inner().clone();
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        if mgr.download(&app, id).await.is_ok() {
+            if engine.is_enabled() && engine.model() == id {
+                engine.wake();
+                state.karaoke_repush_wants().await;
+            }
+        }
+    });
+    Ok(())
+}
+
+/// Cancel an ongoing karaoke model download.
+#[tauri::command]
+pub async fn karaoke_model_cancel(
+    manager: State<'_, Arc<crate::karaoke_model::ModelManager>>,
+) -> Result<(), String> {
+    manager.cancel_download();
+    Ok(())
+}
+
+/// Delete an installed karaoke model.
+#[tauri::command]
+pub async fn karaoke_model_delete(
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+    manager: State<'_, Arc<crate::karaoke_model::ModelManager>>,
+    app: tauri::AppHandle,
+    model: String,
+) -> Result<(), String> {
+    let id =
+        karaoke::models::ModelId::from_key(&model).ok_or_else(|| "unknown model".to_string())?;
+    let engine = engine.inner().clone();
+    let manager = manager.inner().clone();
+
+    if engine.is_enabled() && engine.model() == id {
+        return Err("in_use".to_string());
+    }
+
+    engine.unload_model_if_loaded(id).await;
+
+    tauri::async_runtime::spawn_blocking(move || manager.delete(id))
+        .await
+        .map_err(|e| karaoke::sanitize_error(&e.to_string()))??;
+
+    let _ = app.emit("karaoke-model", serde_json::json!({ "model": model, "state": "deleted" }));
+    Ok(())
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KaraokeEngineStatus {
+    pub enabled: bool,
+    pub model: &'static str,
+    pub model_installed: bool,
+    pub cache_bytes: u64,
+    /// `"ready"`, `"needs-model"` or `"unavailable"`.
+    pub availability: &'static str,
+    /// With `"unavailable"`: the en.json `karaoke.unavailable.*` key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'static str>,
+    /// `"gpu"` or `"cpu"`, once the model has loaded this session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub processor: Option<&'static str>,
+    pub device: &'static str,
+    pub gpu_supported: bool,
+    pub auto_supported: bool,
+}
+
+/// Get the status of the background karaoke engine. Availability reflects the last attempt to
+/// turn karaoke on: nothing is probed or loaded just to answer this.
+#[tauri::command]
+pub async fn karaoke_engine_status(
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+    models: State<'_, Arc<crate::karaoke_model::ModelManager>>,
+) -> Result<KaraokeEngineStatus, String> {
+    let (engine, models) = (engine.inner().clone(), models.inner().clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        let selected = engine.model();
+        let model_installed = models.is_installed(selected);
+        let reason =
+            if crate::http::has_proxy() { Some("proxy") } else { engine.unavailable_reason() };
+        let availability = match (reason, model_installed) {
+            (Some(_), _) => "unavailable",
+            (None, false) => "needs-model",
+            (None, true) => "ready",
+        };
+        KaraokeEngineStatus {
+            enabled: engine.is_enabled(),
+            model: selected.key(),
+            model_installed,
+            cache_bytes: engine.cache_bytes(),
+            availability,
+            reason,
+            processor: engine.processor(),
+            device: engine.device().key(),
+            gpu_supported: karaoke::device::DevicePref::gpu_supported(),
+            auto_supported: karaoke::device::DevicePref::auto_supported(),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Get the selected karaoke model key.
+#[tauri::command]
+pub async fn karaoke_model_get(
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+) -> Result<String, String> {
+    Ok(engine.model().key().to_string())
+}
+
+/// Set the selected karaoke model key.
+#[tauri::command]
+pub async fn karaoke_model_set(
+    state: State<'_, Arc<AppState>>,
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+    model: String,
+) -> Result<String, String> {
+    let id =
+        karaoke::models::ModelId::from_key(&model).ok_or_else(|| "unknown model".to_string())?;
+    crate::state::set_saved_karaoke_model(&state.db, id);
+    let engine = engine.inner().clone();
+    let model_key = id.key();
+    let enabled = engine.is_enabled();
+    tracing::trace!(target: "app_lib::karaoke", model_key, enabled, "karaoke model set");
+    engine.set_model(id);
+    if engine.is_enabled() {
+        state.inner().clone().karaoke_repush_wants().await;
+        state.inner().clone().karaoke_on_model_switch().await;
+    }
+    Ok(id.key().to_string())
+}
+
+/// Get the selected karaoke device preference key.
+#[tauri::command]
+pub async fn karaoke_device_get(
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+) -> Result<String, String> {
+    Ok(engine.device().key().to_string())
+}
+
+/// Set the selected karaoke device preference key.
+#[tauri::command]
+pub async fn karaoke_device_set(
+    state: State<'_, Arc<AppState>>,
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+    device: String,
+) -> Result<String, String> {
+    let pref = karaoke::device::DevicePref::from_key(&device)
+        .ok_or_else(|| "unknown device".to_string())?;
+    if !pref.supported() {
+        return Err(format!("{} not supported here", pref.key()));
+    }
+    crate::state::set_saved_karaoke_device(&state.db, pref);
+    engine.inner().set_device(pref);
+    Ok(pref.key().to_string())
+}
+
+/// Clear the karaoke instrumental cache.
+#[tauri::command]
+pub async fn karaoke_clear_cache(
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+) -> Result<(), String> {
+    let engine = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || engine.clear_cache())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Retry failed karaoke preparations.
+#[tauri::command]
+pub async fn karaoke_retry_failed(
+    state: St<'_>,
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+) -> Result<(), String> {
+    if !engine.is_enabled() || crate::http::has_proxy() {
+        return Ok(());
+    }
+    state.inner().clone().karaoke_retry_failed().await;
+    Ok(())
+}
+
+/// Get the karaoke cache limit in megabytes.
+#[tauri::command]
+pub async fn karaoke_cache_limit_mb(app: tauri::AppHandle) -> u64 {
+    crate::state::saved_karaoke_cache_limit_mb(&app.state::<Arc<AppState>>().db)
+}
+
+/// Set the karaoke cache limit in megabytes. Eviction deletes files, so it runs off-thread.
+#[tauri::command]
+pub async fn karaoke_set_cache_limit_mb(
+    state: State<'_, Arc<AppState>>,
+    engine: State<'_, Arc<crate::karaoke::KaraokeEngine>>,
+    mb: u64,
+) -> Result<u64, String> {
+    let clamped = crate::state::set_saved_karaoke_cache_limit_mb(&state.db, mb);
+    let engine = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || engine.set_cache_limit_mb(clamped))
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn get_matugen_theme(app: tauri::AppHandle) -> Result<Option<String>, String> {
     crate::matugen::read(&app)
@@ -2968,6 +3636,48 @@ pub fn stop_matugen_watcher() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Official channels only, one card per stream, most watched first (#424).
+    #[test]
+    fn live_keeps_official_streams_once_each_by_viewers() {
+        let live = |id: &str, title: &str, watching, official| innertube::LiveVideo {
+            item: BrowseItem {
+                kind: "song",
+                id: id.into(),
+                title: title.into(),
+                subtitle: None,
+                thumbnail: None,
+                duration: None,
+                album_id: None,
+                artist_runs: vec![],
+                play_count: None,
+                is_video: false,
+                is_upload: false,
+                explicit: false,
+            },
+            watching,
+            official,
+        };
+        let picked = pick_live(vec![
+            live("a", "Lofi Radio", 100, true),
+            live("b", "Re-upload", 999, false),
+            live("c", "lofi radio", 50, true), // the same title on another channel
+            live("a", "Lofi Radio", 100, true), // the same stream from a second query
+            live("d", "Jazz Cafe", 200, true),
+        ]);
+        let ids: Vec<_> = picked.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["d", "a"]);
+
+        // Three per channel at most, the most watched three.
+        let one = |id: &str, watching| {
+            let mut l = live(id, id, watching, true);
+            l.item.subtitle = Some("Lofi Girl".into());
+            l
+        };
+        let picked = pick_live((1..=5).map(|n| one(&n.to_string(), n)).collect());
+        let ids: Vec<_> = picked.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["5", "4", "3"]);
+    }
 
     #[test]
     fn on_repeat_rows_shed_the_queue_slot_they_were_played_from() {
