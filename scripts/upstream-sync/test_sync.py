@@ -59,6 +59,32 @@ class FlowTests(unittest.TestCase):
         self.assertIn('src/conflict.rs', issue.call_args.args[1])
         self.assertFalse(any(c[0] == 'push' for c in calls))
 
+    def test_existing_manual_sync_branch_is_not_overwritten(self):
+        import json
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        import sync
+        calls = []
+        pr = {'number': 42, 'headRefName': 'codex/sync-upstream-1.5.0-rc.1',
+              'headRefOid': 'manual', 'body': ''}
+
+        def fake_gh(*args):
+            if args[0] == 'api':
+                return '[[{"tag_name":"v1.5.0-rc.2","html_url":"https://example.test/release"}]]'
+            if args[:2] == ('pr', 'list'):
+                return json.dumps([pr])
+            raise AssertionError(args)
+
+        def fake_git(*args, **kwargs):
+            calls.append(args)
+            return SimpleNamespace(stdout='sha\n' if args[0] == 'rev-parse' else '',
+                                   stderr='', returncode=1 if args[0] == 'merge-base' else 0)
+
+        with patch.object(sync, 'gh', side_effect=fake_gh), patch.object(sync, 'git', side_effect=fake_git), patch.object(sync, 'notice') as issue:
+            sync.main()
+        issue.assert_called_once()
+        self.assertFalse(any(c[0] == 'push' for c in calls))
+
     def test_manual_changes_are_not_overwritten(self):
         from unittest.mock import patch
         from types import SimpleNamespace

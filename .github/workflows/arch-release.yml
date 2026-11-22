@@ -58,7 +58,7 @@ jobs:
             exit 0
           fi
           [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || {
-            echo "::error::expected a stable release tag, or a full commit SHA with dry_run=true: $TAG"
+            echo "::error::expected a stable or RC release tag, or a full commit SHA with dry_run=true: $TAG"
             exit 1
           }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
@@ -116,7 +116,7 @@ jobs:
         env:
           LIMUSIC_SOURCE_REPO: ${{ github.repository }}
           LIMUSIC_SOURCE_REF: ${{ steps.app.outputs.source_sha }}
-          LIMUSIC_SOURCE_DIR: limusic-${{ steps.app.outputs.source_sha }}
+          LIMUSIC_SOURCE_DIR: ${{ github.event.repository.name }}-${{ steps.app.outputs.source_sha }}
         run: |
           set -euo pipefail
           cp arch-recipe/pkg/arch/PKGBUILD pkg/arch/PKGBUILD

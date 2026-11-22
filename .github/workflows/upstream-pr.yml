@@ -2,7 +2,8 @@ name: Prepare upstream release PR
 
 on:
   workflow_dispatch:
-  # Scheduling stays disabled until the separate release-promotion gate is implemented.
+  schedule:
+    - cron: '17 * * * *'
 
 permissions:
   contents: write
