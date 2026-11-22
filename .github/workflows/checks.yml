@@ -282,3 +282,12 @@ jobs:
             echo "no probe output"
           fi >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  fork-automation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test synchronization and release gate
+        run: |
+          python3 -m unittest discover -s scripts/upstream-sync -v
+          python3 -m unittest discover -s scripts/fork-release -v
