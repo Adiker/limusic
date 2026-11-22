@@ -14,7 +14,7 @@ class ReleaseValidationTests(unittest.TestCase):
                       f'limusic_{v}_x64-setup.exe', f'limusic_{v}_x64-setup.exe.sig',
                       f'limusic_{v}_aarch64.dmg', f'limusic_{v}_aarch64.app.tar.gz',
                       f'limusic_{v}_aarch64.app.tar.gz.sig', 'latest.json',
-                      'limusic-1.4.0rc.10-1-x86_64.pkg.tar.zst', 'limusic-1.4.0~rc.10-1.x86_64.rpm']
+                      'limusic-1.4.0rc.10-1-x86_64.pkg.tar.zst', 'limusic-1.4.0-rc.10-1.x86_64.rpm']
         self.assets = [{'name': n, 'state': 'uploaded', 'size': 1} for n in self.files]
         names = {'linux-x86_64': f'limusic_{v}_amd64.AppImage',
                  'windows-x86_64': f'limusic_{v}_x64-setup.exe',
@@ -39,6 +39,12 @@ class ReleaseValidationTests(unittest.TestCase):
         self.manifest['version'] = '1.4.0-rc.9'
         with self.assertRaises(ValueError):
             validate_assets(self.tag, self.assets, self.manifest)
+
+    def test_rpm_from_another_rc_is_rejected(self):
+        assets = [a for a in self.assets if not a['name'].endswith('.rpm')]
+        assets.append({'name': 'limusic-1.4.0-rc.9-1.x86_64.rpm', 'state': 'uploaded', 'size': 1})
+        with self.assertRaisesRegex(ValueError, 'RPM'):
+            validate_assets(self.tag, assets, self.manifest)
 
     def test_semver_never_moves_beta_backwards(self):
         self.assertLess(semver('1.4.0-rc.9'), semver('1.4.0-rc.10'))

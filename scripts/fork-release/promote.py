@@ -37,7 +37,7 @@ def validate_assets(tag, assets, manifest):
     arch = version.replace('-', '')
     if not any(re.fullmatch(rf'limusic-{re.escape(arch)}-\d+-x86_64\.pkg\.tar\.zst', n) for n in names):
         raise ValueError('Missing Arch package')
-    if not any(n.startswith('limusic-' + version.split('-')[0]) and n.endswith('.x86_64.rpm') for n in names):
+    if not any(re.fullmatch(rf'limusic-{re.escape(version)}-\d+\.x86_64\.rpm', n) for n in names):
         raise ValueError('Missing RPM package')
     if manifest.get('version') != version:
         raise ValueError('Manifest version does not match tag')
