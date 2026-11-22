@@ -1,9 +1,32 @@
+<script lang="ts" module>
+	import * as api from '$lib/api';
+
+	type Held = { by: string; since: number } | null | undefined;
+	/** Claims go one at a time, and only the latest waits: arrowing through the queue, or leaving
+	 *  the page and coming back, must leave the last one held. Module-wide, so a page that unmounts
+	 *  lets go before the next one claims. Advisory, so a failure (an older service) is undefined. */
+	let wanted: { id: number | null; done: (held: Held) => void } | null = null;
+	let sending = false;
+	async function sendClaim(id: number | null, done: (held: Held) => void) {
+		wanted = { id, done };
+		if (sending) return;
+		sending = true;
+		while (wanted) {
+			const w: { id: number | null; done: (held: Held) => void } = wanted;
+			wanted = null;
+			w.done(await api.limusicReviewClaim(w.id).catch(() => undefined));
+		}
+		sending = false;
+	}
+</script>
+
 <script lang="ts">
 	// Review lyrics: what is waiting for a reviewer, oldest first. Opening one plays the song and
 	// shows the submitted lyric: line by line with each word's reading under it (the editor's word
 	// track), or as listeners will see it. The queue stays beside it, and a decision moves on to the
 	// next one. A submission that is nearly right is fixed in the editor before it is approved, and
 	// stays its author's. The player bar is the only transport. Rules are in `$lib/review.ts`.
+	// Opening one tells the service this reviewer has it, so the others see who is on what (#712).
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { HugeiconsIcon } from '@hugeicons/svelte';
@@ -20,7 +43,8 @@
 		TaskDone01Icon,
 		Tick02Icon,
 		UserGroupIcon,
-		UserIcon
+		UserIcon,
+		ViewIcon
 	} from '@hugeicons/core-free-icons';
 	import LogoMark from '$lib/components/LogoMark.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -30,7 +54,6 @@
 	import ErrorState from '$lib/components/ErrorState.svelte';
 	import LimusicNotice from '$lib/components/LimusicNotice.svelte';
 	import LyricsView, { prefs as lyricsPrefs, toggle as toggleLyricsPref } from '$lib/components/LyricsView.svelte';
-	import * as api from '$lib/api';
 	import { playback, seekTo, toast } from '$lib/player.svelte';
 	import { limusic, refreshAccount } from '$lib/limusic.svelte';
 	import { currentLocale, t } from '$lib/i18n.svelte';
@@ -41,7 +64,9 @@
 		diffLyrics,
 		isGone,
 		kindKey,
+		leftQueue,
 		restored,
+		reviewable,
 		reviewErrorKey,
 		waitingLabel,
 		without,
@@ -75,6 +100,33 @@
 	/** The card in Settings shows the same number. */
 	const count = () => (limusic.waiting = { count: items.length, more: next !== null });
 
+	/** The first page again, every few seconds while the page is in front, when the window comes
+	 *  back to the front and after each verdict, so another reviewer's claim, verdict or a new
+	 *  submission shows without leaving. Rows from later pages stay as they were. ponytail:
+	 *  polling, a push channel from the service if the team outgrows it. */
+	let decided = 0;
+	let polling = false;
+	let left = false;
+	async function refresh() {
+		if (polling || loading || busy || !allowed || document.visibilityState !== 'visible') return;
+		polling = true;
+		const before = decided;
+		// Only what was open when this left: one opened since may be newer than the answer.
+		const was = open;
+		const q = await api.limusicReviewQueue().catch(() => null);
+		polling = false;
+		// A decision made or settled meanwhile: this answer may still list its row.
+		if (!q || left || before !== decided) return;
+		const rest = q.next === null ? [] : items.filter((i) => i.revision > q.next!);
+		items = [...q.items, ...rest];
+		if (!rest.length) next = q.next;
+		count();
+		if (open && open === was && leftQueue(q, open.revision)) return gone(open.revision);
+		// The open one was someone else's and they have let go: it is this reviewer's now.
+		const row = taken && open && q.items.find((i) => i.revision === open!.revision);
+		if (row && !row.reviewing) claim(row.revision);
+	}
+
 	/** Who this is, then the queue. Also the retry. Back from the editor, the row it was on opens
 	 *  again: the one after a fix that went live, the same one after a fix that was dropped. */
 	async function start() {
@@ -99,9 +151,33 @@
 	}
 	onMount(() => {
 		start();
-		window.addEventListener('keydown', onKey);
-		return () => window.removeEventListener('keydown', onKey);
+		// The document, not the window: a keydown reaches it first, so ↑ / ↓ step the list here
+		// instead of the app-wide handler taking them for volume.
+		document.addEventListener('keydown', onKey);
+		document.addEventListener('visibilitychange', refresh);
+		// Back from another window (visibilitychange only fires for a hidden one).
+		window.addEventListener('focus', refresh);
+		const poll = setInterval(refresh, 10_000);
+		return () => {
+			left = true;
+			document.removeEventListener('keydown', onKey);
+			document.removeEventListener('visibilitychange', refresh);
+			window.removeEventListener('focus', refresh);
+			clearInterval(poll);
+			// Into the editor to fix it, the submission is still this reviewer's.
+			if (limusic.reviewAt === null) claim(null);
+		};
 	});
+
+	/** Another reviewer who has the open one, as the service said when it opened. */
+	let taken = $state.raw<{ by: string; since: number } | null>(null);
+	function claim(id: number | null) {
+		sendClaim(id, (held) => {
+			if (held === undefined || id === null) return;
+			if (open?.revision === id) taken = held;
+			items = items.map((i) => (i.revision === id ? { ...i, reviewing: held?.by ?? null } : i));
+		});
+	}
 
 	// --- One submission ---------------------------------------------------------------------------
 	type View = 'lines' | 'player' | 'changes' | 'current';
@@ -185,8 +261,10 @@
 		reason = '';
 		notice = '';
 		heldAt = 0;
+		taken = null;
 		play(item);
 		const id = item.revision;
+		claim(id);
 		if (item.kind === 'edit') {
 			api.limusicLiveLyrics(item.video_id)
 				.then((l) => open?.revision === id && (current = l))
@@ -194,17 +272,34 @@
 		}
 		try {
 			const r = await api.limusicReviewRevision(id);
-			if (open?.revision === id) detail = r;
+			// Moved on, or a refresh found it gone while this was on its way.
+			if (open?.revision !== id || detailError) return;
+			// The list was a few seconds old and another reviewer got there first.
+			if (!reviewable(item.kind, r.status)) return gone(id);
+			detail = r;
 		} catch (e) {
-			if (open?.revision !== id) return;
+			if (open?.revision !== id || detailError) return;
+			if (isGone(String(e))) return gone(id);
 			detailError = t(reviewErrorKey(String(e)));
-			if (isGone(String(e))) items = without(items, id), count();
 		}
+	}
+
+	/** Decided by another reviewer, or replaced by its author: the row leaves, and if it is the open
+	 *  one it says so in place of the lyric, with nothing left to decide. The song keeps playing. */
+	function gone(id: number) {
+		items = without(items, id);
+		count();
+		if (open?.revision !== id) return;
+		detail = null;
+		rejecting = false;
+		taken = null;
+		detailError = t('review.err_gone');
 	}
 
 	function close() {
 		open = null;
 		detail = null;
+		claim(null);
 	}
 
 	/** The row leaves the list at once and the one after it opens, so a queue is worked through
@@ -215,9 +310,12 @@
 		busy = true;
 		const why = verdict === 'reject' ? reason.trim() : '';
 		const at = items.findIndex((i) => i.revision === row.revision);
+		decided++;
 		items = without(items, row.revision);
 		count();
-		const following = items[at] ?? items[at - 1];
+		// The next one nobody else has open, else the one before.
+		const free = (i: api.LimusicQueueItem) => !i.reviewing;
+		const following = items.slice(at).find(free) ?? items.slice(0, at).findLast(free);
 		if (following) openItem(following);
 		else close();
 		try {
@@ -231,8 +329,10 @@
 				count();
 			}
 		} finally {
+			decided++;
 			busy = false;
 		}
+		refresh();
 	}
 
 	/** Into the editor with the song that is playing. A pending submission goes with it, and the
@@ -378,6 +478,14 @@
 	{/if}
 {/snippet}
 
+{#snippet reviewing(item: api.LimusicQueueItem)}
+	{#if item.reviewing}
+		<span class="mt-0.5 flex items-center gap-1 truncate text-[12px] font-medium text-primary">
+			<HugeiconsIcon icon={ViewIcon} class="size-3.5 shrink-0" />{t('review.reviewing', { name: item.reviewing })}
+		</span>
+	{/if}
+{/snippet}
+
 {#snippet who(author: string | null)}
 	<span class="flex min-w-0 items-center gap-2">
 		<span class="flex size-[22px] shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-bold uppercase">
@@ -504,6 +612,7 @@
 					<span class="min-w-0 flex-1">
 						<span class="block truncate text-[15px] font-semibold">{item.title}</span>
 						<span class="block truncate text-[13px] text-muted-foreground">{item.artist}</span>
+						{@render reviewing(item)}
 					</span>
 					<span class="flex shrink-0 {wide ? 'w-28' : ''}">{@render kind(item)}</span>
 					{#if wide}
@@ -536,6 +645,7 @@
 								<span class="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
 									{@render kind(item)}<span class="truncate">{item.author ?? t('review.anonymous')} · {when(item)}</span>
 								</span>
+								{@render reviewing(item)}
 							</span>
 						</button>
 					{/each}
@@ -592,6 +702,14 @@
 						{/if}
 					</div>
 				</div>
+				{#if taken}
+					<div class="px-6 pb-2.5">
+						<LimusicNotice
+							icon={ViewIcon}
+							title={t('review.taken', { name: taken.by, when: ago(taken.since, Date.now() / 1000, currentLocale.id) })}
+						/>
+					</div>
+				{/if}
 				{#if open.kind === 'reported'}
 					<p class="px-6 pb-2.5 text-[13px] text-muted-foreground">{t('review.reported_hint', { count: open.reports })}</p>
 				{/if}

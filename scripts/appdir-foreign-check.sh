@@ -46,12 +46,14 @@ step "installing a desktop package set"
 if command -v apt-get >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
+  # The 64-bit time_t rename (trixie on) left bookworm with the old name.
+  ALSA=libasound2t64; apt-cache show "$ALSA" >/dev/null 2>&1 || ALSA=libasound2
   apt-get install -y -qq --no-install-recommends \
     xvfb xauth dbus dbus-x11 python3 weston \
     libegl-mesa0 libgl1-mesa-dri libglx-mesa0 libgles2 libgl1 libegl1 \
     libharfbuzz0b libharfbuzz-icu0 libkrb5-3 libgssapi-krb5-2 libpango-1.0-0 \
-    libasound2t64 libfribidi0 libusb-1.0-0 libcom-err2 libgpg-error0 libexpat1 \
-    libfontconfig1 fonts-dejavu-core ca-certificates gvfs
+    "$ALSA" libfribidi0 libusb-1.0-0 libcom-err2 libgpg-error0 libexpat1 \
+    libfontconfig1 fonts-dejavu-core ca-certificates gvfs libxkbcommon0
 elif command -v pacman >/dev/null; then
   # -Syu, never -Sy: Arch does not support partial upgrades. The image lags the repo, so -Sy pulls
   # packages built against a newer glibc than the image has (weston wanted GLIBC_2.44 there on
@@ -59,12 +61,12 @@ elif command -v pacman >/dev/null; then
   pacman -Syu --noconfirm --quiet \
     xorg-server-xvfb xorg-xauth dbus python weston \
     mesa libglvnd harfbuzz harfbuzz-icu krb5 pango alsa-lib fribidi libusb \
-    expat fontconfig ttf-dejavu ca-certificates gvfs gnutls
+    expat fontconfig ttf-dejavu ca-certificates gvfs gnutls libxkbcommon
 elif command -v dnf >/dev/null; then
   dnf install -y -q \
     xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon dbus-x11 python3 weston \
     mesa-libEGL mesa-libGL mesa-libGLES libglvnd harfbuzz krb5-libs pango alsa-lib \
-    fribidi libusb1 expat fontconfig dejavu-sans-fonts ca-certificates gvfs
+    fribidi libusb1 expat fontconfig dejavu-sans-fonts ca-certificates gvfs libxkbcommon
 elif command -v zypper >/dev/null; then
   # openSUSE spells half of these differently; dbus-run-session comes from dbus-1-daemon and there
   # is no dbus-1-x11. Start Xvfb directly below, so no distro-specific xvfb-run wrapper is needed.
@@ -72,7 +74,7 @@ elif command -v zypper >/dev/null; then
     xorg-x11-server-Xvfb dbus-1-daemon python3 \
     Mesa-libEGL1 Mesa-libGL1 Mesa-libGLESv2-2 libglvnd harfbuzz-tools libharfbuzz0 krb5 \
     libpango-1_0-0 alsa-lib libfribidi0 libusb-1_0-0 libcom_err2 libgpg-error0 libexpat1 \
-    fontconfig dejavu-fonts ca-certificates gvfs libgnutls30
+    fontconfig dejavu-fonts ca-certificates gvfs libgnutls30 libxkbcommon0
   # weston on its own and best effort: on Tumbleweed it drags in some 130 packages (ffmpeg, pipewire,
   # freerdp, fuse3), and on GitHub's runner that transaction once ended "with error" and took
   # xvfb-run down with it. Not quiet, so the next failure says which package it was. Debian and Arch
@@ -81,9 +83,9 @@ elif command -v zypper >/dev/null; then
 else
   echo "   unknown package manager"; exit 1
 fi
-# gvfs is deliberately installed: it is what makes a host/bundle GLib mismatch visible. gnutls is
-# installed for the same reason it is not bundled (defect 6): it is a host library now, and these
-# images are barer than any desktop that would run the app. Debian and Fedora pull it in with gvfs;
+# gvfs is deliberately installed: it is what makes a host/bundle GLib mismatch visible. gnutls and
+# libxkbcommon are installed for the same reason they are not bundled (defects 6 and 8): they are
+# host libraries now, and these images are barer than any desktop that would run the app. Debian and Fedora pull it in with gvfs;
 # Arch and openSUSE have to be told.
 # A half-installed container makes every check below meaningless, and the missing symbols it
 # produces look exactly like a real defect (KI-8). Stop here instead.
@@ -243,7 +245,10 @@ if ! command -v weston >/dev/null; then
 else
   export XDG_RUNTIME_DIR=/tmp/xdg-runtime
   mkdir -p -m 0700 "$XDG_RUNTIME_DIR"
-  weston --backend=headless --socket=limusic-check --idle-time=0 > /tmp/weston.log 2>&1 &
+  # The short backend names came with weston 12; bookworm's 10 only knows the module file.
+  BACKEND=headless
+  case "$(weston --version 2>/dev/null)" in *" "[0-9].*|*" 1"[01].*) BACKEND=headless-backend.so ;; esac
+  weston --backend="$BACKEND" --socket=limusic-check --idle-time=0 > /tmp/weston.log 2>&1 &
   WESTONPID=$!
   for _ in $(seq 20); do
     [ -S "$XDG_RUNTIME_DIR/limusic-check" ] && break

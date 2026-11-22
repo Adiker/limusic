@@ -31,6 +31,15 @@ YouTube Music client, and grew from there.
 
 ---
 
+## Community
+
+Help, ideas, bug hunting and the first word on new versions and betas all happen on the Limusic
+Discord.
+
+<a href="https://discord.gg/jWWydPV3FF"><img alt="Join the Discord" src="https://img.shields.io/badge/Join_the_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" height="40"></a>
+
+---
+
 ## Features
 
 <table>
@@ -104,7 +113,7 @@ YouTube Music client, and grew from there.
 - Adaptive colors from the playing cover
 - Material You, or your wallpaper's colors through Matugen, wallust or pywal
 - A custom app icon
-- Nineteen languages, more on [Weblate](https://hosted.weblate.org/projects/limusic/)
+- Twenty-six languages, more on [Weblate](https://hosted.weblate.org/projects/limusic/)
 
 </td>
 </tr>
@@ -298,7 +307,7 @@ who host it free for libre projects.
   <img src="https://hosted.weblate.org/widget/limusic/ui/multi-auto.svg" alt="Translation status">
 </a>
 
-Nineteen languages ship in the app today, and the badge above shows everything
+Twenty-six languages ship in the app today, and the badge above shows everything
 else in flight.
 
 **Translate on Weblate, not in a pull request.** Weblate keeps its own copy of

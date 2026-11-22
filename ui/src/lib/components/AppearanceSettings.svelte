@@ -264,7 +264,7 @@
 	control?: Snippet;
 	below?: Snippet;
 })}
-	<div class="px-4 py-3.5">
+	<div data-setting-row class="px-4 py-3.5">
 		<div class="flex min-h-8 items-center justify-between gap-4">
 			<div class="flex min-w-0 items-center gap-2">
 				<span class="text-sm font-medium">{o.title}</span>
@@ -442,6 +442,11 @@
 					title: t('settings.themes.classic_player'),
 					desc: t('settings.themes.classic_player_hint'),
 					control: classicPlayerSwitch
+				})}
+				{@render row({
+					title: t('settings.themes.cover_lyric'),
+					desc: t('settings.themes.cover_lyric_hint'),
+					control: coverLyricSwitch
 				})}
 				{@render row({
 					title: t('settings.themes.cover_lyric_romanized'),
@@ -760,9 +765,14 @@
 		checked={appearance.classicPlayer}
 		onCheckedChange={(on) => setAppearance({ classicPlayer: on })}
 	/>{/snippet}
+{#snippet coverLyricSwitch()}<Switch
+		checked={appearance.coverLyric}
+		disabled={appearance.classicPlayer}
+		onCheckedChange={(on) => setAppearance({ coverLyric: on })}
+	/>{/snippet}
 {#snippet coverLyricRomanizedSwitch()}<Switch
 		checked={appearance.coverLyricRomanized}
-		disabled={appearance.classicPlayer}
+		disabled={appearance.classicPlayer || !appearance.coverLyric}
 		onCheckedChange={(on) => setAppearance({ coverLyricRomanized: on })}
 	/>{/snippet}
 {#snippet openPlayerSwitch()}<Switch
