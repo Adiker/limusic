@@ -462,7 +462,7 @@ jobs:
           }
 
           # The asset endpoint is addressed by release id; every other call here takes the tag.
-          RELEASE_ID="$(retry 3 gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .id)"
+          RELEASE_ID="$(retry 3 gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json databaseId --jq .databaseId)"
           [ -n "$RELEASE_ID" ] || { echo "::error::no release found for $TAG"; exit 1; }
 
           EXE="target/release/bundle/nsis/limusic_${VERSION}_x64-setup.exe"
