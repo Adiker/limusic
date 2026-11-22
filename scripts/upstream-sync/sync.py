@@ -64,12 +64,15 @@ def main():
         raise RuntimeError(f'Cannot check upstream ancestry: {ancestry.stderr}')
 
     prs = json.loads(gh('pr', 'list', '--repo', repo, '--state', 'open', '--limit', '100', '--json', 'number,headRefName,headRefOid,body'))
-    sync_prs = [p for p in prs if p['headRefName'] == BRANCH]
+    sync_prs = [p for p in prs if p['headRefName'] == BRANCH or p['headRefName'].startswith('codex/sync-upstream-')]
     if len(sync_prs) > 1:
         raise RuntimeError('Multiple sync PRs found')
     pr = sync_prs[0] if sync_prs else None
     old_sha = ''
     if pr:
+        if pr['headRefName'] != BRANCH:
+            notice(f'Upstream {tag} requires manual sync', f'Existing sync PR #{pr["number"]} has manual changes. Review it before syncing [{tag}]({release["html_url"]}) (`{upstream_sha}`).')
+            return
         m = re.search(r'<!-- upstream-sync (\{[^\n]+\}) -->', pr.get('body') or '')
         metadata = json.loads(m.group(1)) if m else {}
         old_sha = metadata.get('head', '')
