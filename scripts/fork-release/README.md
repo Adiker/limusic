@@ -1,19 +1,45 @@
-# Fork release gate (draft)
+# Release migration — not ready for production
 
-This branch is a draft and must not be merged or used for production releases yet.
-It is based on the upstream-sync branch. The legacy `upstream-release.yml` still runs and can
-create releases without the new gate. The new PR discovery is deliberately manual-only.
+The automation in this branch is a draft. Do not merge or dispatch a production release until the
+integration checks below pass. The original repository still serves the live updater.
 
-The intended gate creates a tag only for the merge commit of an upstream-sync PR, creates a draft,
-then builds Linux, Windows, macOS, RPM and Arch. Promotion validates assets and signed manifests.
-Retry of a published release skips asset rebuilds and rechecks promotion; tags are never moved.
+## Signing and compatibility
 
-Before enabling: replace the legacy workflow; review the trust and provenance checks; integrate
-recovery for manual conflict PRs; exercise draft creation, all five builds (including an RC RPM),
-failed jobs, retries, manifest races, beta creation and promotion end-to-end in a disposable repo;
-confirm the Actions-created PR workflow approval behavior and enable Actions PR creation; configure
-branch protection; document the full operation. GitHub Actions currently returns HTTP 422 for
-this repository despite its settings reporting enabled, so no remote integration test was possible.
+The migration replaces the old Tauri signing key because its password is unavailable. Existing
+installations cannot trust releases signed with the new key. Users need to install one release
+manually before the new updater can work. Never publish an update signed with the new key as if it
+were compatible with the old installs. The new encrypted key and password are backed up locally and
+are configured as repository secrets; verify they survive any repository replacement. Do not commit
+or print either secret.
 
-Run `python3 -m unittest discover -s scripts/fork-release -v` and
-`python3 -m unittest discover -s scripts/upstream-sync -v` for the local checks.
+## Before cutover
+
+1. Review the upstream merge, offline downloads, and link entry; verify all six CI jobs.
+2. Complete dry-run builds for Linux, Windows, macOS, Arch and RPM, including stable and RC.
+3. Test the release coordinator end to end in an isolated repository with test keys: existing and
+   conflicting tags; all five build successes; each build failure; partial manifests; failures and
+   retries before and after publishing; concurrent uploads; signature checks; beta and stable channel
+   ordering; releases created by a merged sync PR and by manual retry. Inspect actual artifacts.
+4. Confirm that the automated sync PR can be created, its checks approved and run, conflicts reported,
+   and manually resolved branches preserved. Test both a stable release and an RC.
+5. Review release asset URLs and manifests after the destination has its final name. The updater
+   endpoints are deliberately set to `Adiker/limusic`; the current staging repository has a different
+   name, so end-to-end updater testing needs an isolated configuration or the completed cutover.
+6. Prepare a documented, verified backup of every release and PR and confirm the key and password can
+   be restored. Get explicit approval for the destructive or irreversible final name swap. Preserve
+   the original until the replacement is confirmed.
+7. Publish the historical releases in the intended order only after verification, make sure the old
+   updater and downloads remain available, then release the new-key version with clear manual-install
+   instructions. Verify the `latest` and `beta` manifests, signatures and all platform packages.
+
+The sync detector uses Actions' repository token; workflow runs for PRs it creates can require manual
+approval. Repository settings must allow Actions to create pull requests, and issues must be enabled
+for conflict reports. Protect the default branch and require the CI checks. The old
+`upstream-release.yml` is removed by this branch because it bypasses the release gate.
+
+Run local checks with:
+
+```
+python3 -m unittest discover -s scripts/fork-release -v
+python3 -m unittest discover -s scripts/upstream-sync -v
+```
