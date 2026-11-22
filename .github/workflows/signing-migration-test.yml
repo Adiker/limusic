@@ -1,0 +1,35 @@
+name: Migration signing verification
+on:
+  push:
+    branches: [codex/signing-migration-test]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-save --ignore-scripts @tauri-apps/cli@2.11.5
+      - run: python3 -m pip install --user pynacl
+      - name: Sign and verify a temporary file
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -eu
+          printf 'Migration signing test\n' > /tmp/signing-test
+          ./node_modules/.bin/tauri signer sign /tmp/signing-test > /dev/null
+          python3 - <<'PY'
+          import base64,hashlib,json,pathlib
+          from nacl.signing import VerifyKey
+          pub=base64.b64decode(json.load(open('src-tauri/tauri.conf.json'))['plugins']['updater']['pubkey']).decode().splitlines()
+          key=base64.b64decode(pub[1]); lines=base64.b64decode(pathlib.Path('/tmp/signing-test.sig').read_text()).decode().splitlines()
+          sig=base64.b64decode(lines[1]); assert key[2:10]==sig[2:10]
+          data=pathlib.Path('/tmp/signing-test').read_bytes(); verifier=VerifyKey(key[10:])
+          verifier.verify(hashlib.blake2b(data,digest_size=64).digest() if sig[:2]==b'ED' else data,sig[10:])
+          verifier.verify(sig[10:]+lines[2].removeprefix('trusted comment: ').encode(),base64.b64decode(lines[3]))
+          print('Signature matches updater public key')
+          PY
