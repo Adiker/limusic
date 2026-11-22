@@ -1,8 +1,13 @@
 import os
+import base64
+import hashlib
+import tempfile
+from pathlib import Path
 import unittest
 from unittest.mock import patch
+from nacl.signing import SigningKey
 
-from promote import semver, validate_assets
+from promote import semver, validate_assets, verify_signature
 
 
 class ReleaseValidationTests(unittest.TestCase):
@@ -50,6 +55,27 @@ class ReleaseValidationTests(unittest.TestCase):
         self.assertLess(semver('1.4.0-rc.9'), semver('1.4.0-rc.10'))
         self.assertLess(semver('1.4.0-rc.10'), semver('1.4.0'))
         self.assertLess(semver('1.3.99'), semver('1.4.0-rc.1'))
+
+    def test_cryptographic_verification_and_tampering(self):
+        private = SigningKey.generate()
+        key_id = b'12345678'
+        key = base64.b64encode(b'Ed' + key_id + bytes(private.verify_key)).decode()
+        public = base64.b64encode(f'untrusted comment: test\n{key}\n'.encode()).decode()
+        data = b'test artifact'
+        signed = private.sign(hashlib.blake2b(data, digest_size=64).digest()).signature
+        comment = 'timestamp:1'
+        global_sig = private.sign(signed + comment.encode()).signature
+        raw = (f'untrusted comment: signature\n'
+               f'{base64.b64encode(b"ED" + key_id + signed).decode()}\n'
+               f'trusted comment: {comment}\n{base64.b64encode(global_sig).decode()}\n')
+        signature = base64.b64encode(raw.encode()).decode()
+        with tempfile.TemporaryDirectory() as folder:
+            asset = Path(folder) / 'artifact'
+            asset.write_bytes(data)
+            verify_signature(public, asset, signature)
+            asset.write_bytes(b'tampered')
+            with self.assertRaisesRegex(ValueError, 'cryptographic verification'):
+                verify_signature(public, asset, signature)
 
 
 if __name__ == '__main__':

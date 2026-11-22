@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """Verify all package assets before publishing or changing update channels."""
 import json
+import base64
+import hashlib
 import os
 import re
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from nacl.signing import VerifyKey
+from nacl.exceptions import BadSignatureError
 
 
 def run(*args, check=True):
@@ -54,6 +58,30 @@ def validate_assets(tag, assets, manifest):
             raise ValueError(f'Invalid updater entry for {platform}')
 
 
+def verify_signature(public_key, asset_path, signature_text):
+    """Verify Tauri's encoded minisign signature, including its trusted comment."""
+    public = base64.b64decode(public_key, validate=True).decode().splitlines()
+    key = base64.b64decode(public[1], validate=True)
+    lines = base64.b64decode(signature_text.strip(), validate=True).decode().splitlines()
+    signature = base64.b64decode(lines[1], validate=True)
+    comment = lines[2]
+    global_signature = base64.b64decode(lines[3], validate=True)
+    if len(key) != 42 or len(signature) != 74 or key[2:10] != signature[2:10]:
+        raise ValueError('Updater signature does not match the configured key')
+    if signature[:2] != b'ED' or not comment.startswith('trusted comment: '):
+        raise ValueError('Unsupported updater signature format')
+    digest = hashlib.blake2b(digest_size=64)
+    with open(asset_path, 'rb') as asset:
+        for chunk in iter(lambda: asset.read(1024 * 1024), b''):
+            digest.update(chunk)
+    verifier = VerifyKey(key[10:])
+    try:
+        verifier.verify(digest.digest(), signature[10:])
+        verifier.verify(signature[10:] + comment.removeprefix('trusted comment: ').encode(), global_signature)
+    except BadSignatureError as error:
+        raise ValueError('Updater signature failed cryptographic verification') from error
+
+
 def main():
     repo, tag, sha = (os.environ[k] for k in ('GITHUB_REPOSITORY', 'RELEASE_TAG', 'RELEASE_SHA'))
     data = json.loads(run('gh', 'release', 'view', tag, '--repo', repo, '--json', 'isDraft,isPrerelease,assets').stdout)
@@ -64,10 +92,14 @@ def main():
         manifest = json.loads(Path(d, 'latest.json').read_text())
         validate_assets(tag, data['assets'], manifest)
         run('gh', 'release', 'download', tag, '--repo', repo, '--pattern', '*.sig', '--dir', d)
+        public_key = json.loads(run('git', 'show', f'{sha}:src-tauri/tauri.conf.json').stdout)['plugins']['updater']['pubkey']
         for entry in manifest['platforms'].values():
-            signature = Path(d, entry['url'].rsplit('/', 1)[-1] + '.sig').read_text().strip()
+            name = entry['url'].rsplit('/', 1)[-1]
+            signature = Path(d, name + '.sig').read_text().strip()
             if signature != entry['signature'].strip():
                 raise RuntimeError('Updater manifest signature does not match its asset')
+            run('gh', 'release', 'download', tag, '--repo', repo, '--pattern', name, '--dir', d)
+            verify_signature(public_key, Path(d, name), signature)
         beta = run('gh', 'release', 'view', 'beta', '--repo', repo, '--json', 'isDraft,isPrerelease,assets', check=False)
         if beta.returncode:
             if 'release not found' not in beta.stderr.lower():
