@@ -94,6 +94,17 @@ jobs:
           [ -n "$TAG" ] || { echo "::error::no tag to build for"; exit 1; }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Require a draft for release uploads
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+          [ "$draft" = true ] || { echo '::error::Refusing to modify a published release'; exit 1; }
+
       # Actions are pinned to commit SHAs, not tags: `@v4` and `@v2` are mutable refs. This job
       # holds TAURI_SIGNING_PRIVATE_KEY and produces the installers users auto-update to, so
       # nothing in it should be able to change under us. To bump one: read the SHA off the action's

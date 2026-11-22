@@ -58,6 +58,17 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
+      - name: Require a draft for release uploads
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+          [ "$draft" = true ] || { echo '::error::Refusing to modify a published release'; exit 1; }
+
       - name: Checkout the fork release tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
