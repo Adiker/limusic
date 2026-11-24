@@ -1,0 +1,42 @@
+name: Coordinated release dry run
+on:
+  push:
+    branches: [codex/release-orchestration-dry-run]
+permissions:
+  contents: write
+jobs:
+  linux:
+    uses: ./.github/workflows/linux-release.yml
+    with:
+      tag: v1.5.0-rc.1
+      dry_run: true
+    secrets: inherit
+  windows:
+    uses: ./.github/workflows/windows-release.yml
+    with:
+      tag: v1.5.0-rc.1
+      dry_run: true
+    secrets: inherit
+  macos:
+    uses: ./.github/workflows/macos-release.yml
+    with:
+      tag: v1.5.0-rc.1
+      dry_run: true
+    secrets: inherit
+  rpm:
+    uses: ./.github/workflows/rpm-release.yml
+    with:
+      tag: v1.5.0-rc.1
+      dry_run: true
+    secrets: inherit
+  arch:
+    uses: ./.github/workflows/arch-release.yml
+    with:
+      tag: v1.5.0-rc.1
+      dry_run: true
+    secrets: inherit
+  verify:
+    needs: [linux, windows, macos, rpm, arch]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo 'All five release workflows succeeded in dry-run mode.'
