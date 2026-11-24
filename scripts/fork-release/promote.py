@@ -25,6 +25,18 @@ def semver(value):
     return int(a), int(b), int(c), int(rc is None), int(rc or 0)
 
 
+def tag_commit(repo, tag):
+    """Resolve a lightweight or annotated tag to its commit via GitHub."""
+    ref = json.loads(run('gh', 'api', f'repos/{repo}/git/ref/tags/{tag}').stdout)['object']
+    for _ in range(8):
+        if ref['type'] == 'commit':
+            return ref['sha']
+        if ref['type'] != 'tag':
+            raise ValueError('Release tag does not point to a commit')
+        ref = json.loads(run('gh', 'api', f'repos/{repo}/git/tags/{ref["sha"]}').stdout)['object']
+    raise ValueError('Too many nested annotated tags')
+
+
 def validate_assets(tag, assets, manifest):
     version = tag[1:]
     semver(version)
@@ -84,6 +96,8 @@ def verify_signature(public_key, asset_path, signature_text):
 
 def main():
     repo, tag, sha = (os.environ[k] for k in ('GITHUB_REPOSITORY', 'RELEASE_TAG', 'RELEASE_SHA'))
+    if tag_commit(repo, tag) != sha:
+        raise RuntimeError('Release tag no longer points to the reviewed merge commit')
     data = json.loads(run('gh', 'release', 'view', tag, '--repo', repo, '--json', 'isDraft,isPrerelease,assets').stdout)
     if data['isPrerelease'] != ('-rc.' in tag):
         raise RuntimeError('Release has the wrong channel')

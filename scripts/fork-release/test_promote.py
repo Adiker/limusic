@@ -2,12 +2,14 @@ import os
 import base64
 import hashlib
 import tempfile
+import json
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from nacl.signing import SigningKey
 
-from promote import semver, validate_assets, verify_signature
+from promote import semver, tag_commit, validate_assets, verify_signature
 
 
 class ReleaseValidationTests(unittest.TestCase):
@@ -55,6 +57,13 @@ class ReleaseValidationTests(unittest.TestCase):
         self.assertLess(semver('1.4.0-rc.9'), semver('1.4.0-rc.10'))
         self.assertLess(semver('1.4.0-rc.10'), semver('1.4.0'))
         self.assertLess(semver('1.3.99'), semver('1.4.0-rc.1'))
+
+    def test_resolves_annotated_tag_to_commit(self):
+        with patch('promote.run', side_effect=[
+            SimpleNamespace(stdout=json.dumps({'object': {'type': 'tag', 'sha': 'tag-object'}})),
+            SimpleNamespace(stdout=json.dumps({'object': {'type': 'commit', 'sha': 'commit-sha'}}))
+        ]):
+            self.assertEqual(tag_commit('owner/repo', 'v1.4.0'), 'commit-sha')
 
     def test_cryptographic_verification_and_tampering(self):
         private = SigningKey.generate()
