@@ -391,3 +391,10 @@ this project belong to their respective owners.
 Karaoke uses the UVR-MDX-NET-Inst_HQ_3, UVR-MDX-NET-Inst_Main and UVR_MDXNET_3_9662 models from
 [Ultimate Vocal Remover](https://github.com/Anjok07/ultimatevocalremovergui) by Anjok07 and aufr33 (MIT) and, on
 Windows, ONNX Runtime and DirectML from Microsoft. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+## Fork migration and signing transition
+
+The standalone fork is being prepared for migration. Because its previous updater signing-key
+password was unavailable, the first release using the replacement key must be installed manually
+by existing users. That installation is needed once before updates signed with the new key can be
+verified. The operator checklist is in [docs/REPOSITORY-CUTOVER.md](docs/REPOSITORY-CUTOVER.md).

@@ -160,11 +160,15 @@ fn remove_empty_dirs(root: &Path) {
 }
 
 fn remove_orphans(root: &Path, allowed: &HashSet<String>) {
-    let Ok(entries) = fs::read_dir(root) else { return };
+    remove_orphans_in(root, root, allowed);
+}
+
+fn remove_orphans_in(root: &Path, dir: &Path, allowed: &HashSet<String>) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            remove_orphans(&path, allowed);
+            remove_orphans_in(root, &path, allowed);
             let _ = fs::remove_dir(&path);
         } else if path.is_file() {
             let rel = path.strip_prefix(root).ok().map(|p| p.to_string_lossy().replace('\\', "/"));
@@ -959,6 +963,33 @@ pub fn set_download_quality(db: &Db, value: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn orphan_cleanup_preserves_nested_downloads_on_restart() {
+        let dir = std::env::temp_dir().join(format!(
+            "limusic-orphans-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let root = dir.as_path();
+        fs::create_dir_all(root.join("audio")).unwrap();
+        fs::create_dir_all(root.join("artwork")).unwrap();
+        fs::write(root.join(MARKER), b"marker").unwrap();
+        fs::write(root.join("audio/keep.webm"), b"audio").unwrap();
+        fs::write(root.join("audio/resume.webm.part"), b"part").unwrap();
+        fs::write(root.join("artwork/keep.jpg"), b"image").unwrap();
+        fs::write(root.join("audio/orphan.webm"), b"orphan").unwrap();
+        let allowed = ["audio/keep.webm", "audio/resume.webm.part", "artwork/keep.jpg"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        remove_orphans(root, &allowed);
+        for path in [MARKER, "audio/keep.webm", "audio/resume.webm.part", "artwork/keep.jpg"] {
+            assert!(root.join(path).is_file(), "missing {path}");
+        }
+        assert!(!root.join("audio/orphan.webm").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn stable_names_are_filesystem_safe_and_deterministic() {

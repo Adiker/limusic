@@ -1,0 +1,31 @@
+name: Prepare upstream release PR
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: upstream-pr
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          # GITHUB_TOKEN cannot push upstream commits that change workflow files. An optional
+          # repository-scoped token with Contents + Workflows write is used only for git.
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
+      - name: Prepare sync PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: python3 scripts/upstream-sync/sync.py
