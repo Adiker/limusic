@@ -50,6 +50,8 @@ python3 -m unittest discover -s scripts/fork-release -v
 python3 -m unittest discover -s scripts/upstream-sync -v
 ```
 
-Private integration tests exercised real RC and stable publication with synthetic signed assets,
-channel ordering, retry of an older RC and the GitHub Actions job graph for success, failure and an
-already-published release. They do not replace a full run using real platform builds.
+Private integration tests exercised RC publication with actual signed Linux, Windows and macOS
+artifacts and real Arch and RPM packages from one source commit. A separate synthetic stable/RC
+test covered channel ordering and retry of an older RC. An isolated GitHub Actions job graph covered
+success, failure and an already-published release. These tests do not replace a single coordinated
+run that builds and publishes every platform in one workflow execution.
