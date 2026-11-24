@@ -1,0 +1,22 @@
+name: Test full upstream synchronization
+on:
+  push:
+    branches: [codex/sync-e2e-base]
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+      - name: Run sync against isolated base and test PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: codex/sync-e2e-base
+        run: python3 scripts/upstream-sync/sync.py
