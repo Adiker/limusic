@@ -15,6 +15,11 @@ newer tag arrives while the automation branch has not been manually modified, it
 PR with a force-with-lease push.
 
 GitHub settings must allow Actions to create pull requests. Issues must be enabled for conflict
-reports. Do not run production release automation until the cutover and signing transition in
+reports. If upstream changes `.github/workflows/`, GitHub can reject a push made with `GITHUB_TOKEN`.
+For unattended sync, set `UPSTREAM_SYNC_TOKEN` to a fine-grained token scoped only to this repository,
+with repository permissions **Contents: read and write** and **Workflows: read and write**. The token
+is used only by checkout/git; issue and pull-request API calls still use `GITHUB_TOKEN`. Without it,
+workflow-changing syncs need manual handling; the detector reports the rejected push in an issue.
+Do not run production release automation until the cutover and signing transition in
 `../fork-release/README.md` are complete. Run the detector tests using
 `python3 -m unittest discover -s scripts/upstream-sync -v`.

@@ -102,6 +102,34 @@ class FlowTests(unittest.TestCase):
         self.assertIn('src/conflict.rs', issue.call_args.args[1])
         self.assertFalse(any(c[0] == 'push' for c in calls))
 
+    def test_workflow_permission_rejection_reports_action_without_creating_pr(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        import sync
+        calls = []
+
+        def fake_gh(*args):
+            calls.append(args)
+            if args[0] == 'api':
+                return '[[{"tag_name":"v1.5.0-rc.1","html_url":"https://example.test/release"}]]'
+            if args[:2] == ('pr', 'list'):
+                return '[]'
+            raise AssertionError(args)
+
+        def fake_git(*args, **kwargs):
+            if args[0] == 'show':
+                return SimpleNamespace(stdout='{"version":"1.4.1"}', stderr='', returncode=0)
+            if args[0] == 'push':
+                return SimpleNamespace(stdout='', stderr='workflow update requires workflows permission', returncode=1)
+            return SimpleNamespace(stdout='sha\n' if args[0] == 'rev-parse' else '',
+                                   stderr='', returncode=1 if args[0] == 'merge-base' else 0)
+
+        with patch.object(sync, 'gh', side_effect=fake_gh), patch.object(sync, 'git', side_effect=fake_git), patch.object(sync, 'notice') as issue:
+            with self.assertRaisesRegex(RuntimeError, 'Unable to push'):
+                sync.main()
+        self.assertIn('UPSTREAM_SYNC_TOKEN', issue.call_args.args[1])
+        self.assertFalse(any(c[:2] == ('pr', 'create') for c in calls))
+
     def test_existing_manual_sync_branch_is_not_overwritten(self):
         import json
         from unittest.mock import patch

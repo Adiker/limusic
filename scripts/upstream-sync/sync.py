@@ -111,6 +111,10 @@ def main():
     else:
         existing = git('ls-remote', '--heads', 'origin', f'refs/heads/{BRANCH}').stdout.strip()
         if existing:
+            notice('Upstream sync branch needs manual recovery',
+                   f'Branch `{BRANCH}` exists without an open synchronization PR. '
+                   'This can happen if PR creation failed after a successful push. '
+                   'Review the branch and open a PR or remove it before retrying; it will not be overwritten.')
             raise RuntimeError(f'{BRANCH} exists without an open sync PR; refusing to overwrite it')
 
     git('config', 'user.name', 'github-actions[bot]')
@@ -127,12 +131,26 @@ def main():
     metadata = json.dumps({'tag': tag, 'upstream': upstream_sha, 'base': base_sha, 'head': head}, separators=(',', ':'))
     body = f'Upstream release: [{tag}]({release["html_url"]})\n\nUpstream commit: `{upstream_sha}`\nFork base: `{base_sha}`\n\nReview the changes and checks, then merge using a **merge commit**.\n\n{MARKER}{metadata} -->'
     lease = f'--force-with-lease=refs/heads/{BRANCH}:{old_sha}'
-    git('push', lease, 'origin', f'HEAD:refs/heads/{BRANCH}')
+    pushed = git('push', lease, 'origin', f'HEAD:refs/heads/{BRANCH}', check=False)
+    if pushed.returncode:
+        if 'workflow' in pushed.stderr.lower() and ('permission' in pushed.stderr.lower() or 'scope' in pushed.stderr.lower()):
+            notice(f'Upstream {tag} needs workflow permission',
+                   f'GitHub rejected the push for [{tag}]({release["html_url"]}) (`{upstream_sha}`) '
+                   'because it modifies workflow files. Configure the repository-scoped '
+                   '`UPSTREAM_SYNC_TOKEN` as documented, or merge the tag manually.')
+        raise RuntimeError(f'Unable to push sync branch: {pushed.stderr}')
     title = f'Sync upstream {tag}'
     if pr:
         gh('pr', 'edit', str(pr['number']), '--repo', repo, '--title', title, '--body', body)
     else:
-        gh('pr', 'create', '--repo', repo, '--base', base, '--head', BRANCH, '--title', title, '--body', body)
+        try:
+            gh('pr', 'create', '--repo', repo, '--base', base, '--head', BRANCH, '--title', title, '--body', body)
+        except subprocess.CalledProcessError:
+            notice('Upstream sync branch needs manual recovery',
+                   f'The branch `{BRANCH}` for [{tag}]({release["html_url"]}) was pushed, '
+                   'but the PR could not be created. Check Actions PR permissions and open a PR '
+                   f'targeting `{base}` or remove the branch before retrying.')
+            raise
     print(f'Prepared {tag} at {head}')
 
 

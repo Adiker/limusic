@@ -21,6 +21,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          # GITHUB_TOKEN cannot push upstream commits that change workflow files. An optional
+          # repository-scoped token with Contents + Workflows write is used only for git.
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || github.token }}
       - name: Prepare sync PR
         env:
           GH_TOKEN: ${{ github.token }}
