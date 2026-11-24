@@ -18,7 +18,8 @@ change updater channels while preparation and tests are incomplete.
    failed build. Keep upstream synchronization and old release schedules disabled until ready.
 5. Prepare a clear manual-install announcement. The old key cannot sign the transition and an
    installed app that trusts the old key cannot verify releases signed by the new key. Existing
-   users must install a new-key build manually before automatic updates resume.
+   users must install a new-key build manually before automatic updates resume. See the draft in
+   [UPDATER-TRANSITION.md](UPDATER-TRANSITION.md).
 6. Inventory the current repository IDs, name, settings and existing PR links. A name swap changes
    which repository is served at `Adiker/limusic`; historic PR numbers and stars remain associated
    with the original repository, not the replacement. Reusing the old name prevents GitHub from
