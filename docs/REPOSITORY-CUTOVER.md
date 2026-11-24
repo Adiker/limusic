@@ -23,6 +23,13 @@ change updater channels while preparation and tests are incomplete.
    which repository is served at `Adiker/limusic`; historic PR numbers and stars remain associated
    with the original repository, not the replacement. Reusing the old name prevents GitHub from
    redirecting old links to the renamed original. See GitHub's repository renaming documentation.
+7. Confirm `UPSTREAM_SYNC_TOKEN` is present, has not expired, and has Contents and Workflows write
+   access to the standalone repository. After the rename, verify its access and repeat the sync
+   test before relying on unattended operation.
+   GitHub does not reveal the value of an existing Actions secret: keep a separate recovery plan.
+8. Perform a hands-on regression pass with the built transition application: download tracks for
+   offline use, play them without a network connection, and open supported links. Automated CI and
+   package builds do not establish that these interactive paths work on a user's machine.
 
 ## Cutover
 
@@ -33,7 +40,9 @@ change updater channels while preparation and tests are incomplete.
    `v1.3.0` as Latest. Verify the final `releases/latest/download/latest.json` and asset URLs and
    their old signatures before changing either update channel. Publication can notify subscribers.
 3. Verify the Actions secrets, branch protection, permissions and disabled workflows after the
-   rename. Enable only the new upstream-sync automation after the release gate is reviewed.
+   rename. Once the release automation PR is on `master`, add `fork-automation` to the required
+   status checks; adding it before that workflow reaches the base branch can block the first PR.
+   Enable only the new upstream-sync automation after the release gate is reviewed.
 4. Manually dispatch `fork-release.yml` on `master` using the exact upstream tag and merge commit
    SHA from the first synchronization PR. Monitor all five builds and the promotion job. RCs must
    remain prereleases and may update only the beta pointer; do not force a failed release through.

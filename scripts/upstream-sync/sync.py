@@ -103,7 +103,7 @@ def main():
         metadata = json.loads(m.group(1)) if m else {}
         old_sha = metadata.get('head', '')
         if old_sha != pr['headRefOid']:
-            notice(f'Upstream {tag} requires manual sync', f'A newer upstream release [{tag}]({release["html_url"]}) ({upstream_sha}) is available, but PR #{pr["number"]} has manual changes. Preserve those changes and update the PR manually.')
+            notice(f'Upstream {tag} requires manual sync', f'Upstream release [{tag}]({release["html_url"]}) ({upstream_sha}) needs review, but PR #{pr["number"]} has manual changes. Preserve those changes and update the PR manually if needed.')
             return
         if metadata.get('upstream') == upstream_sha:
             print(f'PR #{pr["number"]} already tracks {tag}')
