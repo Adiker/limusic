@@ -7,8 +7,10 @@ change updater channels while preparation and tests are incomplete.
 ## Before the cutover
 
 1. Review and merge the current synchronization PR and the release automation PR using merge
-   commits, after their required checks pass. The first release must be started manually because
-   the synchronization PR was merged before the new release workflow reached the default branch.
+   commits, after their required checks pass. For the first release, merge the finalization sync PR
+   after the automation and offline-file fix: its merge commit includes both the upstream merge and
+   the fix. The original upstream synchronization merge predates the fix and must not be released.
+   Start the first release manually after cutover using the finalization PR's merge commit.
 2. Recompare all source branches, tags, releases and asset SHA-256 digests with the staging copy.
    Refresh the local Git bundle and PR/comment metadata if anything changed. Confirm the original
    seven releases and all their assets are present as drafts, including the signed `latest.json`.
