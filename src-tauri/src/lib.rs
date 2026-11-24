@@ -1025,7 +1025,13 @@ pub fn run() {
             }
 
             let visitor_for_prewarm = visitor_data.clone();
-            let session = Session { locale: Locale::default(), visitor_data, data_sync_id, cookie };
+            let session = Session {
+                locale: Locale::default(),
+                visitor_data,
+                data_sync_id,
+                cookie,
+                page_id: state::persisted_page_id(&db),
+            };
             let it = match InnerTube::new(session, proxy.as_deref()) {
                 Ok(it) => it,
                 Err(e) => fatal("Limusic could not start its network client", &e.to_string()),
@@ -1596,6 +1602,8 @@ pub fn run() {
             commands::limusic_my_rejection,
             commands::limusic_admin_accounts,
             commands::limusic_admin_update,
+            commands::limusic_notes,
+            commands::limusic_notes_seen,
             commands::limusic_revert,
             commands::lyrics_parse,
             commands::lastfm_connect,

@@ -112,7 +112,7 @@ Discord.
 - Adaptive colors from the playing cover
 - Material You, or your wallpaper's colors through Matugen, wallust or pywal
 - A custom app icon
-- Nineteen languages, more on [Weblate](https://hosted.weblate.org/projects/limusic/)
+- Twenty-six languages, more on [Weblate](https://hosted.weblate.org/projects/limusic/)
 
 </td>
 </tr>
@@ -147,8 +147,8 @@ Discord.
 |---|---|---|
 | Windows | `-setup.exe` | Self-updating |
 | Windows | `.msi` | Plain installer, no auto-update |
-| Linux | `.AppImage` | Self-updating, libmpv bundled. Needs glibc 2.36+ (Debian 12+, Ubuntu 24.04+, Fedora 37+) |
-| Linux (Ubuntu/Debian) | `.deb` | No self-update. Needs Debian 12+ / Ubuntu 24.04+; apt pulls libmpv and webkit2gtk in for you |
+| Linux | `.AppImage` | Self-updating, libmpv bundled. Needs glibc 2.39+ (Ubuntu 24.04+, Debian 13+, Fedora 40+) |
+| Linux (Ubuntu/Debian) | `.deb` | No self-update. Needs Ubuntu 24.04+ / Debian 13+; apt pulls libmpv and webkit2gtk in for you |
 | Linux (Fedora/RHEL) | `.rpm` | Needs `mpv-libs` installed (`sudo dnf install mpv-libs`). No updates, redownload each release |
 | macOS 15+ (Apple Silicon) | `.dmg` | Self-updating. Unsigned, so the first launch needs `xattr -dr com.apple.quarantine /Applications/limusic.app` |
 | macOS (Intel) | none | Build from source, see [docs/BUILD-PLATFORMS.md](docs/BUILD-PLATFORMS.md) |
@@ -292,7 +292,7 @@ who host it free for libre projects.
   <img src="https://hosted.weblate.org/widget/limusic/ui/multi-auto.svg" alt="Translation status">
 </a>
 
-Nineteen languages ship in the app today, and the badge above shows everything
+Twenty-six languages ship in the app today, and the badge above shows everything
 else in flight.
 
 **Translate on Weblate, not in a pull request.** Weblate keeps its own copy of
