@@ -1,7 +1,7 @@
 # Release migration — not ready for production
 
-The automation in this branch is a draft. Do not merge or dispatch a production release until the
-integration checks below pass. The original repository still serves the live updater.
+The automation in this branch is under review. The original repository still serves the live updater.
+The release workflow is restricted to `Adiker/limusic` so it cannot publish from the staging copy.
 
 ## Signing and compatibility
 
@@ -26,8 +26,7 @@ or print either secret.
    endpoints are deliberately set to `Adiker/limusic`; the current staging repository has a different
    name, so end-to-end updater testing needs an isolated configuration or the completed cutover.
 6. Prepare a documented, verified backup of every release and PR and confirm the key and password can
-   be restored. Get explicit approval for the destructive or irreversible final name swap. Preserve
-   the original until the replacement is confirmed.
+   be restored. Review the final name swap and preserve the original until the replacement is confirmed.
 7. Publish the historical releases in the intended order only after verification, make sure the old
    updater and downloads remain available, then release the new-key version with clear manual-install
    instructions. Verify the `latest` and `beta` manifests, signatures and all platform packages.
@@ -43,3 +42,7 @@ Run local checks with:
 python3 -m unittest discover -s scripts/fork-release -v
 python3 -m unittest discover -s scripts/upstream-sync -v
 ```
+
+Private integration tests exercised real RC and stable publication with synthetic signed assets,
+channel ordering, retry of an older RC and the GitHub Actions job graph for success, failure and an
+already-published release. They do not replace a full run using real platform builds.

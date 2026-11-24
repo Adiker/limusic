@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 from nacl.signing import SigningKey
 
-from promote import semver, tag_commit, validate_assets, verify_signature
+from promote import main, semver, tag_commit, validate_assets, verify_signature
 
 
 class ReleaseValidationTests(unittest.TestCase):
@@ -64,6 +64,13 @@ class ReleaseValidationTests(unittest.TestCase):
             SimpleNamespace(stdout=json.dumps({'object': {'type': 'commit', 'sha': 'commit-sha'}}))
         ]):
             self.assertEqual(tag_commit('owner/repo', 'v1.4.0'), 'commit-sha')
+
+    def test_moved_tag_blocks_promotion_before_any_release_operation(self):
+        with patch.dict(os.environ, {'RELEASE_TAG': 'v1.4.0', 'RELEASE_SHA': 'expected'}), \
+             patch('promote.tag_commit', return_value='different'), patch('promote.run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'no longer points'):
+                main()
+            run.assert_not_called()
 
     def test_cryptographic_verification_and_tampering(self):
         private = SigningKey.generate()

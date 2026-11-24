@@ -26,10 +26,11 @@ concurrency:
 jobs:
   prepare:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.merged == true &&
-       (startsWith(github.event.pull_request.head.ref, 'codex/sync-upstream-') ||
-        github.event.pull_request.head.ref == 'automation/upstream-release'))
+      github.repository == 'Adiker/limusic' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.pull_request.merged == true &&
+        (startsWith(github.event.pull_request.head.ref, 'codex/sync-upstream-') ||
+         github.event.pull_request.head.ref == 'automation/upstream-release')))
     runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.prepare.outputs.tag }}
