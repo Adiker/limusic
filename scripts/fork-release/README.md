@@ -36,6 +36,13 @@ approval. Repository settings must allow Actions to create pull requests, and is
 for conflict reports. Protect the default branch and require the CI checks. The old
 `upstream-release.yml` is removed by this branch because it bypasses the release gate.
 
+The first synchronization PR must be merged before this workflow exists on the default branch, so
+its closing event cannot trigger the new workflow. After merging both PRs and completing cutover,
+dispatch `fork-release.yml` on `master` with the upstream `tag` and the synchronization PR's exact
+`merge_sha`. The workflow validates the merged PR and tag before creating any release. Subsequent
+sync PRs trigger it when merged. Add `fork-automation` to required checks once this branch is on
+the default branch; requiring it earlier would block the first synchronization PR.
+
 Run local checks with:
 
 ```
