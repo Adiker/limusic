@@ -1,7 +1,8 @@
 # Upstream release synchronization
 
-The workflow checks published stable releases and release candidates hourly or on manual dispatch.
-It selects the highest supported semantic version and prepares a merge commit on
+The workflow checks the newest published stable release and release candidate hourly or on manual
+dispatch, starting with the higher version. If an older release is not in the current history,
+it opens an issue for manual integration without downgrading the application. Otherwise it prepares a merge commit on
 `automation/upstream-release`. Review the PR, approve any Actions runs created with `GITHUB_TOKEN`,
 and merge with a merge commit after CI passes. Never squash or rebase a synchronization PR: the
 upstream commit must remain in the history.

@@ -20,9 +20,14 @@ def version(tag):
     return (int(a), int(b), int(c), 1 if rc is None else 0, int(rc or 0))
 
 
-def latest_release(releases):
+def latest_releases(releases):
     candidates = [r for r in releases if not r.get('draft') and version(r.get('tag_name', ''))]
-    return max(candidates, key=lambda r: version(r['tag_name']), default=None)
+    newest = {}
+    for release in candidates:
+        channel = 'rc' if '-rc.' in release['tag_name'] else 'stable'
+        if channel not in newest or version(release['tag_name']) > version(newest[channel]['tag_name']):
+            newest[channel] = release
+    return sorted(newest.values(), key=lambda r: version(r['tag_name']), reverse=True)
 
 
 def run(*args, check=True):
@@ -44,24 +49,45 @@ def notice(title, body):
         gh('issue', 'create', '--repo', repo, '--title', title, '--body', body)
 
 
+def find_pending(releases, base_sha):
+    for release in releases:
+        tag = release['tag_name']
+        git('fetch', '--no-tags', 'https://github.com/' + UPSTREAM + '.git', f'refs/tags/{tag}')
+        upstream_sha = git('rev-parse', 'FETCH_HEAD^{commit}').stdout.strip()
+        ancestry = git('merge-base', '--is-ancestor', upstream_sha, base_sha, check=False)
+        if ancestry.returncode == 1:
+            return release, upstream_sha
+        if ancestry.returncode != 0:
+            raise RuntimeError(f'Cannot check upstream ancestry: {ancestry.stderr}')
+        print(f'{tag} ({upstream_sha}) is already included')
+    return None
+
+
 def main():
     repo = os.environ['GITHUB_REPOSITORY']
     base = os.environ.get('DEFAULT_BRANCH', 'master')
     releases = json.loads(gh('api', '--paginate', '--slurp', f'repos/{UPSTREAM}/releases?per_page=100'))
-    release = latest_release([r for page in releases for r in page])
-    if not release:
+    candidates = latest_releases([r for page in releases for r in page])
+    if not candidates:
         raise RuntimeError('No supported published upstream release found')
-    tag = release['tag_name']
-    git('fetch', '--no-tags', 'https://github.com/' + UPSTREAM + '.git', f'refs/tags/{tag}')
-    upstream_sha = git('rev-parse', 'FETCH_HEAD^{commit}').stdout.strip()
     git('fetch', 'origin', f'+refs/heads/{base}:refs/remotes/origin/{base}')
     base_sha = git('rev-parse', f'origin/{base}').stdout.strip()
-    ancestry = git('merge-base', '--is-ancestor', upstream_sha, base_sha, check=False)
-    if ancestry.returncode == 0:
-        print(f'{tag} ({upstream_sha}) is already included in {base}')
+    pending = find_pending(candidates, base_sha)
+    if not pending:
+        print(f'Latest stable and RC releases are already included in {base}')
         return
-    if ancestry.returncode != 1:
-        raise RuntimeError(f'Cannot check upstream ancestry: {ancestry.stderr}')
+    release, upstream_sha = pending
+    tag = release['tag_name']
+    source_config = json.loads(git('show', f'{base_sha}:src-tauri/tauri.conf.json').stdout)
+    current = version('v' + source_config['version'])
+    if current is None:
+        raise RuntimeError('Current app version is not a supported stable or RC version')
+    if version(tag) < current:
+        notice(f'Upstream {tag} requires manual sync',
+               f'[{tag}]({release["html_url"]}) (`{upstream_sha}`) is not included in `{base}` '
+               f'but is older than the current application version `{source_config["version"]}`. '
+               'Review and integrate its changes without downgrading the release version.')
+        return
 
     prs = json.loads(gh('pr', 'list', '--repo', repo, '--state', 'open', '--limit', '100', '--json', 'number,headRefName,headRefOid,body'))
     sync_prs = [p for p in prs if p['headRefName'] == BRANCH or p['headRefName'].startswith('codex/sync-upstream-')]
