@@ -25,6 +25,7 @@ use crate::downloads::DownloadManager;
 use crate::listentogether::{LtSession, SyncCommand};
 use crate::media::MediaHandle;
 use crate::orchestrator::{Orchestrator, PlaybackData, PlaybackPing, ResolveError};
+use crate::watchtime::{Target, Watch};
 
 /// Synthetic browseId for the On Repeat playlist. Not a YouTube id: `get_playlist` intercepts it
 /// and builds the page from local play counts, so it must never collide with a real browseId
@@ -113,6 +114,8 @@ pub struct AppState {
     history_pinged: AtomicBool,
     /// The play being heard right now, for the listening stats (#396). See [`Self::hear`].
     listen: std::sync::Mutex<Listen>,
+    /// The current play's watch time (#764). See [`crate::watchtime`].
+    watch: std::sync::Mutex<Watch>,
     /// Mirror of mpv's pause flag (set in `media_set_playing`). Position ticks must consult this
     /// instead of assuming "playing" — mpv fires `time-pos` on seeks while paused too.
     is_playing: AtomicBool,
@@ -582,6 +585,7 @@ impl AppState {
             reload_mutex: tokio::sync::Mutex::default(),
             history_pinged: AtomicBool::new(false),
             listen: std::sync::Mutex::default(),
+            watch: std::sync::Mutex::new(Watch::new(String::new(), std::time::Instant::now())),
             is_playing: AtomicBool::new(false),
             auto_pause_enabled: AtomicBool::new(false),
             external_audio: AtomicBool::new(false),
@@ -1349,12 +1353,13 @@ impl AppState {
                 // Cached alongside the URL: a hit skips `/player`, so without it a replay never
                 // registered in watch history — and neither did a first listen whose stream the
                 // gapless lookahead had already cached (issue #83). `None` on rows written before
-                // the column, and on whatever YouTube declines a stale `ei` for; the ping is
-                // best-effort either way.
-                playback_ping: c
-                    .ping_url
-                    .zip(c.ping_client)
-                    .map(|(url, client)| PlaybackPing { url, client }),
+                // the column, on a row whose ping an earlier play already sent (#764), and on
+                // whatever YouTube declines a stale `ei` for; the ping is best-effort either way.
+                playback_ping: c.ping_url.zip(c.ping_client).map(|(url, client)| PlaybackPing {
+                    url,
+                    client,
+                    watchtime_url: c.watchtime_url,
+                }),
                 title: None,
                 artists: None,
                 duration: None,
@@ -1392,6 +1397,10 @@ impl AppState {
                     is_episode: data.is_episode,
                     ping_url: data.playback_ping.as_ref().map(|p| p.url.clone()),
                     ping_client: data.playback_ping.as_ref().map(|p| p.client.clone()),
+                    watchtime_url: data
+                        .playback_ping
+                        .as_ref()
+                        .and_then(|p| p.watchtime_url.clone()),
                     client: Some(data.stream_client.clone()),
                 },
                 now,
@@ -2028,6 +2037,15 @@ impl AppState {
         }
     }
 
+    /// The song a queued music video is the other version of (#767): its id, and the segments that
+    /// take a moment of the song to the video (`twin_position`). `None` for anything but a video
+    /// YouTube pairs with a song.
+    pub async fn video_twin(&self, video_id: &str) -> Option<(String, Vec<innertube::Segment>)> {
+        let q = self.queue.lock().await;
+        let mut row = q.items.iter().find(|i| i.video_id == video_id && i.is_video)?.clone();
+        swap_version(&mut row).then(|| (row.video_id, row.counterpart_segments))
+    }
+
     /// The music video settings changed: move the queue's rows onto the version they now pick, so
     /// the next song follows the switch, not the setting its album was opened under (#464). The
     /// playing row is left alone, it has its own Song/Video switch. Also run when a playlist's
@@ -2176,9 +2194,7 @@ impl AppState {
             q.current_client = q.lookahead_client.take();
             // New track is now playing → fresh history state (mirrors start_current).
             q.playback_ping = q.lookahead_playback_ping.take();
-            q.cpn = innertube::generate_cpn();
-            self.history_pinged.store(false, Ordering::Relaxed);
-            self.end_listen();
+            self.new_play(&mut q);
             q.duration = 0.0;
             q.live = false;
         }
@@ -2485,9 +2501,7 @@ impl AppState {
             }
             // Fresh play → fresh history state (context/01 §registerPlayback).
             q.playback_ping = data.playback_ping.clone();
-            q.cpn = innertube::generate_cpn();
-            self.history_pinged.store(false, Ordering::Relaxed);
-            self.end_listen();
+            self.new_play(&mut q);
             q.duration = 0.0;
             // Across a restart too: the restored track is announced before anything resolves it,
             // and a broadcast restored as an ordinary track came back with a seek bar (#424).
@@ -4011,9 +4025,18 @@ impl AppState {
     /// §registerPlayback) this counts the play locally (the On Repeat playlist) and fires the
     /// watch-history ping, latched to happen exactly once per play. The ping is additionally
     /// gated on the `enable_history` setting + being logged in. Best-effort (errors logged).
+    /// Every tick also feeds the play's watch time, reported once the ping is out (#764).
     pub async fn on_position(&self, pos: f64) {
         self.record_position(pos);
         self.hear(pos);
+        let playing = self.is_playing.load(Ordering::Relaxed);
+        let due = self.watch.lock().unwrap().tick(
+            pos,
+            playing,
+            std::time::Instant::now(),
+            self.player.volume(),
+        );
+        self.send_watchtime(due);
         // On a karaoke stream, the playhead must stay where it is written. Every seek lands here
         // (the bar, media keys, hotkeys, Listen Together), so this is the one check for all of them.
         if let Some(engine) = self.karaoke_engine() {
@@ -4037,19 +4060,22 @@ impl AppState {
             return;
         }
         let crossed = {
-            let q = self.queue.lock().await;
+            let mut q = self.queue.lock().await;
             // `swap` and not a store: the early-return above reads the flag outside the lock,
             // so the latch has to be the thing that decides, not the read. Latches even if the
             // ping below is missing or fails, so it is never retried.
             if pos >= history_threshold(q.duration)
                 && !self.history_pinged.swap(true, Ordering::Relaxed)
             {
-                Some((q.playback_ping.clone(), q.cpn.clone(), q.items.get(q.current).cloned()))
+                // Taken, not cloned: a tracking block is good for one play, so a Repeat One loop
+                // finds none here and fetches its own (#764).
+                Some((q.playback_ping.take(), q.cpn.clone(), q.items.get(q.current).cloned()))
             } else {
                 None
             }
         };
         let Some((ping, cpn, played)) = crossed else { return };
+        let video_id = played.as_ref().map(|i| i.video_id.clone());
 
         // Local play count (On Repeat, the stats page), on the same threshold. Deliberately not
         // gated on `enable_history` or sign-in: that setting is about registering plays with
@@ -4070,6 +4096,30 @@ impl AppState {
         if !self.history_enabled() || !self.it.is_logged_in() {
             return;
         }
+        let Some(video_id) = video_id.filter(|v| !crate::local::is_local_song(v)) else { return };
+        let Some(me) = self.app.try_state::<Arc<AppState>>().map(|s| s.inner().clone()) else {
+            return;
+        };
+        tauri::async_runtime::spawn(async move { me.register_play(&video_id, ping, &cpn).await });
+    }
+
+    /// Register a play in watch history, then report its watch time from here on (#764).
+    ///
+    /// A tracking block is good for one play. The one that came with the stream is used once and
+    /// dropped from the stream cache; a play with none (a Repeat One loop, a replay off the cache)
+    /// fetches its own, as music.youtube.com does for every loop, so each replay gets its own
+    /// `ei`/`plid` instead of folding into the first.
+    // ponytail: the same video primed as its own lookahead (a one-song queue on repeat-all) is
+    // resolved before this play's ping is spent, so it inherits the same block. Forget the ping at
+    // resolve time instead if that ever matters.
+    async fn register_play(&self, video_id: &str, ping: Option<PlaybackPing>, cpn: &str) {
+        let ping = match ping {
+            Some(p) => {
+                self.db.forget_stream_ping(video_id);
+                Some(p)
+            }
+            None => self.orchestrator.fresh_ping(video_id, &self.disabled_clients()).await,
+        };
         // Say so when there's nothing to ping. This used to be a silent `return`, which is why
         // issue #83 could only be diagnosed by reading the source: the play was dropped with no
         // trace anywhere. Anything above `debug` is noise on a working install, but the line
@@ -4085,11 +4135,35 @@ impl AppState {
             tracing::warn!(client = %ping.client, "watch-history ping: unknown client");
             return;
         };
+        if let Err(e) = self.it.register_playback(&client, &ping.url, cpn, None).await {
+            tracing::warn!(error = %e, "watch-history ping failed");
+            return;
+        }
+        tracing::debug!(client = %ping.client, "watch-history ping sent");
+        if let Some(url) = ping.watchtime_url {
+            let mut w = self.watch.lock().unwrap();
+            // Still this play: the ping can take long enough for the next one to have started.
+            if w.cpn == cpn {
+                w.arm(Target { url, client: ping.client }, std::time::Instant::now());
+            }
+        }
+    }
+
+    /// Send a watch-time report (#764), best-effort, as the client the URL was issued to.
+    fn send_watchtime(&self, due: Option<crate::watchtime::Due>) {
+        let Some(due) = due else { return };
+        let Some(client) = self.clients.get(&due.target.client).cloned() else { return };
         let it = self.it.clone();
         tauri::async_runtime::spawn(async move {
-            match it.register_playback(&client, &ping.url, &cpn, None).await {
-                Ok(()) => tracing::debug!(client = %ping.client, "watch-history ping sent"),
-                Err(e) => tracing::warn!(error = %e, "watch-history ping failed"),
+            let r = &due.report;
+            match it.report_watchtime(&client, &due.target.url, &due.cpn, r).await {
+                Ok(()) => tracing::debug!(
+                    stretches = ?r.stretches,
+                    playing = r.next_in.is_some(),
+                    last = r.last,
+                    "watch time reported"
+                ),
+                Err(e) => tracing::debug!(error = %e, "watch-time report failed"),
             }
         });
     }
@@ -4500,9 +4574,7 @@ impl AppState {
     pub async fn on_looped(&self) {
         let duration = {
             let mut q = self.queue.lock().await;
-            q.cpn = innertube::generate_cpn();
-            self.history_pinged.store(false, Ordering::Relaxed);
-            self.end_listen();
+            self.new_play(&mut q);
             q.duration
         };
         if let Some(item) = self.current_item().await {
@@ -4517,6 +4589,8 @@ impl AppState {
         let pos = f64::from_bits(self.latest_position.load(Ordering::SeqCst));
         self.db.set_setting("queue_position", &pos.to_string());
         self.save_listen(&mut self.listen.lock().unwrap());
+        let due = self.watch.lock().unwrap().pause(std::time::Instant::now(), self.player.volume());
+        self.send_watchtime(due);
     }
 
     /// Credit the time since the last position tick to the play being heard (#396). mpv ticks
@@ -4543,6 +4617,18 @@ impl AppState {
             self.db.set_listen_secs(row, l.heard as i64);
             l.saved = l.heard;
         }
+    }
+
+    /// A fresh play starts (a new track, or Repeat One starting this one over): a new `cpn`, the
+    /// history latch and the listen count reset, and the play before it closes its watch time.
+    fn new_play(&self, q: &mut QueueState) {
+        q.cpn = innertube::generate_cpn();
+        self.history_pinged.store(false, Ordering::Relaxed);
+        self.end_listen();
+        let now = std::time::Instant::now();
+        let old =
+            std::mem::replace(&mut *self.watch.lock().unwrap(), Watch::new(q.cpn.clone(), now));
+        self.send_watchtime(old.close(now, self.player.volume()));
     }
 
     /// A new track starts: settle the play before it and count this one from zero.
@@ -4727,9 +4813,7 @@ impl AppState {
             // ping went out with the last local track's ping. After the load, not before: the old
             // track plays on through the resolve and that time is still its own.
             q.playback_ping = data.playback_ping.clone();
-            q.cpn = innertube::generate_cpn();
-            self.history_pinged.store(false, Ordering::Relaxed);
-            self.end_listen();
+            self.new_play(&mut q);
             q.duration = 0.0;
             q.live = data.live;
             // The wire row carries neither flag, so this guest's own `/player` reply sets them, as
@@ -6439,7 +6523,7 @@ fn adopt_twin(into: &mut SongItem, from: &SongItem) -> bool {
 /// Where `pos` (seconds into this version) falls in its counterpart, through the segment playing
 /// (#520, #535). An intro or a break in the video has no moment in the song, so it lands where the
 /// song picks up again; past the last segment, at its end. No segments: the same timestamp.
-fn twin_position(pos: f64, segments: &[innertube::Segment]) -> f64 {
+pub(crate) fn twin_position(pos: f64, segments: &[innertube::Segment]) -> f64 {
     let ms = (pos * 1000.0).round() as i64;
     let twin_ms = match segments.iter().find(|s| ms < s.start_ms + s.duration_ms) {
         Some(s) => s.twin_start_ms + (ms - s.start_ms).max(0),

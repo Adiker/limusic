@@ -45,6 +45,7 @@ mod stats;
 mod taskbar;
 mod tray;
 mod videoproxy;
+mod watchtime;
 mod webview;
 mod windowtitle;
 
