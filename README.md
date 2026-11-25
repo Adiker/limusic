@@ -139,10 +139,19 @@ Discord.
 <h2 align="center">Download & Install</h2>
 
 <p align="center">
-  <a href="https://github.com/SimoHypers/limusic/releases/latest">
-    <img src="https://img.shields.io/badge/GitHub_Releases-100000?style=for-the-badge&logo=github&logoColor=white" height="40">
+  <a href="https://github.com/Adiker/limusic/releases">
+    <img alt="Fork releases" src="https://img.shields.io/badge/Fork_Releases-100000?style=for-the-badge&logo=github&logoColor=white" height="40">
   </a>
 </p>
+
+[Stable release](https://github.com/Adiker/limusic/releases/latest) · [v1.5.0-rc.1 installers](https://github.com/Adiker/limusic/releases/tag/v1.5.0-rc.1#assets)
+
+**Upgrading from an older fork beta?** Back up your Limusic data, then download and install the
+release candidate manually once. Older installations cannot verify the new updater signing key.
+See the [transition guide](docs/UPDATER-TRANSITION.md).
+
+The table and community packages below refer to [upstream Limusic](https://github.com/SimoHypers/limusic/releases/latest).
+For this fork, use the assets listed on its release page.
 
 | Platform | File | Notes |
 |---|---|---|
@@ -394,7 +403,7 @@ Windows, ONNX Runtime and DirectML from Microsoft. See [THIRD-PARTY-NOTICES.md](
 
 ## Fork migration and signing transition
 
-The standalone fork is being prepared for migration. Because its previous updater signing-key
+The standalone fork has moved to [Adiker/limusic](https://github.com/Adiker/limusic). Because its previous updater signing-key
 password was unavailable, the first release using the replacement key must be installed manually
 by existing users. That installation is needed once before updates signed with the new key can be
 verified. The operator checklist is in [docs/REPOSITORY-CUTOVER.md](docs/REPOSITORY-CUTOVER.md).
